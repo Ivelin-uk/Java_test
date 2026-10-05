@@ -6,8 +6,8 @@ Java Spring Boot backend + React TypeScript frontend for an AI-assisted test man
 
 - `backend/`: Spring Boot 4 REST API, Spring Security password hashing, JPA/MySQL database, layered controllers/services/repositories.
 - Flyway applies versioned schema migrations automatically before the backend starts.
-- `frontend/`: Vite React SPA with creator dashboard, manual builder, mock AI generation, publish flow, public quiz flow and results.
-- AI is behind `AiProvider`; the current implementation is `MockAiProvider` so local development works without API keys.
+- `frontend/`: Vite React SPA with creator dashboard, manual builder, local AI generation, deletion with confirmation, publish flow, public quiz flow and results.
+- AI is behind `AiProvider`; the default `OllamaAiProvider` makes HTTP requests to a local Qwen3 model, with no API key or per-request charge.
 - Credentials and external provider keys belong in environment variables. Do not commit real secrets.
 
 ## MVP Scope
@@ -18,6 +18,7 @@ Implemented now:
 - Dashboard stats.
 - Manual test builder for single choice, multiple choice, true/false, short answer and open answer.
 - AI generate test draft through an abstraction layer.
+- Delete owned draft or published tests, including their questions, submitted answers, and results.
 - Publish with unique `/quiz/{code}` URL.
 - Public participant test taking.
 - Automatic scoring and Bulgarian 2-6 grade scale.
@@ -29,9 +30,21 @@ Next production steps:
 - Configure production database credentials and disable demo seeding.
 - Add refresh/expiry to auth tokens or use signed JWT/session cookies.
 - Add rate limiting, CSRF strategy for cookie auth, email verification and password reset.
-- Add Groups, Assignments, Question Bank, Stripe and real AI provider.
+- Add Groups, Assignments, Question Bank and Stripe.
 
 ## Local Development
+
+AI model (one-time setup on this Mac):
+
+```bash
+brew install ollama
+brew services start ollama
+ollama pull qwen3:4b
+```
+
+The model download is approximately 2.5 GB. Ollama runs at `http://localhost:11434`; `brew services start ollama` keeps it running in the background. Model requests run locally on the computer. Configuration can be overridden with `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, and `OLLAMA_TIMEOUT_SECONDS` (default 180 seconds).
+
+The generation endpoint accepts 1-20 questions, a topic, language, instructions, and difficulty. It requests a structured JSON response, validates the answer choices, and stores the model's actual token counts with zero API cost. A stopped Ollama server or missing model produces an error that is shown in the application. Automated tests select `AI_PROVIDER=mock` and verify the real HTTP adapter with a stub server.
 
 Backend:
 
@@ -72,7 +85,7 @@ Demo credentials are prefilled in the UI. Demo seeding is enabled by default and
 - Six submitted attempts with scored answers and grades, two AI usage records, and a randomly generated session for each demo account.
 - Public quizzes: `/quiz/demojava`, `/quiz/demosql`, and `/quiz/democollections`.
 
-Repeated starts reuse demo accounts and stable test codes, preserving edited names, passwords, titles, and existing results without duplicating them. Open answers are seeded as awaiting manual grading, matching the normal scoring workflow. Set `DEMO_SEED=false` in the backend's environment to disable demo data:
+Demo fixtures are generated offline and recorded once in `demo_seed_history`. Repeated starts preserve edits and do not recreate deleted demo tests. Demo AI history is marked as `mock-ai-provider`; user-triggered generation uses the real configured model. Open answers are seeded as awaiting manual grading, matching the normal scoring workflow. Set `DEMO_SEED=false` in the backend's environment to disable demo data:
 
 ```bash
 DEMO_SEED=false ./gradlew bootRun
@@ -88,6 +101,7 @@ Core endpoints:
 - `GET /api/tests`
 - `POST /api/tests`
 - `PUT /api/tests/{id}`
+- `DELETE /api/tests/{id}` (204 on success, 404 for missing or another user's test)
 - `POST /api/tests/{id}/publish`
 - `POST /api/ai/generate-test`
 - `GET /api/public/tests/{code}`

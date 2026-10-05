@@ -3,12 +3,14 @@ package com.quicktest.ai;
 import com.quicktest.tests.Difficulty;
 import com.quicktest.tests.QuestionType;
 import com.quicktest.tests.QuizDtos;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
 
 @Component
+@ConditionalOnProperty(name = "app.ai.provider", havingValue = "mock")
 public class MockAiProvider implements AiProvider {
     @Override
     public GeneratedTest generateTest(GenerateTestRequest request) {

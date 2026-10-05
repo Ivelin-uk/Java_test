@@ -9,8 +9,8 @@ Creator registers -> creates or generates draft -> edits questions -> publishes 
 ## Backend Modules
 
 - `auth`: users, password hashing, bearer token sessions.
-- `tests`: tests, questions, answers, publishing, public attempts, scoring, result views.
-- `ai`: provider abstraction, mock generation, usage tracking.
+- `tests`: tests, questions, answers, publishing, owned-test deletion, public attempts, scoring, result views.
+- `ai`: provider abstraction, local Ollama generation with structured JSON validation, usage tracking, an explicitly selected mock for automated tests.
 - `dashboard`: creator metrics.
 - `demo`: local seed data.
 
@@ -20,7 +20,11 @@ Controllers only handle HTTP mapping and validation. Business rules live in serv
 
 Development uses the MySQL `test_ai` database at `localhost:8889` (MAMP or the Compose service). Flyway applies versioned SQL migrations from `backend/src/main/resources/db/migration` before JPA validates the schema with `ddl-auto=validate`. Tests run the same migrations against an in-memory H2 database in MySQL compatibility mode.
 
-When `DEMO_SEED=true` (the default), the transactional demo runner populates all application tables after migrations. It reuses existing accounts, test codes, participant submissions, and sessions so repeated starts preserve data. Set `DEMO_SEED=false` for environments that should not receive sample data.
+When `DEMO_SEED=true` (the default), the transactional demo runner populates application tables after migrations and records completion in `demo_seed_history`. Its fixtures are generated offline, so startup is independent of the AI service. Repeated starts preserve edits and deletions. Set `DEMO_SEED=false` for environments that should not receive sample data.
+
+Owned-test deletion removes attempts and submitted answers before cascading to questions and answer choices, within one transaction. Ownership is checked before any deletion; another user's test returns 404.
+
+Normal AI generation calls `POST /api/chat` on the configured Ollama server (`http://localhost:11434`, model `qwen3:4b` by default). The JSON schema constrains question structure and count; validation checks distinct questions and correct answer choices before recording actual token usage. Local inference has zero API cost.
 
 Core tables represented by entities:
 
@@ -45,6 +49,7 @@ Authenticated creator endpoints:
 - `POST /api/tests`
 - `GET /api/tests/{id}`
 - `PUT /api/tests/{id}`
+- `DELETE /api/tests/{id}`
 - `POST /api/tests/{id}/publish`
 - `GET /api/tests/results`
 - `GET /api/tests/{id}/results`

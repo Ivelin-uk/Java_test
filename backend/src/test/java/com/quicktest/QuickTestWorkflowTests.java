@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.JsonNode;
@@ -29,6 +30,9 @@ class QuickTestWorkflowTests {
 
     @Autowired
     ObjectMapper objectMapper;
+
+    @Autowired
+    JdbcTemplate jdbc;
 
     @Test
     void creatorCanPublishAndGuestCanSubmit() throws Exception {
@@ -90,6 +94,62 @@ class QuickTestWorkflowTests {
 
         JsonNode dashboard = getJson("/api/dashboard", token);
         assertEquals(1, dashboard.get("aiGenerations").asLong());
+        assertEquals(0, jdbc.queryForObject("SELECT estimated_cost FROM ai_usage WHERE user_id = (SELECT id FROM users WHERE email = ?)",
+                java.math.BigDecimal.class, "ai-owner@example.com").signum());
+    }
+
+    @Test
+    void onlyOwnerCanDeleteTestIncludingSubmittedAnswersAndResults() throws Exception {
+        String owner = register("delete-owner@example.com");
+        String other = register("delete-other@example.com");
+        JsonNode created = postJson("/api/tests", deletionTest(), owner);
+        long id = created.get("id").asLong();
+        long questionId = created.get("questions").get(0).get("id").asLong();
+        long answerId = created.get("questions").get(0).get("answers").get(0).get("id").asLong();
+        String code = postJson("/api/tests/" + id + "/publish", "", owner).get("publicCode").asText();
+        JsonNode result = postJson("/api/public/tests/" + code + "/attempts", new QuizDtos.SubmitAttemptRequest(
+                "Guest", "guest@example.com", List.of(new QuizDtos.SubmittedAnswer(questionId, List.of(answerId), null))
+        ), null);
+        long attemptId = result.get("attemptId").asLong();
+
+        mvc.perform(delete("/api/tests/" + id)).andExpect(status().isUnauthorized());
+        mvc.perform(delete("/api/tests/" + id).header("Authorization", "Bearer " + other)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/public/tests/" + code)).andExpect(status().isOk());
+        assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM attempt WHERE id = ?", Long.class, attemptId));
+
+        mvc.perform(delete("/api/tests/" + id).header("Authorization", "Bearer " + owner)).andExpect(status().isNoContent());
+        mvc.perform(get("/api/tests/" + id).header("Authorization", "Bearer " + owner)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/public/tests/" + code)).andExpect(status().isNotFound());
+        mvc.perform(delete("/api/tests/" + id).header("Authorization", "Bearer " + owner)).andExpect(status().isNotFound());
+        assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM question WHERE id = ?", Long.class, questionId));
+        assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM answer WHERE question_id = ?", Long.class, questionId));
+        assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM attempt WHERE id = ?", Long.class, attemptId));
+        assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM attempt_answer WHERE attempt_id = ?", Long.class, attemptId));
+        assertEquals(0, getJson("/api/tests/results", owner).size());
+    }
+
+    @Test
+    void ownerCanDeleteDraftWithoutAttempts() throws Exception {
+        String token = register("delete-draft@example.com");
+        long id = postJson("/api/tests", deletionTest(), token).get("id").asLong();
+        mvc.perform(delete("/api/tests/" + id).header("Authorization", "Bearer " + token)).andExpect(status().isNoContent());
+        assertEquals(0, getJson("/api/tests", token).size());
+    }
+
+    @Test
+    void aiRejectsInvalidQuestionCount() throws Exception {
+        String token = register("invalid-ai-count@example.com");
+        mvc.perform(post("/api/ai/generate-test").header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new AiService.AiGenerateTestRequest("Math", "", "Bulgarian", 21, "EASY"))))
+                .andExpect(status().isBadRequest());
+        assertEquals(0, getJson("/api/dashboard", token).get("aiGenerations").asInt());
+    }
+
+    private QuizDtos.TestRequest deletionTest() {
+        return new QuizDtos.TestRequest("Delete workflow", "", "Bulgarian", null, false, false, true, true,
+                List.of(new QuizDtos.QuestionRequest(QuestionType.SINGLE_CHOICE, "What is 2 + 2?", null, 1, "2 + 2 = 4.",
+                        List.of(new QuizDtos.AnswerRequest("4", true), new QuizDtos.AnswerRequest("5", false)))));
     }
 
     private String register(String email) throws Exception {

@@ -5,15 +5,20 @@ import com.quicktest.auth.AppUserRepository;
 import com.quicktest.auth.AuthToken;
 import com.quicktest.auth.AuthTokenRepository;
 import com.quicktest.auth.Role;
-import com.quicktest.ai.AiService;
+import com.quicktest.ai.AiProvider;
+import com.quicktest.ai.AiUsage;
+import com.quicktest.ai.AiUsageRepository;
+import com.quicktest.ai.MockAiProvider;
 import com.quicktest.tests.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.math.BigDecimal;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,32 +26,35 @@ import java.util.UUID;
 
 @Component
 public class DemoData implements CommandLineRunner {
+    private static final String SEED_KEY = "default-demo-v1";
     private final boolean seed;
     private final AppUserRepository users;
     private final QuizTestRepository tests;
     private final AttemptRepository attempts;
     private final AuthTokenRepository tokens;
     private final QuizService quizService;
-    private final AiService aiService;
+    private final AiUsageRepository aiUsage;
+    private final JdbcTemplate jdbc;
     private final PasswordEncoder passwordEncoder;
 
     public DemoData(@Value("${app.demo-seed}") boolean seed, AppUserRepository users, QuizTestRepository tests,
                     AttemptRepository attempts, AuthTokenRepository tokens, QuizService quizService,
-                    AiService aiService, PasswordEncoder passwordEncoder) {
+                    AiUsageRepository aiUsage, JdbcTemplate jdbc, PasswordEncoder passwordEncoder) {
         this.seed = seed;
         this.users = users;
         this.tests = tests;
         this.attempts = attempts;
         this.tokens = tokens;
         this.quizService = quizService;
-        this.aiService = aiService;
+        this.aiUsage = aiUsage;
+        this.jdbc = jdbc;
         this.passwordEncoder = passwordEncoder;
     }
 
     @Override
     @Transactional
     public void run(String... args) {
-        if (!seed) {
+        if (!seed || jdbc.queryForObject("SELECT COUNT(*) FROM demo_seed_history WHERE seed_key = ?", Long.class, SEED_KEY) > 0) {
             return;
         }
         AppUser creator = seedUser("demo@quicktest.local", "Demo Creator", Role.USER);
@@ -94,6 +102,7 @@ public class DemoData implements CommandLineRunner {
         seedSession(creator);
         seedSession(teacher);
         seedSession(student);
+        jdbc.update("INSERT INTO demo_seed_history (seed_key, created_at) VALUES (?, CURRENT_TIMESTAMP)", SEED_KEY);
     }
 
     private AppUser seedUser(String email, String name, Role role) {
@@ -128,8 +137,17 @@ public class DemoData implements CommandLineRunner {
 
     private QuizTest seedAiTest(AppUser owner, String title, String code, boolean published) {
         return tests.findByPublicCode(code).orElseGet(() -> {
-            AiService.AiGeneratedTestResponse generated = aiService.generateTest(owner,
-                    new AiService.AiGenerateTestRequest(title, "Demo AI generated test", "Bulgarian", 3, "MEDIUM"));
+            // Demo fixtures must not depend on a running model or make external AI requests.
+            AiProvider.GeneratedTest generated = new MockAiProvider().generateTest(
+                    new AiProvider.GenerateTestRequest(title, "Demo AI generated test", "Bulgarian", 3, "MEDIUM"));
+            AiUsage usage = new AiUsage();
+            usage.setUser(owner);
+            usage.setOperation("generate_test");
+            usage.setModel(generated.model());
+            usage.setInputTokens(generated.inputTokens());
+            usage.setOutputTokens(generated.outputTokens());
+            usage.setEstimatedCost(BigDecimal.ZERO);
+            aiUsage.save(usage);
             return seedTest(owner, title, code, published, generated.test().questions());
         });
     }

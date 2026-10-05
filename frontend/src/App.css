@@ -126,6 +126,132 @@
   border-radius: 7px;
   background: #ffffff;
   text-align: left;
+  min-width: 0;
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.test-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 6px;
+}
+
+.is-selected .test-pill {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.command-button,
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 12px;
+}
+
+.icon-button {
+  width: 36px;
+  height: 38px;
+  min-width: 36px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.danger {
+  color: #b42318;
+}
+
+.danger:hover {
+  background: #fff1f0;
+  border-color: #f5a8a0;
+}
+
+.danger-fill {
+  background: #b42318;
+  border-color: #b42318;
+  color: #ffffff;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ai-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 10px;
+}
+
+.toolbar-actions,
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.toolbar > strong,
+.save-state {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.save-state {
+  flex: 1 1 120px;
+}
+
+.action-error {
+  padding: 10px 0;
+  overflow-wrap: anywhere;
+}
+
+.delete-dialog {
+  width: min(440px, calc(100% - 28px));
+  max-height: calc(100dvh - 40px);
+  padding: 24px;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  color: #17202a;
+  background: #ffffff;
+}
+
+.delete-dialog::backdrop {
+  background: rgba(17, 24, 39, 0.45);
+}
+
+.delete-dialog h2 {
+  font-size: 20px;
+  margin-bottom: 12px;
+}
+
+.delete-dialog p {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.delete-dialog .error {
+  margin-top: 12px;
+}
+
+.dialog-actions {
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
 }
 
 .toolbar {

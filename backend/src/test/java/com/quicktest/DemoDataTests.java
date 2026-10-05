@@ -63,8 +63,9 @@ class DemoDataTests {
                 "users", 3L, "tests", 4L, "question", 14L, "answer", 37L,
                 "attempt", 6L, "attempt_answer", 24L, "ai_usage", 2L, "auth_token", 3L
         ), rowCounts());
-        assertEquals(1, flyway.info().applied().length);
-        assertEquals("1", flyway.info().current().getVersion().toString());
+        assertEquals(2, flyway.info().applied().length);
+        assertEquals("2", flyway.info().current().getVersion().toString());
+        assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM demo_seed_history", Long.class));
         assertEquals(0, flyway.migrate().migrationsExecuted);
 
         for (String email : List.of("demo@quicktest.local", "teacher@quicktest.local", "student@quicktest.local")) {
@@ -100,6 +101,20 @@ class DemoDataTests {
         assertTrue(passwordEncoder.matches("changed-password", creator.getPasswordHash()));
         assertEquals("Edited published test", published.getTitle());
         assertEquals("Edited draft", draft.getTitle());
+    }
+
+    @Test
+    void deletingDemoTestDoesNotRecreateItOnNextStartup() {
+        AppUser creator = users.findByEmailIgnoreCase("demo@quicktest.local").orElseThrow();
+        QuizTest test = tests.findByPublicCode("demojava").orElseThrow();
+        quizService.delete(creator, test.getId());
+        tests.flush();
+
+        demoData.run();
+
+        assertTrue(tests.findByPublicCode("demojava").isEmpty());
+        assertEquals(3L, jdbc.queryForObject("SELECT COUNT(*) FROM tests", Long.class));
+        assertEquals(3L, jdbc.queryForObject("SELECT COUNT(*) FROM attempt", Long.class));
     }
 
     @Test

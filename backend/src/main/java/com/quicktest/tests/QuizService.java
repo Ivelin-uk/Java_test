@@ -53,6 +53,15 @@ public class QuizService {
     }
 
     @Transactional
+    public void delete(AppUser owner, Long id) {
+        QuizTest test = requireOwned(owner, id);
+        attempts.deleteAll(attempts.findByTestIdAndTestOwnerIdOrderBySubmittedAtDesc(id, owner.getId()));
+        // Submitted answers reference questions, so remove attempts before the question cascade.
+        attempts.flush();
+        tests.delete(test);
+    }
+
+    @Transactional
     public QuizDtos.PublishResponse publish(AppUser owner, Long id) {
         QuizTest test = requireOwned(owner, id);
         validatePublishable(test);

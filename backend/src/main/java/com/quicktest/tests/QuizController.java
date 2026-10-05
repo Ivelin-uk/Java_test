@@ -3,6 +3,7 @@ package com.quicktest.tests;
 import com.quicktest.auth.AppUser;
 import com.quicktest.auth.AuthService;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -36,6 +37,12 @@ public class QuizController {
     @PutMapping("/tests/{id}")
     QuizDtos.TestDetail update(@RequestHeader("Authorization") String authorization, @PathVariable Long id, @Valid @RequestBody QuizDtos.TestRequest request) {
         return quizService.update(authService.requireUser(authorization), id, request);
+    }
+
+    @DeleteMapping("/tests/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void delete(@RequestHeader(value = "Authorization", required = false) String authorization, @PathVariable Long id) {
+        quizService.delete(authService.requireUser(authorization), id);
     }
 
     @PostMapping("/tests/{id}/publish")
