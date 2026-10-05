@@ -7,7 +7,7 @@ services:
       MYSQL_PASSWORD: quicktest
       MYSQL_ROOT_PASSWORD: local-root-password
     ports:
-      - "3306:3306"
+      - "8889:3306"
     volumes:
       - quicktest_mysql_data:/var/lib/mysql
     healthcheck:

@@ -35,23 +35,25 @@ Next production steps:
 
 Backend:
 
+Start MySQL in MAMP on port `8889`, then run:
+
 ```bash
-docker compose up -d mysql
 cd backend
 ./gradlew bootRun
 ```
 
-The default local connection is `jdbc:mysql://localhost:3306/test_ai` with username and password `quicktest`. Override it through `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD`.
+The default local connection is `jdbc:mysql://localhost:8889/test_ai` with username and password `quicktest`. Override it through `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD`.
 
 On startup, the backend creates `test_ai` if the MySQL user has permission, applies migrations from `backend/src/main/resources/db/migration`, and validates the JPA mappings. Flyway records applied migrations in `flyway_schema_history`; subsequent starts only apply new migrations.
 
-If using the locally installed MySQL on this Mac instead of Docker, start it with `brew services start mysql`. Grant the application user access once as a MySQL administrator:
+Create the application user and grant access once as a MySQL administrator on port `8889`:
 
 ```sql
+CREATE USER IF NOT EXISTS 'quicktest'@'localhost' IDENTIFIED BY 'quicktest';
 GRANT ALL PRIVILEGES ON test_ai.* TO 'quicktest'@'localhost';
 ```
 
-The Compose database name is also `test_ai`. An existing Docker volume keeps its original databases and grants; for an older volume, create `test_ai` and grant `quicktest` access as the MySQL administrator before starting the backend.
+Alternatively, run `docker compose up -d mysql` from the project root to provision MySQL and the application user. Compose also exposes MySQL on host port `8889`, so stop MAMP MySQL before using that service. The Compose database name is `test_ai`. An existing Docker volume keeps its original databases and grants; for an older volume, create `test_ai` and grant `quicktest` access as the MySQL administrator before starting the backend.
 
 Frontend:
 

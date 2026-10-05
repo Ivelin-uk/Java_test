@@ -18,7 +18,7 @@ Controllers only handle HTTP mapping and validation. Business rules live in serv
 
 ## Database Schema
 
-Development uses the MySQL `test_ai` database. Flyway applies versioned SQL migrations from `backend/src/main/resources/db/migration` before JPA validates the schema with `ddl-auto=validate`. Tests run the same migrations against an in-memory H2 database in MySQL compatibility mode.
+Development uses the MySQL `test_ai` database at `localhost:8889` (MAMP or the Compose service). Flyway applies versioned SQL migrations from `backend/src/main/resources/db/migration` before JPA validates the schema with `ddl-auto=validate`. Tests run the same migrations against an in-memory H2 database in MySQL compatibility mode.
 
 When `DEMO_SEED=true` (the default), the transactional demo runner populates all application tables after migrations. It reuses existing accounts, test codes, participant submissions, and sessions so repeated starts preserve data. Set `DEMO_SEED=false` for environments that should not receive sample data.
 
