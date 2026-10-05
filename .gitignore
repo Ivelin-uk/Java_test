@@ -1,0 +1,18 @@
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# Dependencies and generated output
+.gradle/
+node_modules/
+build/
+dist/
+
+# Runtime files
+*.log
+*.pid
+
+# Local editor and system files
+.idea/
+.DS_Store

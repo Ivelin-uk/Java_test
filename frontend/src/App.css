@@ -1,0 +1,311 @@
+.app-shell,
+.participant,
+.auth-layout {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(31, 42, 55, 0.05);
+}
+
+.primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.wide {
+  width: 100%;
+}
+
+.eyebrow {
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.topbar h1,
+.auth-copy h1,
+.participant h1 {
+  color: #111827;
+  font-size: clamp(30px, 5vw, 48px);
+  line-height: 1.04;
+  margin-top: 6px;
+}
+
+.top-actions,
+.toolbar,
+.settings-row,
+.question-head,
+.question-actions,
+.add-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stat {
+  padding: 16px;
+  display: grid;
+  gap: 6px;
+}
+
+.stat span,
+.save-state,
+.test-pill span,
+.test-pill small {
+  color: #65758b;
+  font-size: 13px;
+}
+
+.stat strong {
+  font-size: 30px;
+  color: #111827;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.side-panel,
+.toolbar,
+.results-panel,
+.auth-panel,
+.participant-head,
+.result-card {
+  padding: 16px;
+}
+
+.side-panel {
+  display: grid;
+  gap: 18px;
+  position: sticky;
+  top: 16px;
+}
+
+.ai-box,
+.test-list,
+.builder,
+.main-column {
+  display: grid;
+  gap: 12px;
+}
+
+.test-pill {
+  display: grid;
+  gap: 2px;
+  padding: 10px;
+  border: 1px solid #e5ebf3;
+  border-radius: 7px;
+  background: #ffffff;
+  text-align: left;
+}
+
+.toolbar {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.builder > .panel,
+.question-panel {
+  padding: 16px;
+}
+
+.grid.two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.settings-row > label {
+  min-width: 140px;
+}
+
+.settings-row label:has(input[type="checkbox"]),
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-row input[type="checkbox"],
+.choice input,
+.answer-row input[type="checkbox"] {
+  width: auto;
+}
+
+.question-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.question-head {
+  display: grid;
+  grid-template-columns: 1fr 190px 90px;
+}
+
+.points {
+  text-align: center;
+}
+
+.answers {
+  display: grid;
+  gap: 8px;
+}
+
+.answer-row {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.results-panel {
+  margin-top: 16px;
+}
+
+.table {
+  display: grid;
+  margin-top: 12px;
+}
+
+.table-row {
+  display: grid;
+  grid-template-columns: 1.1fr 1.4fr 1fr 80px;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #edf1f6;
+}
+
+.table-head {
+  color: #65758b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.auth-layout {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  align-items: center;
+  gap: 28px;
+}
+
+.auth-copy {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-copy p {
+  max-width: 560px;
+  color: #526174;
+  font-size: 18px;
+}
+
+.auth-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px;
+  background: #eef3f9;
+  border-radius: 8px;
+}
+
+.segmented button {
+  border-color: transparent;
+  background: transparent;
+}
+
+.segmented .active {
+  background: #ffffff;
+  border-color: #dbe3ee;
+}
+
+.error {
+  color: #b42318;
+}
+
+.participant {
+  display: grid;
+  gap: 14px;
+}
+
+.participant-head {
+  display: grid;
+  gap: 12px;
+}
+
+progress {
+  width: 100%;
+  height: 12px;
+}
+
+.submit-button {
+  min-height: 48px;
+}
+
+.result-card {
+  display: grid;
+  gap: 10px;
+  text-align: center;
+  margin-top: 16vh;
+}
+
+@media (max-width: 860px) {
+  .app-shell,
+  .participant,
+  .auth-layout {
+    padding: 14px;
+  }
+
+  .auth-layout,
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .side-panel {
+    position: static;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .grid.two,
+  .question-head,
+  .table-row {
+    grid-template-columns: 1fr;
+  }
+}
