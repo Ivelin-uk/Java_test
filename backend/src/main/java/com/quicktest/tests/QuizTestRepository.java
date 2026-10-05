@@ -9,6 +9,7 @@ import java.util.Optional;
 public interface QuizTestRepository extends JpaRepository<QuizTest, Long> {
     List<QuizTest> findByOwnerOrderByUpdatedAtDesc(AppUser owner);
     Optional<QuizTest> findByIdAndOwner(Long id, AppUser owner);
+    Optional<QuizTest> findByPublicCode(String publicCode);
     Optional<QuizTest> findByPublicCodeAndStatus(String publicCode, TestStatus status);
     long countByOwner(AppUser owner);
     long countByOwnerAndStatus(AppUser owner, TestStatus status);

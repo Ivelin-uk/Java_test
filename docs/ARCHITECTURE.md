@@ -18,7 +18,9 @@ Controllers only handle HTTP mapping and validation. Business rules live in serv
 
 ## Database Schema
 
-Development uses MySQL 8 with JPA schema generation. Tests use an in-memory H2 database in MySQL compatibility mode. Production should replace `ddl-auto` with Flyway migrations before launch.
+Development uses the MySQL `test_ai` database. Flyway applies versioned SQL migrations from `backend/src/main/resources/db/migration` before JPA validates the schema with `ddl-auto=validate`. Tests run the same migrations against an in-memory H2 database in MySQL compatibility mode.
+
+When `DEMO_SEED=true` (the default), the transactional demo runner populates all application tables after migrations. It reuses existing accounts, test codes, participant submissions, and sessions so repeated starts preserve data. Set `DEMO_SEED=false` for environments that should not receive sample data.
 
 Core tables represented by entities:
 
@@ -65,7 +67,7 @@ Public participant endpoints:
 
 ## Roadmap
 
-1. Stabilize MVP: run tests, add Flyway migrations, improve validation errors, add token expiry.
+1. Stabilize MVP: expand tests, improve validation errors, add token expiry.
 2. Production auth: email verification, reset password, remember me, OAuth preparation.
 3. Creator features: autosave debounce, drag/drop question ordering, QR code, export results.
 4. Domain expansion: groups, participants, assignments, CSV import, question bank.

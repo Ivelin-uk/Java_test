@@ -2,6 +2,10 @@ package com.quicktest.demo;
 
 import com.quicktest.auth.AppUser;
 import com.quicktest.auth.AppUserRepository;
+import com.quicktest.auth.AuthToken;
+import com.quicktest.auth.AuthTokenRepository;
+import com.quicktest.auth.Role;
+import com.quicktest.ai.AiService;
 import com.quicktest.tests.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
@@ -9,63 +13,175 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
 @Component
 public class DemoData implements CommandLineRunner {
     private final boolean seed;
     private final AppUserRepository users;
     private final QuizTestRepository tests;
+    private final AttemptRepository attempts;
+    private final AuthTokenRepository tokens;
+    private final QuizService quizService;
+    private final AiService aiService;
     private final PasswordEncoder passwordEncoder;
 
-    public DemoData(@Value("${app.demo-seed}") boolean seed, AppUserRepository users, QuizTestRepository tests, PasswordEncoder passwordEncoder) {
+    public DemoData(@Value("${app.demo-seed}") boolean seed, AppUserRepository users, QuizTestRepository tests,
+                    AttemptRepository attempts, AuthTokenRepository tokens, QuizService quizService,
+                    AiService aiService, PasswordEncoder passwordEncoder) {
         this.seed = seed;
         this.users = users;
         this.tests = tests;
+        this.attempts = attempts;
+        this.tokens = tokens;
+        this.quizService = quizService;
+        this.aiService = aiService;
         this.passwordEncoder = passwordEncoder;
     }
 
     @Override
     @Transactional
     public void run(String... args) {
-        if (!seed || users.existsByEmailIgnoreCase("demo@quicktest.local")) {
+        if (!seed) {
             return;
         }
-        AppUser user = new AppUser();
-        user.setName("Demo Creator");
-        user.setEmail("demo@quicktest.local");
-        user.setPasswordHash(passwordEncoder.encode("password123"));
-        users.save(user);
+        AppUser creator = seedUser("demo@quicktest.local", "Demo Creator", Role.USER);
+        AppUser teacher = seedUser("teacher@quicktest.local", "Demo Teacher", Role.ADMIN);
+        AppUser student = seedUser("student@quicktest.local", "Demo Student", Role.USER);
 
-        QuizTest test = new QuizTest();
-        test.setOwner(user);
-        test.setTitle("Java OOP Basics");
-        test.setDescription("Demo published test.");
-        test.setStatus(TestStatus.PUBLISHED);
-        test.setPublicCode("demojava");
+        QuizTest javaTest = seedTest(creator, "Java OOP Basics", "demojava", true, List.of(
+                question(QuestionType.SINGLE_CHOICE, "Кой принцип скрива вътрешното състояние на обект?", 2,
+                        "Encapsulation ограничава директния достъп до вътрешното състояние.",
+                        answer("Encapsulation", true), answer("Compilation", false), answer("Recursion", false)),
+                question(QuestionType.MULTIPLE_CHOICE, "Кои са модификатори за достъп в Java?", 2,
+                        "public и private определят достъпа до членове на класа.",
+                        answer("public", true), answer("private", true), answer("static", false), answer("final", false)),
+                question(QuestionType.TRUE_FALSE, "Един Java клас може да наследява два класа едновременно.", 1,
+                        "Java поддържа наследяване само от един клас.",
+                        answer("Вярно", false), answer("Грешно", true)),
+                question(QuestionType.SHORT_ANSWER, "С коя ключова дума се декларира интерфейс?", 1,
+                        "Интерфейс се декларира с interface.", answer("interface", true)),
+                question(QuestionType.OPEN_ANSWER, "Обяснете с пример какво е полиморфизъм.", 2,
+                        "Отвореният отговор изисква ръчна проверка.",
+                        answer("Един интерфейс може да има различни реализации.", false))
+        ));
 
-        Question question = new Question();
-        question.setTest(test);
-        question.setType(QuestionType.SINGLE_CHOICE);
-        question.setQuestion("Кой принцип скрива вътрешното състояние на обект?");
-        question.setDifficulty(Difficulty.MEDIUM);
-        question.setPoints(1);
-        question.setPosition(0);
-        question.setExplanation("Encapsulation ограничава директния достъп до вътрешното състояние.");
+        QuizTest sqlTest = seedTest(creator, "MySQL Basics", "demosql", true, List.of(
+                question(QuestionType.SINGLE_CHOICE, "Коя SQL команда извлича записи от таблица?", 2,
+                        "SELECT извлича данни от таблици.",
+                        answer("SELECT", true), answer("DELETE", false), answer("INSERT", false)),
+                question(QuestionType.TRUE_FALSE, "Първичният ключ идентифицира еднозначно всеки запис.", 1,
+                        "PRIMARY KEY не допуска дублирани стойности.",
+                        answer("Вярно", true), answer("Грешно", false)),
+                question(QuestionType.SHORT_ANSWER, "Коя SQL клауза филтрира редовете?", 1,
+                        "WHERE задава условието за филтриране.", answer("WHERE", true))
+        ));
 
-        Answer correct = new Answer();
-        correct.setQuestion(question);
-        correct.setAnswer("Encapsulation");
-        correct.setCorrect(true);
-        correct.setPosition(0);
+        seedAiTest(creator, "Java Collections Practice", "demodraft", false);
+        QuizTest teacherTest = seedAiTest(teacher, "Java Fundamentals", "democollections", true);
 
-        Answer wrong = new Answer();
-        wrong.setQuestion(question);
-        wrong.setAnswer("Compilation");
-        wrong.setCorrect(false);
-        wrong.setPosition(1);
+        seedAttempt(javaTest, student, "Demo Student", student.getEmail(), 5, 3);
+        seedAttempt(javaTest, null, "Maria Petrova", "maria@example.test", 3, 2);
+        seedAttempt(javaTest, null, "Ivan Ivanov", "ivan@example.test", 1, 1);
+        seedAttempt(sqlTest, student, "Demo Student", student.getEmail(), 3, 2);
+        seedAttempt(sqlTest, null, "Georgi Dimitrov", "georgi@example.test", 1, 1);
+        seedAttempt(teacherTest, student, "Demo Student", student.getEmail(), 3, 1);
 
-        question.getAnswers().add(correct);
-        question.getAnswers().add(wrong);
-        test.getQuestions().add(question);
-        tests.save(test);
+        seedSession(creator);
+        seedSession(teacher);
+        seedSession(student);
+    }
+
+    private AppUser seedUser(String email, String name, Role role) {
+        return users.findByEmailIgnoreCase(email).orElseGet(() -> {
+            AppUser user = new AppUser();
+            user.setName(name);
+            user.setEmail(email);
+            user.setRole(role);
+            user.setEmailVerifiedAt(Instant.now());
+            user.setPasswordHash(passwordEncoder.encode("password123"));
+            return users.save(user);
+        });
+    }
+
+    private QuizTest seedTest(AppUser owner, String title, String code, boolean published,
+                              List<QuizDtos.QuestionRequest> questions) {
+        return tests.findByPublicCode(code).orElseGet(() -> {
+            QuizDtos.TestDetail detail = quizService.create(owner, new QuizDtos.TestRequest(
+                    title, "Тестови данни за локална разработка.", "Bulgarian", 20,
+                    false, false, true, true, questions
+            ));
+            QuizTest test = tests.findById(detail.id()).orElseThrow();
+            // Stable codes also identify the draft after its title has been edited.
+            test.setPublicCode(code);
+            if (published) {
+                test.setStatus(TestStatus.PUBLISHED);
+                test.setPublishedAt(Instant.now().minus(7, ChronoUnit.DAYS));
+            }
+            return tests.save(test);
+        });
+    }
+
+    private QuizTest seedAiTest(AppUser owner, String title, String code, boolean published) {
+        return tests.findByPublicCode(code).orElseGet(() -> {
+            AiService.AiGeneratedTestResponse generated = aiService.generateTest(owner,
+                    new AiService.AiGenerateTestRequest(title, "Demo AI generated test", "Bulgarian", 3, "MEDIUM"));
+            return seedTest(owner, title, code, published, generated.test().questions());
+        });
+    }
+
+    private void seedAttempt(QuizTest test, AppUser student, String name, String email,
+                             int correctQuestions, int daysAgo) {
+        if (test.getStatus() != TestStatus.PUBLISHED || attempts.existsByTestIdAndParticipantEmail(test.getId(), email)) {
+            return;
+        }
+        List<QuizDtos.SubmittedAnswer> submitted = new ArrayList<>();
+        for (int i = 0; i < test.getQuestions().size(); i++) {
+            Question question = test.getQuestions().get(i);
+            boolean correct = i < correctQuestions;
+            if (question.getType() == QuestionType.SHORT_ANSWER) {
+                String text = correct
+                        ? question.getAnswers().stream().filter(Answer::isCorrect).findFirst().orElseThrow().getAnswer()
+                        : "incorrect answer";
+                submitted.add(new QuizDtos.SubmittedAnswer(question.getId(), List.of(), text));
+            } else if (question.getType() == QuestionType.OPEN_ANSWER) {
+                submitted.add(new QuizDtos.SubmittedAnswer(question.getId(), List.of(),
+                        "Различни класове могат да реализират един интерфейс по различен начин."));
+            } else {
+                List<Long> answerIds = correct
+                        ? question.getAnswers().stream().filter(Answer::isCorrect).map(Answer::getId).toList()
+                        : question.getAnswers().stream().filter(answer -> !answer.isCorrect()).limit(1).map(Answer::getId).toList();
+                submitted.add(new QuizDtos.SubmittedAnswer(question.getId(), answerIds, null));
+            }
+        }
+        QuizDtos.AttemptResult result = quizService.submit(test.getPublicCode(),
+                new QuizDtos.SubmitAttemptRequest(name, email, submitted));
+        Attempt attempt = attempts.findById(result.attemptId()).orElseThrow();
+        Instant submittedAt = Instant.now().minus(daysAgo, ChronoUnit.DAYS);
+        attempt.setUser(student);
+        attempt.setStartedAt(submittedAt.minus(10, ChronoUnit.MINUTES));
+        attempt.setSubmittedAt(submittedAt);
+    }
+
+    private void seedSession(AppUser user) {
+        if (!tokens.existsByUser(user)) {
+            AuthToken token = new AuthToken();
+            token.setToken(UUID.randomUUID().toString());
+            token.setUser(user);
+            tokens.save(token);
+        }
+    }
+
+    private QuizDtos.QuestionRequest question(QuestionType type, String text, int points, String explanation,
+                                             QuizDtos.AnswerRequest... answers) {
+        return new QuizDtos.QuestionRequest(type, text, Difficulty.MEDIUM, points, explanation, List.of(answers));
+    }
+
+    private QuizDtos.AnswerRequest answer(String text, boolean correct) {
+        return new QuizDtos.AnswerRequest(text, correct);
     }
 }

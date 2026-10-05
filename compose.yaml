@@ -2,7 +2,7 @@ services:
   mysql:
     image: mysql:8.4
     environment:
-      MYSQL_DATABASE: quicktest
+      MYSQL_DATABASE: test_ai
       MYSQL_USER: quicktest
       MYSQL_PASSWORD: quicktest
       MYSQL_ROOT_PASSWORD: local-root-password
