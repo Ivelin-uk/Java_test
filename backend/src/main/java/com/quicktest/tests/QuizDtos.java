@@ -28,8 +28,12 @@ public class QuizDtos {
             Difficulty difficulty,
             @Positive int points,
             String explanation,
-            @NotEmpty List<@Valid AnswerRequest> answers
-    ) {}
+            @NotEmpty List<@Valid AnswerRequest> answers,
+            String criteria,
+            Integer timeSeconds
+    ) {
+        public QuestionRequest(QuestionType type,String question,Difficulty difficulty,int points,String explanation,List<AnswerRequest> answers) {this(type,question,difficulty,points,explanation,answers,null,null);}
+    }
 
     public record AnswerRequest(@NotBlank String answer, boolean correct) {}
 

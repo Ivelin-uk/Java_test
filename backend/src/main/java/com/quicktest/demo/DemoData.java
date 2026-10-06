@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Component
+@org.springframework.core.annotation.Order(100)
 public class DemoData implements CommandLineRunner {
     private static final String SEED_KEY = "default-demo-v1";
     private final boolean seed;

@@ -64,6 +64,7 @@ public class AuthService {
         }
         String token = authorizationHeader.substring("Bearer ".length());
         return tokens.findById(token)
+                .filter(session -> session.getCreatedAt() != null && session.getCreatedAt().plus(java.time.Duration.ofHours(24)).isAfter(java.time.Instant.now()))
                 .map(AuthToken::getUser)
                 .filter(AppUser::isActive)
                 .orElseThrow(() -> new ResponseStatusException(UNAUTHORIZED, "Invalid token"));
@@ -74,6 +75,7 @@ public class AuthService {
         requireUser(authorization);
         tokens.deleteById(authorization.substring("Bearer ".length()));
     }
+    @Transactional public void logoutAll(String authorization) {tokens.deleteByUserId(requireUser(authorization).getId());}
 
     @Transactional
     public AuthResponse changePassword(AppUser user, ChangePasswordRequest request) {
@@ -108,6 +110,13 @@ public class AuthService {
         token.setUser(user);
         tokens.save(token);
         return new AuthResponse(token.getToken(), toResponse(user));
+    }
+
+    @Transactional
+    public AuthResponse externalLogin(long userId) {
+        AppUser user = users.findById(userId).filter(AppUser::isActive)
+                .orElseThrow(() -> new ResponseStatusException(UNAUTHORIZED, "Неактивен профил."));
+        return issueToken(user);
     }
 
     public record RegisterRequest(@NotBlank @Size(max = 120) String name, @Email @NotBlank @Size(max = 190) String email,

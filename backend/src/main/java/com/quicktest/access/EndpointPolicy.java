@@ -10,5 +10,5 @@ public @interface EndpointPolicy {
     boolean student() default false;
     boolean paid() default false;
 
-    enum Mode { MANAGED, PUBLIC, PROFILE, ADMIN }
+    enum Mode { MANAGED, PUBLIC, PROFILE, ADMIN, TENANT }
 }

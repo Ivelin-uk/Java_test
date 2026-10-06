@@ -48,15 +48,21 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
     throw new ApiError(message, response.status)
   }
   if (response.status === 204) return undefined as T
-  return response.json() as Promise<T>
+  const body = await response.text()
+  return (body ? JSON.parse(body) : undefined) as T
 }
 
 export const api = {
+  googleConfig: () => request<{ enabled: boolean; redirect: string }>('/api/auth/google/config'),
+  googleExchange: (token: string) => request<AuthResponse>('/api/auth/google/exchange', { method: 'POST', body: JSON.stringify({ token }) }),
+  recover: (email: string) => request<void>('/api/auth/recover', { method: 'POST', body: JSON.stringify({ email }) }),
+  completePasswordRecovery: (token: string, password: string) => request<void>('/api/auth/reset', { method: 'POST', body: JSON.stringify({ token, password }) }),
   register: (name: string, email: string, password: string) =>
     request<AuthResponse>('/api/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) }),
   login: (email: string, password: string) =>
     request<AuthResponse>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   me: (token: string) => request<User>('/api/auth/me', {}, token),
+  logoutAll: (token: string) => request<void>('/api/auth/logout-all', { method: 'POST' }, token),
   logout: (token: string) => request<void>('/api/auth/logout', { method: 'POST' }, token),
   changePassword: (token: string, currentPassword: string, newPassword: string) =>
     request<AuthResponse>('/api/auth/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }, token),

@@ -16,3 +16,5 @@ dist/
 # Local editor and system files
 .idea/
 .DS_Store
+.artifacts/
+.local/

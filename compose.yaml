@@ -7,7 +7,7 @@ services:
       MYSQL_PASSWORD: quicktest
       MYSQL_ROOT_PASSWORD: local-root-password
     ports:
-      - "8889:3306"
+      - "${COMPOSE_MYSQL_PORT:-8890}:3306"
     volumes:
       - quicktest_mysql_data:/var/lib/mysql
     healthcheck:
@@ -15,6 +15,48 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+  backend:
+    build: ./backend
+    ports:
+      - "${COMPOSE_API_PORT:-8082}:8080"
+    environment:
+      DATABASE_URL: jdbc:mysql://mysql:3306/test_ai?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      DATABASE_USERNAME: quicktest
+      DATABASE_PASSWORD: quicktest
+      FRONTEND_URL: http://localhost:${COMPOSE_FRONTEND_PORT:-5174}
+      BACKEND_URL: http://localhost:${COMPOSE_API_PORT:-8082}
+      DEMO_SEED: "true"
+      WORKSPACE_WORKERS: "true"
+      LEGACY_API_ENABLED: "false"
+      AI_PROVIDER: ${COMPOSE_AI_PROVIDER:-mock}
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b}
+      MAIL_ADAPTER: ${COMPOSE_MAIL_ADAPTER:-local}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      GOOGLE_ENABLED: ${GOOGLE_ENABLED:-false}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      BILLING_FIXTURES: ${BILLING_FIXTURES:-false}
+    depends_on:
+      mysql:
+        condition: service_healthy
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:${COMPOSE_API_PORT:-8082}
+    ports:
+      - "${COMPOSE_FRONTEND_PORT:-5174}:80"
+    depends_on:
+      - backend
+  mailpit:
+    image: axllent/mailpit:v1.31.4
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:${COMPOSE_SMTP_PORT:-1025}:1025"
 
 volumes:
   quicktest_mysql_data:

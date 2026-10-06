@@ -44,9 +44,11 @@ public class OllamaAiProvider implements AiProvider {
                     "type": "object", "additionalProperties": false,
                     "required": ["type", "question", "difficulty", "points", "explanation", "answers"],
                     "properties": {
-                      "type": {"type": "string", "enum": ["SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE", "SHORT_ANSWER"]},
+                      "type": {"type": "string", "enum": ["SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE", "SHORT_ANSWER", "OPEN_ANSWER"]},
                       "question": {"type": "string", "minLength": 1, "maxLength": 4000},
-                      "difficulty": {"type": "string", "enum": ["EASY", "MEDIUM", "HARD"]},
+                      "difficulty": {"type": "string", "enum": ["EASY", "MEDIUM", "HARD", "VERY_HARD"]},
+                      "criteria": {"type": "string", "maxLength": 4000},
+                      "timeSeconds": {"type": "integer", "minimum": 10, "maximum": 3600},
                       "points": {"type": "integer", "minimum": 1, "maximum": 5},
                       "explanation": {"type": "string", "minLength": 1, "maxLength": 4000},
                       "answers": {
@@ -95,7 +97,9 @@ public class OllamaAiProvider implements AiProvider {
             String settings = mapper.writeValueAsString(Map.of(
                     "topic", request.topic(), "language", request.language(),
                     "questionCount", request.questionCount(), "difficulty", request.difficulty(),
-                    "instructions", request.instructions() == null ? "" : request.instructions()
+                    "instructions", request.instructions() == null ? "" : request.instructions(),
+                    "questionTypes", request.questionTypes() == null ? List.of("SINGLE_CHOICE","MULTIPLE_CHOICE","TRUE_FALSE","SHORT_ANSWER") : request.questionTypes(),
+                    "difficultyCounts", request.difficultyCounts() == null ? Map.of() : request.difficultyCounts()
             ));
             int outputLimit = Math.max(3072, 512 + request.questionCount() * 384);
             int contextLimit = outputLimit <= 3072 ? 4096 : outputLimit <= 6144 ? 8192 : 16384;
@@ -116,6 +120,8 @@ public class OllamaAiProvider implements AiProvider {
                                     MULTIPLE_CHOICE needs at least two correct answers and one incorrect answer.
                                     TRUE_FALSE needs exactly two answers and one correct answer.
                                     SHORT_ANSWER needs at least one accepted correct answer.
+                                    OPEN_ANSWER needs a criteria rubric and one model answer marked correct.
+                                    Respect questionTypes and difficultyCounts exactly when supplied.
                                     Provide a short explanation and 1-5 points for every question.
                                     """),
                             Map.of("role", "user", "content", "Create exactly the requested number of questions. Settings:\n"
@@ -175,7 +181,6 @@ public class OllamaAiProvider implements AiProvider {
                     .allMatch(answer -> answers.add(answer.answer().trim().toLowerCase(Locale.ROOT)));
             if (!seenQuestions.add(question.question().trim().toLowerCase(Locale.ROOT)) || !distinctAnswers
                     || question.difficulty() == null || question.points() > 5 || correct == 0
-                    || question.type() == QuestionType.OPEN_ANSWER
                     || question.type() == QuestionType.SINGLE_CHOICE && (correct != 1 || question.answers().size() < 2)
                     || question.type() == QuestionType.TRUE_FALSE && (correct != 1 || question.answers().size() != 2)
                     || question.type() == QuestionType.MULTIPLE_CHOICE && (correct < 2 || correct == question.answers().size())) {

@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.Set;
 
 public class BearerTokenFilter extends OncePerRequestFilter {
-    private static final Set<String> RECOVERY_PATHS = Set.of("/api/auth/me", "/api/auth/password", "/api/auth/logout");
+    private static final Set<String> RECOVERY_PATHS = Set.of("/api/auth/me", "/api/auth/password", "/api/auth/logout", "/api/auth/logout-all");
     private final AuthService auth;
     private final ObjectMapper mapper;
 

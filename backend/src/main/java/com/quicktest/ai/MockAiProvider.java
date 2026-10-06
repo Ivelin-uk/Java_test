@@ -18,6 +18,10 @@ public class MockAiProvider implements AiProvider {
         int count = Math.max(1, Math.min(30, request.questionCount()));
         for (int i = 1; i <= count; i++) {
             QuestionType type = i % 3 == 0 ? QuestionType.TRUE_FALSE : i % 2 == 0 ? QuestionType.MULTIPLE_CHOICE : QuestionType.SINGLE_CHOICE;
+            if(request.questionTypes()!=null && !request.questionTypes().isEmpty()) type=QuestionType.valueOf(request.questionTypes().get((i-1)%request.questionTypes().size()));
+            List<String> difficulties=new ArrayList<>();
+            if(request.difficultyCounts()!=null) request.difficultyCounts().forEach((key,value)->{for(int n=0;n<value;n++) difficulties.add(key);});
+            String difficulty=difficulties.size()==count?difficulties.get(i-1):request.difficulty().equals("MIXED")?List.of("EASY","MEDIUM","HARD").get((i-1)%3):request.difficulty();
             List<QuizDtos.AnswerRequest> answers = switch (type) {
                 case TRUE_FALSE -> List.of(
                         new QuizDtos.AnswerRequest("Вярно", true),
@@ -39,7 +43,7 @@ public class MockAiProvider implements AiProvider {
             questions.add(new QuizDtos.QuestionRequest(
                     type,
                     "Въпрос " + i + " по тема: " + request.topic(),
-                    Difficulty.valueOf(request.difficulty().toUpperCase()),
+                    Difficulty.valueOf(difficulty.toUpperCase()),
                     1,
                     "Кратко обяснение за правилния отговор по темата " + request.topic() + ".",
                     answers

@@ -1,165 +1,132 @@
-# QuickTest MVP
+# ExamAI
 
-Java Spring Boot backend + React TypeScript frontend for an AI-assisted test management platform.
+Локална платформа за организационни тестове и обучение. Запазена е съществуващата архитектура: Java 21, Spring Boot 4, MySQL, React/TypeScript и Vite. Учебните операции използват tenant-scoped API `/api/v1`, а старият неорганизационен API е изключен.
 
-## Architecture
+Приложението е реализирано за локална проверка, не е обявено за готово производствено внедряване. Провереното, външните интеграции и оставащите ограничения са в [отчета](docs/ACCEPTANCE.md).
 
-- `backend/`: Spring Boot 4 REST API, Spring Security bearer authentication and method authorization, JPA/MySQL database, layered controllers/services/repositories.
-- Flyway applies versioned schema migrations automatically before the backend starts.
-- `frontend/`: Vite React SPA with administrator, teacher and student views, manual builder, local AI generation, deletion with confirmation, authenticated quiz flow and results.
-- AI is behind `AiProvider`; the default `OllamaAiProvider` makes HTTP requests to a local Qwen3 model, with no API key or per-request charge.
-- Credentials and external provider keys belong in environment variables. Do not commit real secrets.
+## Старт с MAMP
 
-## MVP Scope
+MySQL: `localhost:8889`, база `test_ai`, локален потребител/парола `quicktest`. Flyway прилага миграциите при стартиране. Съществуващите тестове и потребители не се изтриват; seed данните се записват веднъж и не възстановяват премахнати тестове.
 
-Implemented now:
-
-- Register/login with bcrypt passwords and bearer tokens.
-- Dashboard stats.
-- Manual test builder for single choice, multiple choice, true/false, short answer and open answer.
-- AI generate test draft through an abstraction layer.
-- Delete owned draft or published tests, including their questions, submitted answers, and results.
-- Publish with unique `/quiz/{code}` URL.
-- Signed-in participant test taking with attempts linked to the account.
-- Automatic scoring and Bulgarian 2-6 grade scale.
-- Creator results table.
-- AI usage tracking.
-- Three roles: `ADMIN`, `TEACHER`, `STUDENT`. New registrations are always students.
-- Administrator table of all controllers and mapped methods, with independent teacher/student access and subscription requirements.
-- Administrator user creation, role/email changes, activation/deactivation and temporary password resets; own password changes.
-- Paid subscription status, payment-record timestamp and expiry date, managed by administrators.
-- Administrator audit log and protection of the last active administrator.
-
-Next production steps:
-
-- Configure production database credentials and disable demo seeding.
-- Add refresh/expiry to auth tokens or use signed JWT/session cookies.
-- Add rate limiting, CSRF strategy for cookie auth, email verification and self-service recovery through verified email.
-- Add Groups, Assignments, Question Bank and Stripe.
-
-## Local Development
-
-AI model (one-time setup on this Mac):
-
+Терминал 1:
 ```bash
-brew install ollama
-brew services start ollama
-ollama pull qwen3:4b
-```
-
-The model download is approximately 2.5 GB. Ollama runs at `http://localhost:11434`; `brew services start ollama` keeps it running in the background. Model requests run locally on the computer. Configuration can be overridden with `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, and `OLLAMA_TIMEOUT_SECONDS` (default 180 seconds).
-
-The generation endpoint accepts 1-20 questions, a topic, language, instructions, and difficulty. It requests a structured JSON response, validates the answer choices, and stores the model's actual token counts with zero API cost. A stopped Ollama server or missing model produces an error that is shown in the application. Automated tests select `AI_PROVIDER=mock` and verify the real HTTP adapter with a stub server.
-
-Backend:
-
-Start MySQL in MAMP on port `8889`, then run:
-
-```bash
-cd backend
+cd /Users/ivelin/Desktop/UKTC/Java/backend
 ./gradlew bootRun
 ```
 
-The default local connection is `jdbc:mysql://localhost:8889/test_ai` with username and password `quicktest`. Override it through `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD`.
+Терминал 2:
+```bash
+cd /Users/ivelin/Desktop/UKTC/Java/frontend
+npm ci
+npm run dev -- --host 127.0.0.1
+```
 
-On startup, the backend creates `test_ai` if the MySQL user has permission, applies migrations from `backend/src/main/resources/db/migration`, and validates the JPA mappings. Flyway records applied migrations in `flyway_schema_history`; subsequent starts only apply new migrations.
+Frontend: **http://localhost:5173**. Backend: **http://localhost:8080**.
+Ако портът е зает, първо проверете съществуващото приложение. Не стартирайте две backend инстанции върху една и съща локална база без необходимост.
 
-Create the application user and grant access once as a MySQL administrator on port `8889`:
+Нужни са Java 21 и Node.js 24 LTS или съвместима по-нова версия. Gradle wrapper и npm lock файлът са в хранилището. За друга база задайте `DATABASE_URL`, `DATABASE_USERNAME`, `DATABASE_PASSWORD` в средата на backend процеса. `.env.example` съдържа само локални примерни настройки. Spring Boot не зарежда автоматично коренния `.env`; експортирайте нужните променливи преди старт. Vite чете `frontend/.env` или експортирания `VITE_API_URL`.
 
+При нужда администраторът на локалния MySQL изпълнява:
 ```sql
+CREATE DATABASE IF NOT EXISTS test_ai CHARACTER SET utf8mb4;
 CREATE USER IF NOT EXISTS 'quicktest'@'localhost' IDENTIFIED BY 'quicktest';
 GRANT ALL PRIVILEGES ON test_ai.* TO 'quicktest'@'localhost';
 ```
 
-Alternatively, run `docker compose up -d mysql` from the project root to provision MySQL and the application user. Compose also exposes MySQL on host port `8889`, so stop MAMP MySQL before using that service. The Compose database name is `test_ai`. An existing Docker volume keeps its original databases and grants; for an older volume, create `test_ai` and grant `quicktest` access as the MySQL administrator before starting the backend.
+MAMP 5.7 е проверен локално, но Hibernate предупреждава, че тази версия не е поддържана. За нова среда е предвиден MySQL 8.4.
 
-Frontend:
+## Локални Акаунти
+
+Всички изброени демо акаунти са с парола **password123**. Това не са производствени пароли.
+
+| Имейл | Роля / организация |
+|---|---|
+| admin@quicktest.local | Администратор на платформата, без автоматично членство |
+| orgadmin@examai.local | Администратор и учител, Училище А |
+| teacher@quicktest.local | Учител, Училище А |
+| demo@quicktest.local | Учител, Училище А |
+| student@quicktest.local | Ученик, Училище А |
+| teacher2@examai.local | Администратор и учител, Университет Б |
+| student2@examai.local | Студент, Университет Б |
+
+Примерните възлагания използват кодове `EXAM2345` и `UNIV2345`. Ако код е сменен/отменен или опитите са изразходвани, учителят управлява нов код или индивидуално разрешение с причина. Рестартът не възстановява квоти и срокове. Организациите имат първоначален 14-дневен пробен период. Цените на Starter, School и University са обозначени като демонстрационни.
+
+Платформеният администратор управлява технически профили, организации и планове. Учебно съдържание се чете само след одобрена от организацията временна поддръжка; четенията се одитират. Членствата поддържат повече от една роля и повече от една организация. Таблицата с методи е в организационните настройки и може да ограничава разрешените действия, без да отменя принадлежността, собствеността и изпитните правила.
+
+## Основен Поток
+
+1. Организационният администратор добавя членове чрез еднократни покани; обучаемият потвърждава имейла си.
+2. Учителят създава групи, чернова ръчно, от банка с въпроси или чрез AI. Публикува неизменяема версия.
+3. Възлага версия на групи/индивидуални получатели, задава срок и опити. Кодът се показва веднъж; изрично може да го изпрати чрез чат или имейл.
+4. Обучаемият влиза със своя профил, въвежда код и разрешава цял екран. Всеки въпрос има сървърен срок. Следващият се отваря едва след готовност.
+5. Учителят проверява свободните отговори, запазва точките и отделно публикува резултат. Корекциите създават нови ревизии и известия.
+6. Изтекъл абонамент не пречи на приключване, проверка, история и организационен експорт.
+
+При строг режим излизане от цял екран или скриване на активния въпрос носи 0 точки; само blur не санкционира. Браузърът не може да гарантира липса на преписване или да блокира външни приложения. Мобилният строг режим е изключен по подразбиране; използвайте индивидуално одитирано изключение или го включете само след реална проверка на поддържаните устройства.
+
+## AI
+
+`AI_PROVIDER=ollama` използва локалния безплатен модел, без външен API ключ:
+```bash
+brew services start ollama
+ollama pull qwen3:4b
+```
+
+`OLLAMA_BASE_URL=http://localhost:11434`, `OLLAMA_MODEL=qwen3:4b`, timeout 180 секунди. Моделът трябва да е зареден отделно. AI заданията са асинхронни, резервират квота атомарно, валидират структурирания резултат и не публикуват тест. Невалиден резултат/timeout освобождава резервацията; повторение е изрично и ограничено. Учителят преглежда и може да генерира отново избрани въпроси.
+
+`AI_PROVIDER=mock` е **фиктивен локален адаптер** за тестове, не реално AI. Използва се по подразбиране само в Compose. Ръчното създаване не зависи от AI. Не поставяйте лични ученически данни в учебния изходен текст.
+
+## Имейл, Google И Stripe
+
+`MAIL_ADAPTER=local` не изпраща външен имейл. Известията се виждат само от съответния профил в локалната тестова пощенска кутия. `smtp` използва конфигуриран SMTP, с allowlist за домейните на получателите. `sent` означава приемане от адаптера/SMTP, не доказано доставяне. Неизвестен резултат от изпращане се маркира `uncertain` и не се повтаря автоматично.
+
+Google OIDC, Stripe test и SMTP са конфигурируеми адаптери. Без ключове са явно неактивни. Настройките, callback адресите, подписаните webhook събития, платежният портал и безопасното изпитване са описани в [INTEGRATIONS.md](docs/INTEGRATIONS.md). Няма live плащания. Страницата след Checkout не активира абонамент.
+
+## Compose
 
 ```bash
-cd frontend
-npm install
-npm run dev
+docker compose up --build -d
+docker compose logs -f backend
 ```
 
-Open `http://localhost:5173`.
+Портовете са отделени от MAMP: frontend **http://localhost:5174**, backend **http://localhost:8082**, MySQL **8890**, Mailpit **http://localhost:8025**. По подразбиране AI е фиктивен, а mail адаптерът е локален. `COMPOSE_MAIL_ADAPTER=smtp` насочва тестовите писма към Mailpit; `COMPOSE_AI_PROVIDER=ollama` използва локалния Ollama на Mac. Спрете чрез `docker compose stop`. Не изтривайте database volume, за да поправяте миграции.
 
-Demo credentials are prefilled in the UI. Demo seeding is enabled by default:
+Compose е подготвен и YAML е проверен, но Docker не е наличен на тази машина: целият контейнерен старт трябва да се провери на среда с Docker.
 
-- Four accounts, all with password `password123`: `admin@quicktest.local` (`ADMIN`), `demo@quicktest.local` and `teacher@quicktest.local` (`TEACHER`), `student@quicktest.local` (`STUDENT`).
-- Demo subscriptions are paid for 30 days from initial seeding. Restarting does not extend them.
-- Four tests: three published tests and one draft, covering all five question types.
-- Six submitted attempts with scored answers and grades, two AI usage records, and a randomly generated session for each demo account.
-- Published quizzes: `/quiz/demojava`, `/quiz/demosql`, and `/quiz/democollections`; login is required.
-
-Demo fixtures are generated offline and recorded once in `demo_seed_history`. Repeated starts preserve edits and do not recreate deleted demo tests. Demo AI history is marked as `mock-ai-provider`; user-triggered generation uses the real configured model. Open answers are seeded as awaiting manual grading, matching the normal scoring workflow. Set `DEMO_SEED=false` in the backend's environment to disable demo data:
-
-```bash
-DEMO_SEED=false ./gradlew bootRun
-```
-
-## API Contracts
-
-### Administration and Access
-
-Open the app and sign in as `admin@quicktest.local` / `password123`. The administration view contains Users, Permissions and Audit tabs. Administrators have access to all tests and results, including tests owned by other users. Teachers can manage their own tests; students see published tests and their own results. Granting a student creator methods permits creating their own tests, but never grants access to another user's private tests.
-
-The Permissions table is generated from the actual Spring controller mappings. Each managed method has separate Access and Subscription checkboxes for teachers and students. Changes take effect on the next API request. The backend rejects methods without a declared authorization policy during startup. Administrator endpoints cannot be delegated, and login/profile/password endpoints cannot be disabled through this table.
-
-AI generation requires an active paid subscription for teachers by default. Other methods do not require one unless configured. Administrators bypass subscription requirements. A subscription is active only when marked paid and its expiry is today or later in `Europe/Sofia` (`SUBSCRIPTION_ZONE` override); the expiry date is inclusive. This records administrator-confirmed payments, not payment-provider verification or automatic billing.
-
-Changing a user's email/role/active status, resetting a password or changing one's own password revokes that user's existing tokens. Temporary passwords are securely random and shown only in the reset/create response. Users with a temporary password must change it before accessing any other protected feature. Existing passwords cannot be recovered; email recovery means an administrator assigns a replacement email. No emails are sent by this application.
-
-Migration V3 preserves existing tests/results and maps legacy `USER` accounts to teachers, the demo student to `STUDENT`, and the demo teacher to `TEACHER`. It adds the subscription fields, endpoint permissions and audit tables. Demo administrator creation has its own one-time seed marker. With `DEMO_SEED=false`, provision the first administrator through a trusted database administrator after registering a regular account; production must not use demo credentials.
-
-After a test has submitted attempts, metadata can still be edited, but question changes return 409 to preserve historical answers/results. Create a new test for changed questions.
-
-Administrator endpoints:
-
-- `GET /api/admin/users`
-- `POST /api/admin/users` (returns a temporary password)
-- `PUT /api/admin/users/{id}`
-- `POST /api/admin/users/{id}/reset-password`
-- `GET /api/admin/permissions`
-- `PUT /api/admin/permissions` (`changes`: array of `key`, `role`, `allowed`, `subscriptionRequired`)
-- `GET /api/admin/audit` (most recent 200 events)
-- `GET /api/student/tests`
-- `GET /api/student/results`
-- `GET /api/auth/me` (role, account/subscription status and allowed methods)
-- `POST /api/auth/password` (`currentPassword`, `newPassword`)
-- `POST /api/auth/logout`
-
-Core endpoints:
-
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `GET /api/dashboard`
-- `GET /api/tests`
-- `POST /api/tests`
-- `PUT /api/tests/{id}`
-- `DELETE /api/tests/{id}` (204 on success, 404 for missing or another user's test)
-- `POST /api/tests/{id}/publish`
-- `POST /api/ai/generate-test`
-- `GET /api/public/tests/{code}`
-- `POST /api/public/tests/{code}/attempts`
-- `GET /api/tests/results`
-
-All API endpoints except login and registration require:
-
-```http
-Authorization: Bearer <token>
-```
-
-## Verification
+## Тестове
 
 ```bash
 cd backend
 ./gradlew test
 ```
 
+Изолиран MySQL тест, никога върху `test_ai`:
+```bash
+EXAMAI_TEST_DATABASE_URL='jdbc:mysql://localhost:8889/examai_verification?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC' \
+EXAMAI_TEST_DATABASE_USERNAME=root EXAMAI_TEST_DATABASE_PASSWORD=root \
+./gradlew test --tests com.quicktest.WorkspaceTests --rerun-tasks
+```
+
+Създайте предварително отделната празна схема с локалния DB администратор. Тестът отказва URL към `test_ai`. Тестовите потребители са само в домейна `example.test`.
+
 ```bash
 cd frontend
 npm run build
 npm run lint
+npm run test:e2e
+E2E_HEADED=true npm run test:e2e
 ```
 
-Backend tests cover role injection, method permissions, immutable admin policies, session revocation, forced password changes, email recovery, paid/expired subscriptions, last-administrator protection, cross-owner administration and student data isolation. Tests use an H2 database and mock AI; they do not change the local MySQL data or call the model.
+Browser тестът създава отделно маркирани E2E профили и организации в конфигурирания локален backend, без да променя съществуващите тестове. Използва Chrome на Mac или `CHROME_PATH`. За друга среда задайте `E2E_API_URL` и `E2E_FRONTEND_URL`. Артефактите са в `.artifacts/`, извън git. Headed автоматизацията не заменя цялата ръчна cross-browser проверка.
+
+Натоварване: същата MySQL тестова настройка с `EXAMAI_LOAD_TEST=true` и `--tests com.quicktest.WorkspaceLoadTests`. Измерването използва реални HTTP state/answer операции с 200 едновременни ученици; външните AI/SMTP заявки са изключени. Средата и измерените p95 са в отчета.
+
+## Данни И Експлоатация
+
+[Модел и архитектура](docs/DATA_MODEL.md) · [API договор](docs/API.md) · [Проверки и ограничения](docs/ACCEPTANCE.md) · [Backup и среди](docs/OPERATIONS.md).
+
+UTC се записва в базата; интерфейсът е на български. PNG/JPEG изображенията са частни, с ограничения за размер/пиксели, декодиране и повторно кодиране, организационна квота и проверка на всеки достъп. Ученикът получава изображение само за отворения въпрос или разрешен публикуван преглед.
+
+Изчистване по политика е изрично, след организационно одобрение, преглед, причина и повторно удостоверяване. Изтрива съдържанието/резултатите на стари приключили опити и пази минимален запис за номера и лимита. Не е цялостно анонимизиране на глобален профил. Направете резервно копие преди операцията.
+
+За production са нужни отделна база и тайни, HTTPS, `DEMO_SEED=false`, `LEGACY_API_ENABLED=false`, реална поща, одобрени политики и външни проверки. Профилът `production` отказва опасни демо настройки. Не публикувайте локалните демо акаунти.

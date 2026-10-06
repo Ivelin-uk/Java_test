@@ -38,6 +38,7 @@ public class PermissionAccess {
     }
 
     public Grant permission(EndpointCatalog.Endpoint endpoint, Role role) {
+        if (endpoint.mode() == EndpointPolicy.Mode.TENANT) return new Grant(false, false);
         if (role == Role.ADMIN) return new Grant(true, false);
         if (endpoint.mode() != EndpointPolicy.Mode.MANAGED)
             return new Grant(endpoint.mode() != EndpointPolicy.Mode.ADMIN, false);
@@ -64,6 +65,7 @@ public class PermissionAccess {
     }
 
     private Grant permission(EndpointCatalog.Endpoint endpoint, Role role, Map<String, EndpointPermission> grants) {
+        if (endpoint.mode() == EndpointPolicy.Mode.TENANT) return new Grant(false, false);
         if (role == Role.ADMIN) return new Grant(true, false);
         if (endpoint.mode() != EndpointPolicy.Mode.MANAGED) return new Grant(endpoint.mode() != EndpointPolicy.Mode.ADMIN, false);
         EndpointPermission item = grants.get(endpoint.key());

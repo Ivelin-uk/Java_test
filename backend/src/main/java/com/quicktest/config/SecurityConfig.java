@@ -43,7 +43,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.FORWARD).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/register").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/register", "/api/auth/recover", "/api/auth/reset").permitAll()
+                        .requestMatchers("/api/auth/google/config", "/api/auth/google/redirect", "/api/auth/google/exchange", "/api/v1/billing/webhook", "/ws/chat").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().denyAll())
                 .build();
@@ -55,12 +56,12 @@ public class SecurityConfig {
     }
 
     @Bean
-    WebMvcConfigurer corsConfigurer() {
+    WebMvcConfigurer corsConfigurer(@org.springframework.beans.factory.annotation.Value("${app.frontend-url}") String frontend) {
         return new WebMvcConfigurer() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/api/**")
-                        .allowedOrigins("http://localhost:5173", "http://127.0.0.1:5173")
+                        .allowedOrigins(frontend, "http://127.0.0.1:5173")
                         .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                         .allowedHeaders("*");
             }
