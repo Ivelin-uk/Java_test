@@ -1,6 +1,7 @@
 package com.quicktest.auth;
 
 public enum Role {
-    USER,
-    ADMIN
+    ADMIN,
+    TEACHER,
+    STUDENT
 }

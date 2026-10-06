@@ -60,12 +60,16 @@ class DemoDataTests {
     @Test
     void startupMigratesAndPopulatesEveryTable() {
         assertEquals(Map.of(
-                "users", 3L, "tests", 4L, "question", 14L, "answer", 37L,
-                "attempt", 6L, "attempt_answer", 24L, "ai_usage", 2L, "auth_token", 3L
+                "users", 4L, "tests", 4L, "question", 14L, "answer", 37L,
+                "attempt", 6L, "attempt_answer", 24L, "ai_usage", 2L, "auth_token", 4L
         ), rowCounts());
-        assertEquals(2, flyway.info().applied().length);
-        assertEquals("2", flyway.info().current().getVersion().toString());
-        assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM demo_seed_history", Long.class));
+        assertEquals(3, flyway.info().applied().length);
+        assertEquals("3", flyway.info().current().getVersion().toString());
+        assertEquals(2L, jdbc.queryForObject("SELECT COUNT(*) FROM demo_seed_history", Long.class));
+        assertTrue(jdbc.queryForObject("SELECT COUNT(*) FROM endpoint_permission", Long.class) > 0);
+        assertEquals("ADMIN", users.findByEmailIgnoreCase("admin@quicktest.local").orElseThrow().getRole().name());
+        assertEquals("TEACHER", users.findByEmailIgnoreCase("teacher@quicktest.local").orElseThrow().getRole().name());
+        assertEquals("STUDENT", users.findByEmailIgnoreCase("student@quicktest.local").orElseThrow().getRole().name());
         assertEquals(0, flyway.migrate().migrationsExecuted);
 
         for (String email : List.of("demo@quicktest.local", "teacher@quicktest.local", "student@quicktest.local")) {

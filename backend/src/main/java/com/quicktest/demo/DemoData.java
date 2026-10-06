@@ -18,6 +18,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.math.BigDecimal;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -54,12 +56,23 @@ public class DemoData implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) {
-        if (!seed || jdbc.queryForObject("SELECT COUNT(*) FROM demo_seed_history WHERE seed_key = ?", Long.class, SEED_KEY) > 0) {
+        if (!seed) return;
+        if (jdbc.queryForObject("SELECT COUNT(*) FROM demo_seed_history WHERE seed_key = ?", Long.class, "admin-roles-demo-v1") == 0) {
+            if (users.findByEmailIgnoreCase("admin@quicktest.local").isEmpty()) {
+                seedSession(seedUser("admin@quicktest.local", "Demo Administrator", Role.ADMIN));
+            }
+            for (String email : List.of("demo@quicktest.local", "teacher@quicktest.local", "student@quicktest.local")) {
+                AppUser user = users.findByEmailIgnoreCase(email).orElse(null);
+                if (user != null) markDemoSubscription(user);
+            }
+            jdbc.update("INSERT INTO demo_seed_history (seed_key, created_at) VALUES (?, CURRENT_TIMESTAMP)", "admin-roles-demo-v1");
+        }
+        if (jdbc.queryForObject("SELECT COUNT(*) FROM demo_seed_history WHERE seed_key = ?", Long.class, SEED_KEY) > 0) {
             return;
         }
-        AppUser creator = seedUser("demo@quicktest.local", "Demo Creator", Role.USER);
-        AppUser teacher = seedUser("teacher@quicktest.local", "Demo Teacher", Role.ADMIN);
-        AppUser student = seedUser("student@quicktest.local", "Demo Student", Role.USER);
+        AppUser creator = seedUser("demo@quicktest.local", "Demo Creator", Role.TEACHER);
+        AppUser teacher = seedUser("teacher@quicktest.local", "Demo Teacher", Role.TEACHER);
+        AppUser student = seedUser("student@quicktest.local", "Demo Student", Role.STUDENT);
 
         QuizTest javaTest = seedTest(creator, "Java OOP Basics", "demojava", true, List.of(
                 question(QuestionType.SINGLE_CHOICE, "Кой принцип скрива вътрешното състояние на обект?", 2,
@@ -113,8 +126,15 @@ public class DemoData implements CommandLineRunner {
             user.setRole(role);
             user.setEmailVerifiedAt(Instant.now());
             user.setPasswordHash(passwordEncoder.encode("password123"));
+            markDemoSubscription(user);
             return users.save(user);
         });
+    }
+
+    private void markDemoSubscription(AppUser user) {
+        user.setSubscriptionPaid(true);
+        user.setSubscriptionPaidAt(Instant.now());
+        user.setSubscriptionPaidUntil(LocalDate.now(ZoneId.of("Europe/Sofia")).plusDays(30));
     }
 
     private QuizTest seedTest(AppUser owner, String title, String code, boolean published,

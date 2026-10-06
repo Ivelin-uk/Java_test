@@ -1,6 +1,8 @@
 package com.quicktest.ai;
 
 import com.quicktest.auth.AuthService;
+import com.quicktest.access.EndpointPolicy;
+import org.springframework.security.access.prepost.PreAuthorize;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,7 +18,9 @@ public class AiController {
     }
 
     @PostMapping("/generate-test")
-    AiService.AiGeneratedTestResponse generateTest(@RequestHeader("Authorization") String authorization, @Valid @RequestBody AiService.AiGenerateTestRequest request) {
+    @EndpointPolicy(paid = true)
+    @PreAuthorize("@permissions.check(authentication, 'AiController.generateTest')")
+    public AiService.AiGeneratedTestResponse generateTest(@RequestHeader("Authorization") String authorization, @Valid @RequestBody AiService.AiGenerateTestRequest request) {
         return aiService.generateTest(authService.requireUser(authorization), request);
     }
 }

@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.Instant;
+import java.time.LocalDate;
 
 @Entity
 @Getter
@@ -28,7 +29,13 @@ public class AppUser {
     private String passwordHash;
 
     @Enumerated(EnumType.STRING)
-    private Role role = Role.USER;
+    private Role role = Role.STUDENT;
+
+    private boolean active = true;
+    private boolean passwordChangeRequired;
+    private boolean subscriptionPaid;
+    private LocalDate subscriptionPaidUntil;
+    private Instant subscriptionPaidAt;
 
     private Instant emailVerifiedAt;
     private Instant createdAt = Instant.now();

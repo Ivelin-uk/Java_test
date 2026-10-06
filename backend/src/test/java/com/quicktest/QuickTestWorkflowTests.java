@@ -35,7 +35,7 @@ class QuickTestWorkflowTests {
     JdbcTemplate jdbc;
 
     @Test
-    void creatorCanPublishAndGuestCanSubmit() throws Exception {
+    void creatorCanPublishAndAuthenticatedParticipantCanSubmit() throws Exception {
         String token = register("owner@example.com");
 
         QuizDtos.TestRequest request = new QuizDtos.TestRequest(
@@ -67,13 +67,13 @@ class QuickTestWorkflowTests {
         JsonNode published = postJson("/api/tests/" + testId + "/publish", "", token);
         String code = published.get("publicCode").asText();
 
-        mvc.perform(get("/api/public/tests/" + code)).andExpect(status().isOk());
+        mvc.perform(get("/api/public/tests/" + code).header("Authorization", "Bearer " + token)).andExpect(status().isOk());
 
         JsonNode result = postJson("/api/public/tests/" + code + "/attempts", new QuizDtos.SubmitAttemptRequest(
                 "Guest Student",
                 "student@example.com",
                 List.of(new QuizDtos.SubmittedAnswer(created.get("questions").get(0).get("id").asLong(), List.of(answerId), null))
-        ), null);
+        ), token);
 
         assertEquals(1, result.get("score").asInt());
         assertEquals(100.0, result.get("percentage").asDouble());
@@ -109,17 +109,17 @@ class QuickTestWorkflowTests {
         String code = postJson("/api/tests/" + id + "/publish", "", owner).get("publicCode").asText();
         JsonNode result = postJson("/api/public/tests/" + code + "/attempts", new QuizDtos.SubmitAttemptRequest(
                 "Guest", "guest@example.com", List.of(new QuizDtos.SubmittedAnswer(questionId, List.of(answerId), null))
-        ), null);
+        ), owner);
         long attemptId = result.get("attemptId").asLong();
 
         mvc.perform(delete("/api/tests/" + id)).andExpect(status().isUnauthorized());
         mvc.perform(delete("/api/tests/" + id).header("Authorization", "Bearer " + other)).andExpect(status().isNotFound());
-        mvc.perform(get("/api/public/tests/" + code)).andExpect(status().isOk());
+        mvc.perform(get("/api/public/tests/" + code).header("Authorization", "Bearer " + owner)).andExpect(status().isOk());
         assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM attempt WHERE id = ?", Long.class, attemptId));
 
         mvc.perform(delete("/api/tests/" + id).header("Authorization", "Bearer " + owner)).andExpect(status().isNoContent());
         mvc.perform(get("/api/tests/" + id).header("Authorization", "Bearer " + owner)).andExpect(status().isNotFound());
-        mvc.perform(get("/api/public/tests/" + code)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/public/tests/" + code).header("Authorization", "Bearer " + owner)).andExpect(status().isNotFound());
         mvc.perform(delete("/api/tests/" + id).header("Authorization", "Bearer " + owner)).andExpect(status().isNotFound());
         assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM question WHERE id = ?", Long.class, questionId));
         assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM answer WHERE question_id = ?", Long.class, questionId));
@@ -154,6 +154,8 @@ class QuickTestWorkflowTests {
 
     private String register(String email) throws Exception {
         JsonNode auth = postJson("/api/auth/register", new AuthService.RegisterRequest("Owner", email, "password123"), null);
+        jdbc.update("UPDATE users SET role = 'TEACHER', subscription_paid = TRUE, subscription_paid_until = ? WHERE email = ?",
+                java.sql.Date.valueOf(java.time.LocalDate.now().plusDays(30)), email);
         return auth.get("token").asText();
     }
 

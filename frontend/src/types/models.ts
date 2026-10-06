@@ -2,10 +2,24 @@ export type QuestionType = 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'TRUE_FALSE' | 
 export type Difficulty = 'EASY' | 'MEDIUM' | 'HARD' | 'MIXED'
 export type TestStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'
 
-export type AuthResponse = {
-  token: string
-  user: { id: number; name: string; email: string; role: string }
+export type Role = 'ADMIN' | 'TEACHER' | 'STUDENT'
+export type Subscription = { paid: boolean; paidUntil: string | null; paidAt: string | null; active: boolean }
+export type User = {
+  id: number; name: string; email: string; role: Role; active: boolean; passwordChangeRequired: boolean
+  subscription: Subscription; allowedMethods: string[]; subscriptionMethods: string[]
 }
+export type AuthResponse = { token: string; user: User }
+export type UserEdit = {
+  name: string; email: string; role: Role; active: boolean; subscriptionPaid: boolean; subscriptionPaidUntil: string | null
+}
+export type PasswordResponse = { user: User; temporaryPassword: string }
+export type Grant = { allowed: boolean; subscriptionRequired: boolean }
+export type PermissionRow = {
+  key: string; controller: string; method: string; httpMethods: string[]; paths: string[]
+  mode: 'MANAGED' | 'PUBLIC' | 'PROFILE' | 'ADMIN'; teacher: Grant; student: Grant
+}
+export type PermissionChange = Grant & { key: string; role: 'TEACHER' | 'STUDENT' }
+export type AuditEntry = { id: number; actorEmail: string; targetEmail: string | null; action: string; details: string; createdAt: string }
 
 export type AnswerInput = { answer: string; correct: boolean }
 export type QuestionInput = {

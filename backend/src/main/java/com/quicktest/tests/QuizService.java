@@ -1,6 +1,7 @@
 package com.quicktest.tests;
 
 import com.quicktest.auth.AppUser;
+import com.quicktest.auth.Role;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,7 +38,8 @@ public class QuizService {
 
     @Transactional(readOnly = true)
     public List<QuizDtos.TestSummary> list(AppUser owner) {
-        return tests.findByOwnerOrderByUpdatedAtDesc(owner).stream().map(this::toSummary).toList();
+        return (owner.getRole() == Role.ADMIN ? tests.findAllByOrderByUpdatedAtDesc() : tests.findByOwnerOrderByUpdatedAtDesc(owner))
+                .stream().map(this::toSummary).toList();
     }
 
     @Transactional(readOnly = true)
@@ -48,14 +50,18 @@ public class QuizService {
     @Transactional
     public QuizDtos.TestDetail update(AppUser owner, Long id, QuizDtos.TestRequest request) {
         QuizTest test = requireOwned(owner, id);
-        apply(test, request);
+        boolean submitted = attempts.existsByTestId(id);
+        if (submitted && !questionRequests(test).equals(request.questions()))
+            throw new ResponseStatusException(CONFLICT, "Тестът има предадени опити. Въпросите не могат да се променят; създайте нов тест.");
+        apply(test, request, !submitted);
+        tests.flush();
         return toDetail(test);
     }
 
     @Transactional
     public void delete(AppUser owner, Long id) {
         QuizTest test = requireOwned(owner, id);
-        attempts.deleteAll(attempts.findByTestIdAndTestOwnerIdOrderBySubmittedAtDesc(id, owner.getId()));
+        attempts.deleteAll(attempts.findByTestIdAndTestOwnerIdOrderBySubmittedAtDesc(id, test.getOwner().getId()));
         // Submitted answers reference questions, so remove attempts before the question cascade.
         attempts.flush();
         tests.delete(test);
@@ -82,6 +88,11 @@ public class QuizService {
 
     @Transactional
     public QuizDtos.AttemptResult submit(String code, QuizDtos.SubmitAttemptRequest request) {
+        return submit(code, request, null);
+    }
+
+    @Transactional
+    public QuizDtos.AttemptResult submit(String code, QuizDtos.SubmitAttemptRequest request, AppUser participant) {
         QuizTest test = tests.findByPublicCodeAndStatus(code, TestStatus.PUBLISHED)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Published test not found"));
 
@@ -90,8 +101,9 @@ public class QuizService {
 
         Attempt attempt = new Attempt();
         attempt.setTest(test);
-        attempt.setParticipantName(request.participantName());
-        attempt.setParticipantEmail(request.participantEmail());
+        attempt.setUser(participant);
+        attempt.setParticipantName(participant == null ? request.participantName() : participant.getName());
+        attempt.setParticipantEmail(participant == null ? request.participantEmail() : participant.getEmail());
 
         int score = 0;
         int maxScore = 0;
@@ -113,10 +125,22 @@ public class QuizService {
 
     @Transactional(readOnly = true)
     public List<QuizDtos.CreatorResult> results(AppUser owner, Long testId) {
-        List<Attempt> data = testId == null
+        List<Attempt> data = owner.getRole() == Role.ADMIN
+                ? (testId == null ? attempts.findAllByOrderBySubmittedAtDesc() : attempts.findByTestIdOrderBySubmittedAtDesc(testId))
+                : testId == null
                 ? attempts.findByTestOwnerIdOrderBySubmittedAtDesc(owner.getId())
                 : attempts.findByTestIdAndTestOwnerIdOrderBySubmittedAtDesc(testId, owner.getId());
         return data.stream().map(this::toCreatorResult).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<QuizDtos.TestSummary> catalog() {
+        return tests.findByStatusOrderByUpdatedAtDesc(TestStatus.PUBLISHED).stream().map(this::toSummary).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<QuizDtos.CreatorResult> myResults(AppUser user) {
+        return attempts.findByUserIdOrderBySubmittedAtDesc(user.getId()).stream().map(this::toCreatorResult).toList();
     }
 
     private AttemptAnswer scoreQuestion(Attempt attempt, Question question, QuizDtos.SubmittedAnswer submitted) {
@@ -162,6 +186,10 @@ public class QuizService {
     }
 
     private void apply(QuizTest test, QuizDtos.TestRequest request) {
+        apply(test, request, true);
+    }
+
+    private void apply(QuizTest test, QuizDtos.TestRequest request, boolean replaceQuestions) {
         test.setTitle(request.title());
         test.setDescription(Optional.ofNullable(request.description()).orElse(""));
         test.setLanguage(Optional.ofNullable(request.language()).orElse("Bulgarian"));
@@ -170,6 +198,7 @@ public class QuizService {
         test.setAnswerOrderRandom(request.answerOrderRandom());
         test.setShowResult(request.showResult());
         test.setShowAnswers(request.showAnswers());
+        if (!replaceQuestions) return;
         test.getQuestions().clear();
         int questionPosition = 0;
         for (QuizDtos.QuestionRequest questionRequest : request.questions()) {
@@ -194,6 +223,12 @@ public class QuizService {
         }
     }
 
+    private List<QuizDtos.QuestionRequest> questionRequests(QuizTest test) {
+        return test.getQuestions().stream().map(question -> new QuizDtos.QuestionRequest(question.getType(),
+                question.getQuestion(), question.getDifficulty(), question.getPoints(), question.getExplanation(),
+                question.getAnswers().stream().map(answer -> new QuizDtos.AnswerRequest(answer.getAnswer(), answer.isCorrect())).toList())).toList();
+    }
+
     private void validatePublishable(QuizTest test) {
         if (test.getQuestions().isEmpty()) {
             throw new ResponseStatusException(BAD_REQUEST, "A test needs at least one question");
@@ -206,7 +241,7 @@ public class QuizService {
     }
 
     private QuizTest requireOwned(AppUser owner, Long id) {
-        return tests.findByIdAndOwner(id, owner)
+        return (owner.getRole() == Role.ADMIN ? tests.findById(id) : tests.findByIdAndOwner(id, owner))
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Test not found"));
     }
 
