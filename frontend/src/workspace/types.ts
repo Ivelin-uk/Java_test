@@ -3,7 +3,7 @@ export interface Group { id: number; name: string; description: string; subject:
 export type QuestionType = 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'TRUE_FALSE' | 'SHORT_ANSWER' | 'OPEN_ANSWER'
 export interface Question { imageId?: number | null; type: QuestionType; text: string; difficulty: string; points: number; timeSeconds: number; options: { text: string; correct: boolean }[]; acceptedAnswers: string[]; caseInsensitive: boolean; collapseWhitespace: boolean; criteria: string; explanation: string }
 export interface Definition { title: string; description: string; subject: string; level: string; instructions: string; language: string; gradingScale: string; passThreshold: number; questions: Question[] }
-export interface Assessment { id: number; title: string; status: string; shared: boolean; owner_id: number; definition_json: string; updated_at: string }
+export interface Assessment { id: number; title: string; status: string; shared: boolean; owner_id: number; definition_json: string; updated_at: string; question_count: number; total_time_seconds: number }
 export interface Version { id: number; version_number: number; title: string; published_at: string }
 export interface Assignment { id: number; title: string; starts_at: string; ends_at: string; max_attempts: number; recipients?: number; canceled?: boolean; fullscreen_exempt?: boolean }
 export interface Attempt { id: number; assignment_id: number; attempt_number: number; status: string; student_name?: string; title: string; submitted_at: string | null }

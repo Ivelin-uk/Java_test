@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Plus, UserPlus, Trash2, FileUp, ArrowLeft, Save, Pencil } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
@@ -51,20 +51,46 @@ function GroupMembers({ api, group, back }: { api: WorkspaceApi; group: Group; b
   const directory = useRemote<Member[]>(api, '/members', [])
   const action = useAction()
   const teachers = useRemote<{ user_id: number; name: string }[]>(api, `/groups/${group.id}/teachers`, [])
-  const [coTeacher, setCoTeacher] = useState(''), [editing, setEditing] = useState(group)
-  const [user, setUser] = useState('')
+  const [editing, setEditing] = useState(group)
+  const [user, setUser] = useState<Member | null>(null)
   const [csv, setCsv] = useState('email\n')
   const [preview, setPreview] = useState<{ row: number; email: string; status: string; user_id?: number }[]>([])
   const [importReport, setImportReport] = useState<string[]>([])
-  return <section className="ws-section"><SectionHead title={group.name}><button className="icon-button" title="Към групите" onClick={back}><ArrowLeft size={18} /></button></SectionHead><Feedback error={members.error || directory.error || action.error} message={action.message} busy={action.busy} />
-    <form className="ws-inline-form" onSubmit={e => { e.preventDefault(); void action.run(async () => { await api.post(`/groups/${group.id}/members`, { userId: Number(user) }); await members.reload() }, 'Обучаемият е добавен.') }}><label>Обучаем<select required value={user} onChange={e => setUser(e.target.value)}><option value="">Избери обучаем</option>{directory.data.filter(m => m.status === 'active' && roles(m).includes('STUDENT')).map(m => <option value={m.user_id} key={m.user_id}>{m.name} · {m.email}</option>)}</select></label><button disabled={!user || action.busy}><UserPlus size={17} /> Добави</button></form>
+  return <section className="ws-section ws-group-members"><SectionHead title={group.name}><button className="icon-button" title="Към групите" onClick={back}><ArrowLeft size={18} /></button></SectionHead><Feedback error={members.error || directory.error || teachers.error || action.error} message={action.message} busy={action.busy} />
+    <form className="ws-inline-form" onSubmit={e => { e.preventDefault(); if (!user) return; void action.run(async () => { await api.post(`/groups/${group.id}/members`, { userId: user.user_id }); setUser(null); await members.reload() }, 'Ученикът е добавен в групата.') }}>
+      <UserPicker users={directory.data.filter(m => m.status === 'active' && roles(m).includes('STUDENT') && !roles(m).includes('TEACHER') && !members.data.some(member => member.active && member.user_id === m.user_id))} selected={user} select={setUser} disabled={action.busy || directory.loading || members.loading || teachers.loading} />
+      <button className="primary command-button" disabled={!user || action.busy}><UserPlus size={17} /> Добави</button>
+    </form>
     <div className="ws-table-wrap"><table className="ws-table"><thead><tr><th>Име</th><th>Имейл</th><th>Статус</th><th>Действие</th></tr></thead><tbody>{members.data.map(m => <tr key={m.user_id}><td>{m.name}</td><td>{m.email}</td><td>{m.active ? 'В групата' : 'Премахнат'}</td><td>{m.active && <button className="icon-button danger" title="Премахни от групата" onClick={() => void action.run(async () => { await api.remove(`/groups/${group.id}/members/${m.user_id}`); await members.reload() })}><Trash2 size={17} /></button>}</td></tr>)}</tbody></table></div>
-    <h3>Учители на групата</h3><div className="ws-actions">{teachers.data.map(t => <span key={t.user_id}>{t.name}<button className="icon-button danger" title="Премахни учителя" onClick={() => void action.run(async () => { await api.remove(`/groups/${group.id}/teachers/${t.user_id}`); await teachers.reload() })}><Trash2 size={15} /></button></span>)}</div><form className="ws-inline-form" onSubmit={e => { e.preventDefault(); void action.run(async () => { await api.post(`/groups/${group.id}/teachers`, { userId: Number(coTeacher) }); await teachers.reload() }) }}><label>Друг учител<select required value={coTeacher} onChange={e => setCoTeacher(e.target.value)}><option value="">Избери</option>{directory.data.filter(m => m.status === 'active' && roles(m).includes('TEACHER')).map(m => <option key={m.user_id} value={m.user_id}>{m.name}</option>)}</select></label><button disabled={action.busy || !coTeacher}><UserPlus size={17} /> Добави учител</button></form>
+    <h3>Учител на групата</h3><p>{teachers.data.map(t => t.name).join(' · ')}</p>
     <h3>Данни за групата</h3><form onSubmit={e => { e.preventDefault(); void action.run(() => api.put(`/groups/${group.id}`, { profile: { name: editing.name, subject: editing.subject, description: editing.description, schoolYear: editing.school_year, classLabel: editing.class_label }, status: editing.status }), 'Групата е обновена.') }}><div className="ws-form-grid">{([['name', 'Име'], ['subject', 'Дисциплина'], ['school_year', 'Учебна година'], ['class_label', 'Клас / курс'], ['description', 'Описание']] as const).map(([key, title]) => <label key={key}>{title}<input value={editing[key]} onChange={e => setEditing({ ...editing, [key]: e.target.value })} /></label>)}<label>Статус<select value={editing.status} onChange={e => setEditing({ ...editing, status: e.target.value })}><option value="active">Активна</option><option value="archived">Архивирана</option></select></label></div><button disabled={action.busy}><Save size={17} /> Запази</button></form>
     <GroupSummary api={api} group={editing} embedded />
     <h3>CSV импорт</h3><label>CSV с колона email<textarea value={csv} onChange={e => setCsv(e.target.value)} /></label><div className="ws-actions"><label className="ws-file"><FileUp size={17} /> Файл<input type="file" accept=".csv,text/csv" onChange={e => { const file = e.target.files?.[0]; if (file && file.size <= 200000) void file.text().then(setCsv) }} /></label><button onClick={() => void action.run(async () => setPreview(await api.post(`/groups/${group.id}/csv/preview`, { csv })))}>Преглед</button>{preview.length > 0 && <button disabled={action.busy} onClick={() => void action.run(async () => { const report: string[] = []; for (const row of preview) { if (row.status !== 'member') continue; try { if (row.user_id) await api.post(`/groups/${group.id}/members`, { userId: row.user_id }); } catch (cause) { report.push(`${row.email}: ${cause instanceof Error ? cause.message : 'Грешка'}`) } } setImportReport(report); setPreview([]); await members.reload() }, 'Импортът е обработен.')}>Потвърди валидните редове</button>}</div>
     {preview.length > 0 && <table className="ws-table"><thead><tr><th>Ред</th><th>Имейл</th><th>Статус</th></tr></thead><tbody>{preview.map(row => <tr key={row.row}><td>{row.row}</td><td>{row.email}</td><td>{{ invalid: 'Невалиден', duplicate: 'Дублиран', member: 'Регистриран обучаем', unregistered: 'Няма регистриран профил' }[row.status]}</td></tr>)}</tbody></table>}{importReport.length > 0 && <label>Отчет за импорта<textarea readOnly value={importReport.join('\n')} /></label>}
   </section>
+}
+
+function UserPicker({ users, selected, select, disabled }: { users: Member[]; selected: Member | null; select: (user: Member | null) => void; disabled: boolean }) {
+  const id = useId()
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const [index, setIndex] = useState(0)
+  const results = users.filter(user => `${user.name} ${user.email}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+  function choose(user: Member) { select(user); setQuery(''); setOpen(false); setIndex(0) }
+  return <div className="ws-user-picker" onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false) }}>
+    <label htmlFor={id}>Ученик</label>
+    <input id={id} role="combobox" autoComplete="off" aria-expanded={open} aria-controls={`${id}-results`} aria-autocomplete="list" aria-activedescendant={open && results[index] ? `${id}-option-${results[index].user_id}` : undefined} disabled={disabled} placeholder="Търси по име или имейл" value={selected ? `${selected.name} · ${selected.email}` : query}
+      onFocus={() => setOpen(true)} onChange={e => { select(null); setQuery(e.target.value); setIndex(0); setOpen(true) }}
+      onKeyDown={e => {
+        if (e.key === 'Escape') { e.preventDefault(); setOpen(false) }
+        else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setOpen(true); const next = Math.max(0, Math.min(results.length - 1, index + (e.key === 'ArrowDown' ? 1 : -1))); setIndex(next); document.getElementById(`${id}-option-${results[next]?.user_id}`)?.scrollIntoView({ block: 'nearest' }) }
+        else if (e.key === 'Enter' && open) { e.preventDefault(); if (results[index]) choose(results[index]) }
+      }} />
+    {open && !disabled && <div className="ws-user-options" id={`${id}-results`} role="listbox" aria-label="Регистрирани ученици">
+      {results.map((user, i) => <button type="button" role="option" aria-selected={i === index} id={`${id}-option-${user.user_id}`} key={user.user_id} onMouseDown={e => e.preventDefault()} onClick={() => choose(user)}><strong>{user.name}</strong><span>{user.email}</span><small>{roles(user).includes('TEACHER') ? 'Учител' : 'Ученик'}</small></button>)}
+      {!results.length && <p>Няма намерени ученици.</p>}
+    </div>}
+  </div>
 }
 
 type GroupSummaryData = { group: Group; teachers: { name: string }[]; assignments: { assignment_id: number; student_id: number; student_name: string; title: string; ends_at: string; attempts: { id: number; attempt_number: number; status: string; grade: string | null; outcome: string | null }[] }[] }

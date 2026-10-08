@@ -16,7 +16,12 @@ public class AssessmentService {
     private final PersonalWorkspace personal;
     public AssessmentService(WorkspaceStore db,WorkspaceAudit audit,Clock clock,PrivateImageService images,PersonalWorkspace personal) {this.db=db;this.audit=audit;this.clock=clock;this.images=images;this.personal=personal;}
     public List<Map<String,Object>> list(OrgAccess.Scope scope) {
-        return db.rows("SELECT id,title,status,shared,owner_id,updated_at FROM workspace_assessments WHERE (organization_id=? OR ?) AND (owner_id=? OR shared=TRUE) ORDER BY updated_at DESC",scope.organizationId(),scope.platform(),scope.userId());
+        return db.rows("SELECT id,title,status,shared,owner_id,updated_at,definition_json FROM workspace_assessments WHERE (organization_id=? OR ?) AND (owner_id=? OR shared=TRUE) ORDER BY updated_at DESC",scope.organizationId(),scope.platform(),scope.userId()).stream().map(row -> {
+            Definition definition=db.parse(row.remove("definition_json"),Definition.class);
+            row.put("question_count",definition.questions().size());
+            row.put("total_time_seconds",definition.questions().stream().mapToInt(Question::timeSeconds).sum());
+            return row;
+        }).toList();
     }
     public Map<String,Object> get(OrgAccess.Scope scope,long id,boolean edit) {
         var row=db.one("SELECT * FROM workspace_assessments WHERE organization_id=? AND id=?",scope.organizationId(),id);

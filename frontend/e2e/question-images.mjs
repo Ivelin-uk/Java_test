@@ -1,0 +1,70 @@
+import assert from 'node:assert/strict'
+import { mkdir } from 'node:fs/promises'
+import { chromium } from 'playwright'
+
+const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173'
+const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
+const response = await fetch(`${base}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Image Teacher', email: `images-${Date.now()}@example.test`, password: 'test-password-123', role: 'TEACHER' }) })
+assert.equal(response.status, 200)
+const auth = await response.json()
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined), headless: true })
+const artifacts = new URL('../../.artifacts/', import.meta.url)
+await mkdir(artifacts, { recursive: true })
+try {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+  await context.addInitScript(value => localStorage.setItem('quicktest.auth', JSON.stringify(value)), auth)
+  const page = await context.newPage()
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto(frontend)
+  await page.getByRole('button', { name: 'Тестове', exact: true }).click()
+  await page.getByRole('button', { name: 'Ръчен тест', exact: true }).click()
+  const title = `Image question ${Date.now()}`
+  await page.getByLabel('Заглавие', { exact: true }).fill(title)
+  await page.getByLabel('Текст', { exact: true }).fill('Какво се вижда на снимката?')
+  await page.getByLabel('Опция 1', { exact: true }).fill('Кръг')
+  await page.getByLabel('Опция 2', { exact: true }).fill('Квадрат')
+  const encoded = await page.evaluate(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 640; canvas.height = 400
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 320, 200)
+    ctx.fillStyle = '#23836b'; ctx.beginPath(); ctx.arc(160, 100, 65, 0, 2 * Math.PI); ctx.fill()
+    return canvas.toDataURL('image/png').split(',')[1]
+  })
+  const file = { name: 'circle.png', mimeType: 'image/png', buffer: Buffer.from(encoded, 'base64') }
+  const input = page.getByLabel('Снимка към условието', { exact: true })
+  await input.setInputFiles(file)
+  const image = page.locator('.ws-question-prompt img')
+  await image.waitFor()
+  await page.waitForFunction(() => document.querySelector('.ws-question-prompt img')?.naturalWidth === 640)
+  const bounds = await image.boundingBox()
+  assert.equal(bounds.width, 320)
+  assert.equal(bounds.height, 200)
+  await page.getByRole('button', { name: 'Смени снимката', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Премахни снимката', exact: true }).click()
+  assert.equal(await image.count(), 0)
+  await input.setInputFiles(file)
+  await image.waitFor()
+  await input.setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('invalid') })
+  await page.getByRole('alert').waitFor()
+  assert.equal(await image.count(), 1)
+  await input.setInputFiles(file)
+  await page.getByRole('button', { name: 'Запази теста', exact: true }).waitFor({ state: 'visible' })
+  await page.waitForFunction(() => !document.querySelector('.ws-editor')?.disabled)
+  await page.screenshot({ path: new URL('question-image-desktop.png', artifacts).pathname, fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  assert.equal((await image.boundingBox()).height, 200)
+  await page.screenshot({ path: new URL('question-image-mobile.png', artifacts).pathname, fullPage: true })
+  await page.getByRole('button', { name: 'Запази теста', exact: true }).click()
+  await page.getByRole('table', { name: 'Тестове', exact: true }).getByRole('button', { name: title, exact: true }).click()
+  await page.locator('.ws-test-preview img').waitFor()
+  await page.getByRole('region', { name: 'Избран тест' }).getByRole('button', { name: 'Редактирай теста', exact: true }).click()
+  await image.waitFor()
+  await page.waitForFunction(() => document.querySelector('.ws-question-prompt img')?.naturalWidth === 640)
+  assert.deepEqual(errors, [])
+  console.log('Passed: prompt image upload, preview, removal, same-file replacement, invalid file handling, persistence and desktop/mobile layout.')
+} finally {
+  await browser.close()
+}

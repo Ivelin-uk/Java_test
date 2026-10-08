@@ -162,9 +162,8 @@ public class OrganizationService {
         audit.write(org,scope.userId(),"group.deleted",group,Map.of("name",string(row,"name")));
     }
     @Transactional public void removeTeacher(OrgAccess.Scope scope,long group,long teacher) {
-        groupAccess(scope,group);db.one("SELECT id FROM learning_groups WHERE organization_id=? AND id=? FOR UPDATE",scope.organizationId(),group);
-        if(db.count("SELECT COUNT(*) FROM group_teachers WHERE organization_id=? AND group_id=?",scope.organizationId(),group)<=1) throw WorkspaceError.conflict("Нужен е поне един учител.");
-        db.update("DELETE FROM group_teachers WHERE organization_id=? AND group_id=? AND user_id=?",scope.organizationId(),group,teacher);audit.write(scope.organizationId(),scope.userId(),"group.teacher_removed",group,Map.of("teacher",teacher));
+        groupAccess(scope,group);
+        throw WorkspaceError.conflict("Групата има един учител, който не може да бъде премахнат.");
     }
     @Transactional
     public void addStudent(OrgAccess.Scope scope,long group,long student) {
@@ -189,9 +188,8 @@ public class OrganizationService {
     }
     @Transactional
     public void addTeacher(OrgAccess.Scope scope,long group,long teacher) {
-        groupAccess(scope,group); requireActiveMember(scope,teacher,"TEACHER");
-        if(db.count("SELECT COUNT(*) FROM group_teachers WHERE organization_id=? AND group_id=? AND user_id=?",scope.organizationId(),group,teacher)==0) db.update("INSERT INTO group_teachers(organization_id,group_id,user_id) VALUES(?,?,?)",scope.organizationId(),group,teacher);
-        audit.write(scope.organizationId(),scope.userId(),"group.teacher_added",group,Map.of("teacher",teacher));
+        groupAccess(scope,group);
+        throw WorkspaceError.conflict("Всяка група има само един учител. Могат да се добавят само ученици.");
     }
     public List<Map<String,Object>> csvPreview(OrgAccess.Scope scope,long group,String csv) {
         groupAccess(scope,group);

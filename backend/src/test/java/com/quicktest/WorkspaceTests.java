@@ -81,6 +81,25 @@ class WorkspaceTests {
         return new AssessmentService.Definition("Test","","","","Instructions","bg","bulgarian",new BigDecimal("50"),questions);
     }
     private AttemptService.StartRequest startRequest() {return new AttemptService.StartRequest(code,UUID.randomUUID().toString(),UUID.randomUUID().toString(),"a".repeat(43),true,true,true);}
+    @Test void groupsHaveOneTeacherAndOnlyAcceptStudents() {
+        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("One teacher","","","2026/2027","")),"id");
+        AppUser second=user(Role.TEACHER);
+        db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,second.getId(),"[\"TEACHER\"]",now);
+        assertThrows(WorkspaceError.class,()->organizations.addTeacher(teaching,group,second.getId()));
+        assertThrows(WorkspaceError.class,()->organizations.removeTeacher(teaching,group,teacher));
+        assertThrows(WorkspaceError.class,()->organizations.addStudent(teaching,group,second.getId()));
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class,()->db.update("INSERT INTO group_teachers(organization_id,group_id,user_id) VALUES(?,?,?)",org,group,second.getId()));
+        organizations.addStudent(teaching,group,student);
+        assertEquals(1,db.count("SELECT COUNT(*) FROM group_teachers WHERE group_id=?",group));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM group_members WHERE group_id=? AND user_id=? AND active=TRUE",group,student));
+    }
+    @Test void assessmentListIncludesQuestionCountAndTotalTime() {
+        var saved=assessments.save(teaching,null,definition(true));
+        var row=assessments.list(teaching).stream().filter(value->number(value,"id")==number(saved,"id")).findFirst().orElseThrow();
+        assertEquals(2,number(row,"question_count"));
+        assertEquals(90,number(row,"total_time_seconds"));
+        assertFalse(row.containsKey("definition_json"));
+    }
     private AttemptService.Session session(AttemptService.StartRequest r) {return new AttemptService.Session(r.sessionToken(),r.browserId(),authorization);}
     private Map<String,Object> start(AttemptService.StartRequest r) {return attempts.start(learning,assignment,r,authorization,"127.0.0.1");}
     @SuppressWarnings("unchecked") private Map<String,Object> question(Map<String,Object> state) {return (Map<String,Object>)state.get("question");}
