@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { api } from '../api/client'
 import type { AuthResponse } from '../types/models'
 import heroImage from '../assets/hero.png'
+import { ThemeToggle } from './ThemeToggle'
 
 export function AuthPanel({ onAuth }: { onAuth: (auth: AuthResponse) => void }) {
   const resetToken = new URLSearchParams(window.location.search).get('token')
@@ -43,6 +44,7 @@ export function AuthPanel({ onAuth }: { onAuth: (auth: AuthResponse) => void }) 
 
   return (
     <main className="auth-layout">
+      <div className="auth-theme-bar"><ThemeToggle /></div>
       <section className="auth-copy">
         <img src={heroImage} alt="" className="auth-image" />
         <h1>ExamAI</h1>

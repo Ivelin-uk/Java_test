@@ -1,0 +1,73 @@
+import assert from 'node:assert/strict'
+import { mkdir } from 'node:fs/promises'
+import { chromium } from 'playwright'
+
+const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173'
+const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined), headless: true })
+const artifacts = new URL('../../.artifacts/', import.meta.url)
+await mkdir(artifacts, { recursive: true })
+try {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, colorScheme: 'dark' })
+  const page = await context.newPage()
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto(frontend)
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark')
+  await page.getByRole('button', { name: 'Светла тема', exact: true }).click()
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'light')
+  await page.reload()
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'light')
+  await page.getByRole('button', { name: 'Тъмна тема', exact: true }).click()
+  await page.emulateMedia({ colorScheme: 'light' })
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark')
+  await page.screenshot({ path: new URL('theme-login-dark.png', artifacts).pathname })
+  const response = await fetch(`${base}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Theme Teacher', email: `theme-${Date.now()}@example.test`, password: 'test-password-123', role: 'TEACHER' }) })
+  assert.equal(response.status, 200)
+  const auth = await response.json()
+  await page.evaluate(auth => localStorage.setItem('quicktest.auth', JSON.stringify(auth)), auth)
+  await page.reload()
+  await page.getByRole('button', { name: 'Тестове', exact: true }).click()
+  await page.getByRole('button', { name: 'Ръчен тест', exact: true }).click()
+  await page.getByLabel('Текст', { exact: true }).fill('Коя тема предпочитате?')
+  await page.getByLabel('Опция 1', { exact: true }).fill('Светла')
+  await page.getByLabel('Опция 2', { exact: true }).fill('Тъмна')
+  for (const theme of ['dark', 'light']) {
+    if (await page.locator('html').getAttribute('data-theme') !== theme) await page.getByRole('button', { name: theme === 'dark' ? 'Тъмна тема' : 'Светла тема', exact: true }).click()
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await page.evaluate(() => { document.activeElement?.blur(); window.scrollTo({ top: 0, behavior: 'instant' }) })
+    const colors = await page.evaluate(() => ({ page: getComputedStyle(document.documentElement).backgroundColor, surface: getComputedStyle(document.querySelector('.ws-test-settings')).backgroundColor, text: getComputedStyle(document.querySelector('input')).color, input: getComputedStyle(document.querySelector('input')).backgroundColor }))
+    assert.notEqual(colors.page, colors.surface)
+    assert.notEqual(colors.text, colors.input)
+    const contrast = await page.evaluate(() => {
+      function luminance(color) { const rgb = color.match(/\d+/g).slice(0, 3).map(Number).map(v => { const n = v / 255; return n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4 }); return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722 }
+      const field = getComputedStyle(document.querySelector('input'))
+      const label = getComputedStyle(document.querySelector('.ws-test-settings label'))
+      const a = luminance(field.color), b = luminance(field.backgroundColor), c = luminance(label.color)
+      return Math.min((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05), (Math.max(c, b) + 0.05) / (Math.min(c, b) + 0.05))
+    })
+    assert.ok(contrast >= 4.5)
+    await page.screenshot({ path: new URL(`theme-editor-${theme}-desktop.png`, artifacts).pathname })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    await page.screenshot({ path: new URL(`theme-editor-${theme}-mobile.png`, artifacts).pathname })
+  }
+  await page.getByRole('button', { name: 'Запази теста', exact: true }).click()
+  const table = page.getByRole('table', { name: 'Тестове', exact: true })
+  const row = table.getByRole('row').filter({ has: page.getByRole('button', { name: 'Нов тест', exact: true }) })
+  await row.getByRole('button', { name: 'Изтрий теста', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Изтриване на тест' })
+  await dialog.waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Тъмна тема', exact: true }).click()
+  await row.getByRole('button', { name: 'Изтрий теста', exact: true }).click()
+  await dialog.waitFor()
+  assert.equal(await dialog.evaluate(e => getComputedStyle(e).backgroundColor), 'rgb(35, 39, 43)')
+  await page.screenshot({ path: new URL('theme-delete-dark-mobile.png', artifacts).pathname })
+  await page.keyboard.press('Escape')
+  await page.reload()
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark')
+  assert.deepEqual(errors, [])
+  console.log('Passed: system default, manual switching, persistence, editor/forms, dark modal and desktop/mobile layout.')
+} finally { await browser.close() }

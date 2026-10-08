@@ -1,0 +1,43 @@
+:root {
+  color-scheme: light;
+  --page: #f6f8fb;
+  --surface: #ffffff;
+  --text: #17202a;
+  --muted: #526174;
+  --border: #cbd7e0;
+  --hover-border: #6b9f8b;
+  --subtle: #edf1f5;
+  --hover: #f1f5f7;
+  --success-bg: #e3f1ea;
+  --success: #175e4b;
+  --link: #245dcc;
+  --primary: #2563eb;
+  --on-accent: #ffffff;
+  --danger: #b42318;
+  --danger-solid: #b42318;
+  --danger-bg: #fff1f0;
+  --warning: #a15c09;
+  --warning-bg: #fcf6e8;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #181b1e;
+  --surface: #23272b;
+  --text: #eef1f4;
+  --muted: #b3bdc7;
+  --border: #46515b;
+  --hover-border: #81bda2;
+  --subtle: #2c3237;
+  --hover: #30383e;
+  --success-bg: #213d33;
+  --success: #8ee1b8;
+  --link: #9bbcff;
+  --danger: #ffaaa3;
+  --danger-bg: #442728;
+  --warning: #f4c275;
+  --warning-bg: #3e3322;
+}
+.theme-toggle { flex: 0 0 38px; width: 38px; height: 38px; }
+.auth-theme-bar { position: absolute; top: 16px; right: 16px; }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 0.8; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }

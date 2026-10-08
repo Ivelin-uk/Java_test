@@ -17,6 +17,7 @@ import { ExamScreen } from './ExamScreen'
 import { WorkspaceProfile } from './AccountPanels'
 import { Empty, Feedback, SectionHead } from './ui'
 import './workspace.css'
+import { ThemeToggle } from '../components/ThemeToggle'
 
 type View = 'dashboard' | 'groups' | 'tests' | 'assignments' | 'grading' | 'learner' | 'profile' | 'admin'
 
@@ -36,7 +37,7 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
   if (auth.user.passwordChangeRequired) return <main className="app-shell"><h1>Смяна на временната парола</h1><ProfilePanel auth={auth} onAuth={onAuth} /></main>
   if (exam) return <ExamScreen key={exam.assignment} api={api} user={auth.user.id} assignment={exam.assignment} resume={exam.attempt} back={() => { setExam(null); setView('learner') }} />
   return <main className="ws-shell">
-    <header className="ws-topbar"><a className="ws-brand" href="/">ExamAI</a><div className="ws-account"><strong>{auth.user.name}</strong><span>{roleLabels[auth.user.role]}</span></div><button className="icon-button" title="Изход" aria-label="Изход" onClick={() => void logout()}><LogOut size={18} /></button></header>
+    <header className="ws-topbar"><a className="ws-brand" href="/">ExamAI</a><div className="ws-account"><strong>{auth.user.name}</strong><span>{roleLabels[auth.user.role]}</span></div><ThemeToggle /><button className="icon-button" title="Изход" aria-label="Изход" onClick={() => void logout()}><LogOut size={18} /></button></header>
     <nav className="ws-nav" aria-label="Основна навигация">{available.map(({ key, name, icon: Icon }) => <button key={key} className={actualView === key ? 'active' : ''} onClick={() => setView(key)}><Icon size={17} />{name}</button>)}</nav>
     <div className="ws-body">
       {actualView === 'dashboard' && <Dashboard api={api} teacher={teacher} />}

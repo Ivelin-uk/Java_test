@@ -11,7 +11,8 @@
     "test:e2e": "node e2e/workspace.mjs",
     "test:authoring": "node e2e/authoring.mjs",
     "test:groups": "node e2e/groups.mjs",
-    "test:library": "node e2e/test-library.mjs"
+    "test:library": "node e2e/test-library.mjs",
+    "test:themes": "node e2e/themes.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.52.0",
