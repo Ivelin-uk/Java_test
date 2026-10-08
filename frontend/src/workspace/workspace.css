@@ -26,6 +26,23 @@
 .ws-table th { font-size: 12px; font-weight: 600; color: #5a6a7a; background: #edf1f5; }
 .ws-table th, .ws-table td { padding: 13px 16px; border-bottom: 1px solid #e0e6eb; vertical-align: middle; overflow-wrap: anywhere; }
 .ws-table tr:hover td { background: #f1f5f7; }
+.ws-table .ws-selected-row td, .ws-table .ws-selected-row:hover td { background: #e3f1ea; }
+.ws-table .ws-selected-row td:first-child { box-shadow: inset 3px 0 #26765b; }
+.ws-selectable-row { cursor: pointer; }
+.ws-selectable-row[aria-disabled="true"] { cursor: wait; }
+.ws-selectable-row:focus-visible { outline: 2px solid #245dcc; outline-offset: -2px; }
+.ws-table[aria-label="Тестове"] { min-width: 800px; }
+.ws-table[aria-label="Тестове"] th:first-child { width: 40%; }
+.ws-table[aria-label="Тестове"] td:nth-child(2), .ws-table[aria-label="Тестове"] td:nth-child(3), .ws-table[aria-label="Тестове"] td:nth-child(4) { white-space: nowrap; }
+.ws-test-preview { display: grid; gap: 16px; border-top: 1px solid #c8dcd4; padding-top: 20px; }
+.ws-test-preview p { margin: 0; }
+.ws-preview-question { min-width: 260px; }
+.ws-preview-question > * + * { margin-top: 10px; }
+.ws-preview-prompt { font-weight: 600; }
+.ws-preview-options { display: grid; gap: 6px; padding-left: 20px; }
+.ws-preview-options li { overflow-wrap: anywhere; }
+.ws-correct-option { color: #175e4b; font-weight: 600; }
+.ws-correct-option svg { vertical-align: middle; margin-right: 5px; }
 .ws-text-button { border: none; padding: 0; min-height: 0; color: #245dcc; text-align: left; background: transparent; font-weight: 600; }
 .ws-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid #dbe2e9; border-bottom: 1px solid #dbe2e9; }
 .ws-metrics > div { display: grid; gap: 8px; padding: 24px; border-right: 1px solid #dbe2e9; }
