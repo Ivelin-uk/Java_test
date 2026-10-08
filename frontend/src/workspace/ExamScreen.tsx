@@ -8,7 +8,7 @@ import { date } from './types'
 import { Feedback } from './ui'
 
 function randomToken() { const bytes = crypto.getRandomValues(new Uint8Array(32)); return btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '') }
-export function ExamScreen({ api, organization, user, assignment, resume, back }: { api: WorkspaceApi; organization: number; user: number; assignment: number; resume?: number; back: () => void }) {
+export function ExamScreen({ api, user, assignment, resume, back }: { api: WorkspaceApi; user: number; assignment: number; resume?: number; back: () => void }) {
   const preflight = useRemote<Preflight | null>(api, `/assignments/${assignment}/preflight`, null)
   const container = useRef<HTMLDivElement>(null)
   const stateRef = useRef<ExamState | null>(null)
@@ -23,7 +23,7 @@ export function ExamScreen({ api, organization, user, assignment, resume, back }
   const [remaining, setRemaining] = useState(0)
   const [initialClock] = useState(() => ({ at: performance.now(), server: Date.now() }))
   const serverClock = useRef(initialClock)
-  const storageKey = `examai.exam.${organization}.${user}.${assignment}`
+  const storageKey = `examai.exam.${user}.${assignment}`
   const [session] = useState<ExamSession>(() => {
     if (!window.name.startsWith('examai-tab-')) window.name = `examai-tab-${crypto.randomUUID()}`
     const saved = sessionStorage.getItem(storageKey)

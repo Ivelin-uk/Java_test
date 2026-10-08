@@ -42,7 +42,6 @@ class WorkspaceTests {
     @Autowired AttemptService attempts;
     @Autowired GradingService grading;
     @Autowired IdentityWorkflow identity;
-    @Autowired ChatService chat;
     @Autowired WorkspaceAiService ai;
     @Autowired MockMvc mvc;
     @Autowired QuestionBankService bank;
@@ -91,6 +90,104 @@ class WorkspaceTests {
         mvc.perform(get("/api/tests").header("Authorization",authorization)).andExpect(status().isGone());
         assertThrows(WorkspaceError.class,()->assessments.get(new OrgAccess.Scope(other,teacher,Set.of("TEACHER")),1,false));
     }
+
+    @Test void teacherRegistrationWorksWithoutSchoolOrInvitation() throws Exception {
+        var response=mvc.perform(post("/api/auth/register").contentType("application/json")
+                .content(db.json(Map.of("name","Independent teacher","email",UUID.randomUUID()+"@example.test","password","password123","role","TEACHER"))))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var registered=db.object(response);
+        String bearer="Bearer "+registered.get("token");
+        mvc.perform(get("/api/v1/tests").header("Authorization",bearer)).andExpect(status().isOk());
+        mvc.perform(post("/api/v1/tests").header("Authorization",bearer).contentType("application/json").content(db.json(definition(false))))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/v1/members").header("Authorization",bearer)).andExpect(status().isOk());
+        mvc.perform(post("/api/v1/organizations").header("Authorization",bearer).contentType("application/json").content("{}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test void anyRegisteredStudentCanReceiveAnExistingTeachersTest() throws Exception {
+        var learner=user(Role.STUDENT);
+        String learnerToken="Bearer "+auth.login(new AuthService.LoginRequest(learner.getEmail(),"password123")).token();
+        String teacherToken="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        db.update("UPDATE organization_subscriptions SET paid_through=? WHERE organization_id=?",now,org);
+        var request=new AssignmentService.AssignmentRequest(version,List.of(),List.of(learner.getId()),now.minusSeconds(1),now.plusSeconds(3600),1,false,false,true);
+        var response=mvc.perform(post("/api/v1/assignments").header("Authorization",teacherToken).contentType("application/json").content(db.json(request)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var created=db.object(response);long id=number(created,"id");
+        mvc.perform(get("/api/v1/assignments").header("Authorization",learnerToken)).andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(id));
+        mvc.perform(get("/api/v1/assignments/"+id+"/preflight").header("Authorization",learnerToken)).andExpect(status().isOk());
+        var start=new AttemptService.StartRequest(string(created,"code"),UUID.randomUUID().toString(),UUID.randomUUID().toString(),"b".repeat(43),true,true,true);
+        mvc.perform(post("/api/v1/assignments/"+id+"/attempts").header("Authorization",learnerToken).contentType("application/json").content(db.json(start)))
+                .andExpect(status().isOk());
+        var stranger=user(Role.STUDENT);
+        String strangerToken="Bearer "+auth.login(new AuthService.LoginRequest(stranger.getEmail(),"password123")).token();
+        mvc.perform(get("/api/v1/assignments/"+id+"/preflight").header("Authorization",strangerToken)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/tests").header("Authorization",learnerToken)).andExpect(status().isForbidden());
+    }
+
+    @Test void existingPersonalContentIsVisibleWithoutASelectorAndRemainsPrivate() throws Exception {
+        String teacherToken="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        long test=number(db.one("SELECT assessment_id FROM assessment_versions WHERE id=?",version),"assessment_id");
+        mvc.perform(get("/api/v1/tests").header("Authorization",teacherToken)).andExpect(status().isOk()).andExpect(jsonPath("$[?(@.id == "+test+")]").isNotEmpty());
+        mvc.perform(get("/api/v1/tests/"+test).header("Authorization",teacherToken)).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/assignments").header("Authorization",authorization)).andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(assignment));
+        var stranger=user(Role.TEACHER);
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(stranger.getEmail(),"password123")).token();
+        mvc.perform(get("/api/v1/tests/"+test).header("Authorization",bearer)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/assignments/"+assignment+"/monitoring").header("Authorization",bearer)).andExpect(status().isForbidden());
+    }
+
+    @Test void newPersonalTestCanBeAssignedToAnExistingGroup() throws Exception {
+        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Existing group","","Java","2026","")),"id");
+        organizations.addStudent(teaching,group,student);
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        var created=db.object(mvc.perform(post("/api/v1/tests").header("Authorization",bearer).contentType("application/json").content(db.json(definition(false))))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        var published=db.object(mvc.perform(post("/api/v1/tests/"+number(created,"id")+"/publish").header("Authorization",bearer))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        var request=new AssignmentService.AssignmentRequest(number(published,"id"),List.of(group),List.of(),now.minusSeconds(1),now.plusSeconds(3600),1,false,false,true);
+        var assigned=db.object(mvc.perform(post("/api/v1/assignments").header("Authorization",bearer).contentType("application/json").content(db.json(request)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        mvc.perform(get("/api/v1/groups/"+group+"/summary").header("Authorization",bearer)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.assignments[0].assignment_id").value(number(assigned,"id")));
+        mvc.perform(get("/api/v1/groups/"+group+"/summary").header("Authorization",authorization)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.assignments[0].student_id").value(student));
+    }
+
+    @Test void sharedHistoricalTestCanBeCopiedAndNewImagesRemainPrivate() throws Exception {
+        long test=number(db.one("SELECT assessment_id FROM assessment_versions WHERE id=?",version),"assessment_id");
+        assessments.share(teaching,test,true);
+        var colleague=user(Role.TEACHER);
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(colleague.getEmail(),"password123")).token();
+        var copied=db.object(mvc.perform(post("/api/v1/tests/"+test+"/duplicate").header("Authorization",bearer))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        long copy=number(copied,"id");
+        var output=new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(2,2,java.awt.image.BufferedImage.TYPE_INT_RGB),"png",output);
+        var uploaded=db.object(mvc.perform(post("/api/v1/files").header("Authorization",bearer).contentType("application/json")
+                .content(db.json(new PrivateImageService.Upload("question",Base64.getEncoder().encodeToString(output.toByteArray())))))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        long image=number(uploaded,"id");var q=definition(false).questions().getFirst();
+        var question=new AssessmentService.Question(q.type(),q.text(),q.difficulty(),q.points(),q.timeSeconds(),q.options(),q.acceptedAnswers(),true,true,"","",image);
+        var changed=new AssessmentService.Definition("Private copy","","","","","bg","bulgarian",new BigDecimal("50"),List.of(question));
+        mvc.perform(put("/api/v1/tests/"+copy).header("Authorization",bearer).contentType("application/json").content(db.json(changed)))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/v1/files/"+image).header("Authorization",authorization)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/files/"+image).header("Authorization",bearer)).andExpect(status().isOk());
+    }
+
+    @Test void chatEndpointsAreRemovedForAllRoles() throws Exception {
+        for (Role role : Role.values()) {
+            var account = user(role);
+            String bearer = "Bearer " + auth.login(new AuthService.LoginRequest(account.getEmail(), "password123")).token();
+            for (String path : List.of("/api/v1/conversations", "/api/v1/conversations/1/messages"))
+                mvc.perform(get(path).header("Authorization", bearer).header("X-Organization-Id", org)).andExpect(status().isNotFound());
+            mvc.perform(get("/ws/chat").header("Authorization", bearer)).andExpect(status().isForbidden());
+            mvc.perform(post("/api/v1/conversations").header("Authorization", bearer)
+                    .header("X-Organization-Id", org).contentType("application/json").content("{}"))
+                    .andExpect(status().isNotFound());
+        }
+    }
     @Test void questionBankAndSupportAreScopedAndRevocable() {
         var item=(Map<?,?>)bank.save(teaching,new QuestionBankService.Item("Java",true,definition(false).questions().getFirst()));
         assertEquals(1,((List<?>)bank.list(teaching)).size());assertTrue(((List<?>)bank.list(new OrgAccess.Scope(other,teacher,Set.of("TEACHER")))).isEmpty());
@@ -114,7 +211,7 @@ class WorkspaceTests {
     @Test void approvedRetentionDeletesOldContentButNeverResetsAttemptLimits() {
         var r=startRequest();var state=start(r);long id=number(state,"id");var q=question(state);attempts.answer(learning,id,number(q,"id"),session(r),new AttemptService.AnswerRequest("retention-answer",string(q,"open_instance"),correct(q)));grading.finalizeResult(teaching,id,new GradingService.Finalize("retention-final","","",""),false);
         assertThrows(WorkspaceError.class,()->retention.preview(teaching));
-        controls.settings(teaching,new OrganizationControls.Settings(new OrganizationService.OrganizationRequest("Retention school","school","school@example.test","Europe/Sofia","Ученик"),false,30,true,"bulgarian",new BigDecimal("50")));
+        controls.settings(teaching,new OrganizationControls.Settings(new OrganizationService.OrganizationRequest("Retention school","school","school@example.test","Europe/Sofia","Ученик"),30,true,"bulgarian",new BigDecimal("50")));
         when(clock.instant()).thenReturn(now.plusSeconds(31*86400L));var request=new RetentionService.Request("retention-key-test","password123","Approved policy");retention.run(teaching,request);retention.run(teaching,request);
         assertEquals("redacted",string(db.one("SELECT status FROM exam_attempts WHERE id=?",id),"status"));assertEquals(0,db.count("SELECT COUNT(*) FROM attempt_questions WHERE attempt_id=?",id));assertEquals(0,db.count("SELECT COUNT(*) FROM result_revisions WHERE attempt_id=?",id));assertEquals(1,db.count("SELECT COUNT(*) FROM retention_runs WHERE organization_id=?",org));assertEquals(1,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=? AND student_id=?",assignment,student));
     }
@@ -123,14 +220,6 @@ class WorkspaceTests {
         permissions.update(teaching,new TenantPermissions.Change("OrganizationController.groups","STUDENT",false));
         mvc.perform(get("/api/v1/groups").header("Authorization",authorization).header("X-Organization-Id",org)).andExpect(status().isForbidden());
         assertThrows(WorkspaceError.class,()->permissions.update(teaching,new TenantPermissions.Change("AssessmentController.publish","STUDENT",true)));
-    }
-    @Test void chatModerationAndGroupMembershipChangeAreEffective() {
-        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Chat group","","Java","2026","12")),"id");organizations.addStudent(teaching,group,student);
-        long conversation=number(chat.create(teaching,new ChatService.Conversation(null,group)),"id");chat.send(teaching,conversation,"Reported message");
-        long message=number(chat.messages(learning,conversation,0).getFirst(),"id");chat.report(learning,message,"Test report");long report=db.count("SELECT MAX(id) FROM message_reports WHERE organization_id=?",org);chat.moderate(teaching,report,"Hide",true);assertTrue(chat.messages(learning,conversation,0).isEmpty());
-        organizations.removeStudent(teaching,group,student);assertThrows(WorkspaceError.class,()->chat.messages(learning,conversation,0));
-        organizations.addStudent(teaching,group,student);chat.send(teaching,conversation,"Visible");assertEquals(1,chat.messages(learning,conversation,0).size());
-        chat.block(learning,teacher,true);assertTrue(chat.messages(learning,conversation,0).isEmpty());
     }
     @Test void failedAiReleasesReservationRetryCountsOnlyOnceAndNeverPublishes() {
         var request=new WorkspaceAiService.Generate("ai-failure-test","Java","","","bg",1,"EASY","");long id=number(ai.enqueue(teaching,request),"id");
@@ -193,9 +282,8 @@ class WorkspaceTests {
         String old=string(identity.profile(newStudent),"email");identity.requestEmail(newStudent,"new-address@example.test","password123");assertEquals(old,string(identity.profile(newStudent),"email"));
         String token=string(db.object(db.one("SELECT payload_json FROM notification_outbox WHERE user_id=? ORDER BY id DESC LIMIT 1",newStudent.getId()).get("payload_json")),"token");identity.verify(token);assertEquals("new-address@example.test",string(identity.profile(newStudent),"email"));assertThrows(WorkspaceError.class,()->identity.verify(token));
     }
-    @Test void activeExamBlocksChatAcrossSessionsAndSessionTransferRevokesOldSession() {
-        long conversation=number(chat.create(teaching,new ChatService.Conversation(student,null)),"id");chat.send(teaching,conversation,"Hello");var r=startRequest();var state=start(r);long id=number(state,"id");
-        assertThrows(WorkspaceError.class,()->chat.messages(learning,conversation,0));assertThrows(WorkspaceError.class,()->chat.send(learning,conversation,"Blocked"));
+    @Test void sessionTransferRevokesOldSession() {
+        var r=startRequest();var state=start(r);long id=number(state,"id");
         var changed=startRequest();attempts.transfer(learning,id,changed,"password123",authorization);assertThrows(WorkspaceError.class,()->attempts.getState(learning,id,session(r)));assertNotNull(attempts.getState(learning,id,session(changed)));
     }
     @Test void unsupportedFullscreenAndExpiredSubscriptionConsumeNoAttempt() {
@@ -265,8 +353,8 @@ class WorkspaceTests {
     @Test void explicitCodeDeliveryIsDeduplicatedPerGenerationAndChannel() {
         var delivery=new AssignmentService.CodeDelivery(code,"email");assignments.dispatchCode(teaching,assignment,delivery);assignments.dispatchCode(teaching,assignment,delivery);
         assertEquals(1,db.count("SELECT COUNT(*) FROM notification_outbox WHERE organization_id=? AND notification_type='assignment_code'",org));
-        assignments.dispatchCode(teaching,assignment,new AssignmentService.CodeDelivery(code,"chat"));assignments.dispatchCode(teaching,assignment,new AssignmentService.CodeDelivery(code,"chat"));
-        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_messages WHERE organization_id=?",org));
+        assertThrows(WorkspaceError.class,()->assignments.dispatchCode(teaching,assignment,new AssignmentService.CodeDelivery(code,"chat")));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM workspace_messages WHERE organization_id=?",org));
         code=string(assignments.rotate(teaching,assignment),"code");assignments.dispatchCode(teaching,assignment,new AssignmentService.CodeDelivery(code,"email"));
         assertEquals(2,db.count("SELECT COUNT(*) FROM notification_outbox WHERE organization_id=? AND notification_type='assignment_code'",org));assignments.revoke(teaching,assignment);assertThrows(WorkspaceError.class,()->assignments.dispatchCode(teaching,assignment,new AssignmentService.CodeDelivery(code,"email")));
     }

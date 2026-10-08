@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ExamSession } from './types'
 
 const base = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
-export function workspaceClient(token: string, organization?: number) {
+export function workspaceClient(token: string) {
   async function call<T>(path: string, method = 'GET', data?: unknown, session?: ExamSession): Promise<T> {
     const response = await fetch(`${base}${path.startsWith('/api/') ? path : `/api/v1${path}`}`, {
-      method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(organization ? { 'X-Organization-Id': String(organization) } : {}), ...(session ? { 'X-Exam-Session': session.token, 'X-Exam-Browser': session.browserId } : {}) },
+      method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(session ? { 'X-Exam-Session': session.token, 'X-Exam-Browser': session.browserId } : {}) },
       ...(data === undefined ? {} : { body: JSON.stringify(data) }),
     })
     const text = await response.text()
@@ -18,14 +18,13 @@ export function workspaceClient(token: string, organization?: number) {
     return (text ? JSON.parse(text) : undefined) as T
   }
   async function image(id: number, attempt?: number, session?: ExamSession) {
-    const response = await fetch(`${base}/api/v1/files/${id}${attempt ? `?attempt=${attempt}` : ''}`, { headers: { Authorization: `Bearer ${token}`, ...(organization ? { 'X-Organization-Id': String(organization) } : {}), ...(session ? { 'X-Exam-Session': session.token, 'X-Exam-Browser': session.browserId } : {}) } })
+    const response = await fetch(`${base}/api/v1/files/${id}${attempt ? `?attempt=${attempt}` : ''}`, { headers: { Authorization: `Bearer ${token}`, ...(session ? { 'X-Exam-Session': session.token, 'X-Exam-Browser': session.browserId } : {}) } })
     if (!response.ok) throw new Error('Изображението е недостъпно.')
     return response.blob()
   }
   return { call, image, get: <T>(path: string, session?: ExamSession) => call<T>(path, 'GET', undefined, session), post: <T>(path: string, data?: unknown, session?: ExamSession) => call<T>(path, 'POST', data, session), put: <T>(path: string, data?: unknown, session?: ExamSession) => call<T>(path, 'PUT', data, session), remove: (path: string) => call<void>(path, 'DELETE') }
 }
 export type WorkspaceApi = ReturnType<typeof workspaceClient>
-export const chatSocketUrl = () => `${base.replace(/^http/, 'ws')}/ws/chat`
 export function useRemote<T>(api: WorkspaceApi, path: string, initial: T) {
   const [data, setData] = useState<T>(initial)
   const [error, setError] = useState('')

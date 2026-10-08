@@ -19,9 +19,10 @@ public class OrganizationService {
     private final WorkspaceAudit audit;
     private final NotificationService notifications;
     private final Clock clock;
+    private final PersonalWorkspace personal;
 
-    public OrganizationService(WorkspaceStore db, WorkspaceCrypto crypto, WorkspaceAudit audit, NotificationService notifications, Clock clock) {
-        this.db = db; this.crypto = crypto; this.audit = audit; this.notifications = notifications; this.clock = clock;
+    public OrganizationService(WorkspaceStore db, WorkspaceCrypto crypto, WorkspaceAudit audit, NotificationService notifications, Clock clock, PersonalWorkspace personal) {
+        this.db = db; this.crypto = crypto; this.audit = audit; this.notifications = notifications; this.clock = clock; this.personal = personal;
     }
     public List<Map<String, Object>> organizations(long user) {
         return db.rows("SELECT o.*,m.roles_json,s.status subscription_status,s.paid_through FROM organizations o JOIN memberships m ON m.organization_id=o.id JOIN organization_subscriptions s ON s.organization_id=o.id WHERE m.user_id=? AND m.status='active' ORDER BY o.name", user);
@@ -29,7 +30,7 @@ public class OrganizationService {
     @Transactional
     public Map<String, Object> create(long user, OrganizationRequest request) {
         try { ZoneId.of(request.timezone()); } catch (Exception e) { throw WorkspaceError.validation("Невалидна часова зона."); }
-        long id = db.insert("INSERT INTO organizations(name,organization_type,contact_email,timezone,student_label,settings_json,created_at) VALUES(?,?,?,?,?,?,?)", request.name().trim(), request.organizationType(), request.contactEmail(), request.timezone(), request.studentLabel(), db.json(Map.of("passThreshold",50,"gradingScale","bulgarian","studentChat",false)), clock.instant());
+        long id = db.insert("INSERT INTO organizations(name,organization_type,contact_email,timezone,student_label,settings_json,created_at) VALUES(?,?,?,?,?,?,?)", request.name().trim(), request.organizationType(), request.contactEmail(), request.timezone(), request.studentLabel(), db.json(Map.of("passThreshold",50,"gradingScale","bulgarian")), clock.instant());
         db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)", id, user, db.json(List.of("ORG_ADMIN","TEACHER")), clock.instant());
         long plan = number(db.one("SELECT id FROM organization_plans ORDER BY id LIMIT 1"), "id");
         db.update("INSERT INTO organization_subscriptions(organization_id,plan_id,status,paid_through,period_start) VALUES(?,?,'trialing',?,?)", id, plan, clock.instant().plus(Duration.ofDays(14)), clock.instant());
@@ -38,11 +39,17 @@ public class OrganizationService {
     }
     public List<Map<String, Object>> members(OrgAccess.Scope scope) {
         if (!scope.roles().contains("TEACHER") && !scope.roles().contains("ORG_ADMIN")) throw WorkspaceError.forbidden();
+        if(scope.platform()) return db.rows("SELECT id user_id,name,email,role FROM users WHERE active=TRUE AND role IN ('TEACHER','STUDENT') ORDER BY name").stream().map(row->{row.put("roles_json",db.json(List.of(string(row,"role"))));row.put("status","active");row.remove("role");return row;}).toList();
         return db.rows("SELECT m.id,m.user_id,m.roles_json,m.status,u.name,u.email FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.organization_id=? ORDER BY u.name", scope.organizationId());
     }
     public void requireActiveMember(long org, long user, String role) {
         var row = db.one("SELECT roles_json FROM memberships WHERE organization_id=? AND user_id=? AND status='active'", org,user);
         if (!Arrays.asList(db.parse(row.get("roles_json"), String[].class)).contains(role)) throw WorkspaceError.forbidden();
+    }
+    public void requireActiveMember(OrgAccess.Scope scope,long user,String role) {
+        if(!scope.platform()) {requireActiveMember(scope.organizationId(),user,role);return;}
+        db.one("SELECT id FROM users WHERE id=? AND active=TRUE AND role=?",user,role);
+        personal.member(scope.organizationId(),user,role);
     }
     public Map<String,Object> subscription(long org) {
         return db.one("SELECT s.*,p.name plan_name,p.teacher_limit,p.student_limit,p.ai_limit,p.storage_bytes,p.monthly_eur,p.yearly_eur,p.demonstration FROM organization_subscriptions s JOIN organization_plans p ON p.id=s.plan_id WHERE s.organization_id=?", org);
@@ -120,19 +127,18 @@ public class OrganizationService {
         audit.write(scope.organizationId(),scope.userId(),"membership.changed",user,Map.of("roles",roles,"active",request.active()));
     }
     public Map<String,Object> groupAccess(OrgAccess.Scope scope,long group) {
-        var row=db.one("SELECT * FROM learning_groups WHERE organization_id=? AND id=?",scope.organizationId(),group);
-        if(!scope.roles().contains("ORG_ADMIN") && db.count("SELECT COUNT(*) FROM group_teachers WHERE organization_id=? AND group_id=? AND user_id=?",scope.organizationId(),group,scope.userId())==0) throw WorkspaceError.forbidden();
+        var row=db.one("SELECT * FROM learning_groups WHERE (organization_id=? OR ?) AND id=?",scope.organizationId(),scope.platform(),group);
+        if(!scope.roles().contains("ORG_ADMIN") && db.count("SELECT COUNT(*) FROM group_teachers WHERE organization_id=? AND group_id=? AND user_id=?",number(row,"organization_id"),group,scope.userId())==0) throw WorkspaceError.forbidden();
         return row;
     }
     public List<Map<String,Object>> groups(OrgAccess.Scope scope) {
         if(scope.roles().contains("ORG_ADMIN")) return db.rows("SELECT * FROM learning_groups WHERE organization_id=? ORDER BY name",scope.organizationId());
-        return db.rows("SELECT DISTINCT g.* FROM learning_groups g LEFT JOIN group_teachers t ON t.organization_id=g.organization_id AND t.group_id=g.id LEFT JOIN group_members m ON m.organization_id=g.organization_id AND m.group_id=g.id AND m.active=TRUE WHERE g.organization_id=? AND (t.user_id=? OR m.user_id=?) ORDER BY g.name",scope.organizationId(),scope.userId(),scope.userId());
+        return db.rows("SELECT DISTINCT g.* FROM learning_groups g LEFT JOIN group_teachers t ON t.organization_id=g.organization_id AND t.group_id=g.id LEFT JOIN group_members m ON m.organization_id=g.organization_id AND m.group_id=g.id AND m.active=TRUE WHERE (g.organization_id=? OR ?) AND (t.user_id=? OR m.user_id=?) ORDER BY g.name",scope.organizationId(),scope.platform(),scope.userId(),scope.userId());
     }
     @Transactional
     public Map<String,Object> createGroup(OrgAccess.Scope scope,GroupRequest request) {
         long id=db.insert("INSERT INTO learning_groups(organization_id,name,description,subject,school_year,class_label,created_at) VALUES(?,?,?,?,?,?,?)",scope.organizationId(),request.name(),request.description(),request.subject(),request.schoolYear(),request.classLabel(),clock.instant());
         db.update("INSERT INTO group_teachers(organization_id,group_id,user_id) VALUES(?,?,?)",scope.organizationId(),id,scope.userId());
-        long conversation=db.insert("INSERT INTO workspace_conversations(organization_id,group_id,title) VALUES(?,?,?)",scope.organizationId(),id,request.name());db.update("INSERT INTO conversation_members(organization_id,conversation_id,user_id) VALUES(?,?,?)",scope.organizationId(),conversation,scope.userId());
         audit.write(scope.organizationId(),scope.userId(),"group.created",id,Map.of());
         return groupAccess(scope,id);
     }
@@ -153,16 +159,14 @@ public class OrganizationService {
     }
     @Transactional
     public void addStudent(OrgAccess.Scope scope,long group,long student) {
-        groupAccess(scope,group); requireActiveMember(scope.organizationId(),student,"STUDENT");
+        groupAccess(scope,group); requireActiveMember(scope,student,"STUDENT");
         addStudentInternal(scope.organizationId(),group,student);
         audit.write(scope.organizationId(),scope.userId(),"group.student_added",group,Map.of("student",student));
     }
     private void addStudentInternal(long org,long group,long student) {
         if(db.count("SELECT COUNT(*) FROM group_members WHERE organization_id=? AND group_id=? AND user_id=?",org,group,student)==0) db.update("INSERT INTO group_members(organization_id,group_id,user_id) VALUES(?,?,?)",org,group,student);
         else db.update("UPDATE group_members SET active=TRUE WHERE organization_id=? AND group_id=? AND user_id=?",org,group,student);
-        joinGroupChats(org,group,student);
     }
-    private void joinGroupChats(long org,long group,long user) {for(var conversation:db.rows("SELECT id FROM workspace_conversations WHERE organization_id=? AND group_id=?",org,group)) db.update("INSERT INTO conversation_members(organization_id,conversation_id,user_id) VALUES(?,?,?) ON DUPLICATE KEY UPDATE user_id=user_id",org,number(conversation,"id"),user);}
     @Transactional
     public void removeStudent(OrgAccess.Scope scope,long group,long student) {
         groupAccess(scope,group);
@@ -176,9 +180,8 @@ public class OrganizationService {
     }
     @Transactional
     public void addTeacher(OrgAccess.Scope scope,long group,long teacher) {
-        groupAccess(scope,group); requireActiveMember(scope.organizationId(),teacher,"TEACHER");
+        groupAccess(scope,group); requireActiveMember(scope,teacher,"TEACHER");
         if(db.count("SELECT COUNT(*) FROM group_teachers WHERE organization_id=? AND group_id=? AND user_id=?",scope.organizationId(),group,teacher)==0) db.update("INSERT INTO group_teachers(organization_id,group_id,user_id) VALUES(?,?,?)",scope.organizationId(),group,teacher);
-        joinGroupChats(scope.organizationId(),group,teacher);
         audit.write(scope.organizationId(),scope.userId(),"group.teacher_added",group,Map.of("teacher",teacher));
     }
     public List<Map<String,Object>> csvPreview(OrgAccess.Scope scope,long group,String csv) {
@@ -191,9 +194,10 @@ public class OrganizationService {
                 if(result.size()>=1000) throw WorkspaceError.validation("До 1000 реда наведнъж.");
                 String email=record.get("email").trim().toLowerCase(Locale.ROOT);
                 String status=!email.matches("[^\\s@]+@[^\\s@]+\\.[^\\s@]+")?"invalid":!seen.add(email)?"duplicate":"invitation";
-                var member=db.optional("SELECT u.id FROM users u JOIN memberships m ON m.user_id=u.id WHERE m.organization_id=? AND m.status='active' AND m.roles_json LIKE '%STUDENT%' AND u.email=?",scope.organizationId(),email);
+                var member=scope.platform()?db.optional("SELECT id FROM users WHERE active=TRUE AND role='STUDENT' AND email=?",email):db.optional("SELECT u.id FROM users u JOIN memberships m ON m.user_id=u.id WHERE m.organization_id=? AND m.status='active' AND m.roles_json LIKE '%STUDENT%' AND u.email=?",scope.organizationId(),email);
                 Map<String,Object> row=new LinkedHashMap<>(Map.of("row",record.getRecordNumber()+1,"email",email,"status",status));
                 if(member.isPresent() && status.equals("invitation")) { row.put("status","member"); row.put("user_id",number(member.get(),"id")); }
+                else if(scope.platform() && status.equals("invitation")) row.put("status","unregistered");
                 result.add(row);
             }
         } catch(java.io.IOException|IllegalArgumentException error) { throw WorkspaceError.validation("Невалиден CSV файл."); }

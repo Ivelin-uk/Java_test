@@ -43,8 +43,8 @@ public class PermissionAccess {
         if (endpoint.mode() != EndpointPolicy.Mode.MANAGED)
             return new Grant(endpoint.mode() != EndpointPolicy.Mode.ADMIN, false);
         return repository.findByEndpointKeyAndRole(endpoint.key(), role)
-                .map(item -> new Grant(item.isAllowed(), item.isSubscriptionRequired()))
-                .orElseGet(() -> new Grant(role == Role.TEACHER ? endpoint.teacher() : endpoint.student(), endpoint.paid()));
+                .map(item -> new Grant(item.isAllowed(), role != Role.STUDENT && item.isSubscriptionRequired()))
+                .orElseGet(() -> new Grant(role == Role.TEACHER ? endpoint.teacher() : endpoint.student(), role != Role.STUDENT && endpoint.paid()));
     }
 
     public List<String> allowedMethods(AppUser user) {
@@ -69,8 +69,8 @@ public class PermissionAccess {
         if (role == Role.ADMIN) return new Grant(true, false);
         if (endpoint.mode() != EndpointPolicy.Mode.MANAGED) return new Grant(endpoint.mode() != EndpointPolicy.Mode.ADMIN, false);
         EndpointPermission item = grants.get(endpoint.key());
-        return item == null ? new Grant(role == Role.TEACHER ? endpoint.teacher() : endpoint.student(), endpoint.paid())
-                : new Grant(item.isAllowed(), item.isSubscriptionRequired());
+        return item == null ? new Grant(role == Role.TEACHER ? endpoint.teacher() : endpoint.student(), role != Role.STUDENT && endpoint.paid())
+                : new Grant(item.isAllowed(), role != Role.STUDENT && item.isSubscriptionRequired());
     }
 
     public record Grant(boolean allowed, boolean subscriptionRequired) {}

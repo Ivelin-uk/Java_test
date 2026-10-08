@@ -10,5 +10,5 @@ export function WorkspaceImage({ api, id, attempt, session, logo = false }: { ap
     api.image(id, attempt, session).then(blob => { if (active) { objectUrl = URL.createObjectURL(blob); setLoaded({ id, url: objectUrl }) } }).catch(() => { if (active) setLoaded(null) })
     return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
   }, [api, id, attempt, session])
-  return loaded && loaded.id === id ? <img className={logo ? 'ws-logo' : 'ws-question-image'} src={loaded.url} alt={logo ? 'Лого на организацията' : 'Изображение към въпроса'} /> : null
+  return loaded && loaded.id === id ? <img className={logo ? 'ws-logo' : 'ws-question-image'} src={loaded.url} alt={logo ? 'Лого' : 'Изображение към въпроса'} /> : null
 }

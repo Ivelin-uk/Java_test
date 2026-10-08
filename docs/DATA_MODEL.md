@@ -1,5 +1,7 @@
 # Data Model And Architecture
 
+Current model (2026-10-08): accounts register directly as teachers or students. `personal_workspaces` automatically maps each account to an internal namespace. The organization and membership tables remain for composite foreign keys and historical data; users never create/select schools or join institutional memberships. Account-wide lists filter by ownership/sharing or assigned student, while resource IDs resolve the original namespace. Teacher-to-student assignment is allowed between any active registered profiles. V13 preserves historical content and promotes existing teaching memberships to the global TEACHER role.
+
 The application retains Spring Boot 4 / Java 21 / MySQL and React/TypeScript. Existing identity and legacy records remain; new tenant modules use JDBC with parameterized queries, explicit transactions and structured Jackson JSON definitions. Controllers delegate mutations to module services. Flyway runs before JPA schema validation.
 
 ## ER Relationships
@@ -25,10 +27,12 @@ The application retains Spring Boot 4 / Java 21 / MySQL and React/TypeScript. Ex
 | conversation_members | realtime_tickets | Hashed, single-use, short-lived ticket bound to a Bearer session |
 | memberships | workspace_ai_jobs | Unique user/org request key; persistent request, result, state and processing generation |
 | organizations | workspace_audit, workspace_billing_events, support_grants, tenant_endpoint_permissions, retention_runs | Scoped controls, provider idempotency and audit |
-| users | profile_exam_locks | Dedicated per-profile mutex serializes exam start and chat delivery |
+| users | profile_exam_locks | Dedicated per-profile mutex serializes exam starts |
 | organizations | organization_quota_locks, organization_retention_locks | Dedicated mutex rows serialize quotas/retention without blocking foreign-key parent records |
 
-Tenant-owned references include `organization_id` in foreign keys. The selected `X-Organization-Id` is never authorization by itself. The server resolves current active membership, domain role and ownership/shared access for each HTTP request. WebSocket revalidates membership, role, session, group and exam state before delivery. A global ADMIN has no implicit academic membership.
+Chat-related tables listed above are retained as historical schema only. Chat services, endpoints and group provisioning have been removed; no new chat data is created.
+
+Tenant-owned references include `organization_id` in foreign keys. The selected `X-Organization-Id` is never authorization by itself. The server resolves current active membership, domain role and ownership/shared access for each HTTP request. A global ADMIN has no implicit academic membership.
 
 Definitions are JSON, not executable student code. Every attached image reference is checked against scoped private storage at save/publication. Images and organization logos are stored in the database for this local implementation and therefore included in backups. Organization storage usage is checked under an organization lock.
 
@@ -40,7 +44,7 @@ Question: `pending -> open -> answered | timed_out | invalidated | unanswered`.
 
 Opening records a server UUID, opened_at and deadline_at. Final submission is accepted only at `now < deadline`; drafts never score by themselves. A terminal question cannot reopen. Advancing makes the next question pending, without sending its text/options or starting its clock until explicit readiness. An assignment deadline closes remaining work even without a browser. All answer/event retries are instance-bound and idempotent.
 
-A profile mutex prevents concurrent global exam starts and linearizes chat delivery against start. An attempt row lock serializes state changes; a recipient lock and unique constraints enforce attempt limits. A session hash, authenticated-session hash and browser ID bind the exam to one browser session; password reauthentication transfers it without resetting deadlines.
+A profile mutex prevents concurrent global exam starts. An attempt row lock serializes state changes; a recipient lock and unique constraints enforce attempt limits. A session hash, authenticated-session hash and browser ID bind the exam to one browser session; password reauthentication transfers it without resetting deadlines.
 
 ## Results And Delivery
 

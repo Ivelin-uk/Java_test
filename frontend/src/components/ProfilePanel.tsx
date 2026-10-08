@@ -32,9 +32,9 @@ export function ProfilePanel({ auth, onAuth }: { auth: AuthResponse; onAuth: (au
         <dt>Имейл</dt><dd>{auth.user.email}</dd>
         <dt>Роля</dt><dd>{roleLabels[auth.user.role]}</dd>
         <dt>Статус</dt><dd>Активен</dd>
-        <dt>Абонамент</dt><dd className={auth.user.subscription.active ? 'good' : ''}>{subscriptionLabel(auth.user)}</dd>
+        {auth.user.role !== 'STUDENT' && <><dt>Абонамент</dt><dd className={auth.user.subscription.active ? 'good' : ''}>{subscriptionLabel(auth.user)}</dd>
         <dt>Валиден до</dt><dd>{formatDate(auth.user.subscription.paidUntil)}</dd>
-        <dt>Плащане</dt><dd>{auth.user.subscription.paidAt ? new Date(auth.user.subscription.paidAt).toLocaleString('bg-BG') : 'Не е отчетено'}</dd>
+        <dt>Плащане</dt><dd>{auth.user.subscription.paidAt ? new Date(auth.user.subscription.paidAt).toLocaleString('bg-BG') : 'Не е отчетено'}</dd></>}
       </dl>
     </div>}
     <form className="password-form" onSubmit={submit}>

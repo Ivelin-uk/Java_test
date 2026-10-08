@@ -57,8 +57,8 @@ export const api = {
   googleExchange: (token: string) => request<AuthResponse>('/api/auth/google/exchange', { method: 'POST', body: JSON.stringify({ token }) }),
   recover: (email: string) => request<void>('/api/auth/recover', { method: 'POST', body: JSON.stringify({ email }) }),
   completePasswordRecovery: (token: string, password: string) => request<void>('/api/auth/reset', { method: 'POST', body: JSON.stringify({ token, password }) }),
-  register: (name: string, email: string, password: string) =>
-    request<AuthResponse>('/api/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) }),
+  register: (name: string, email: string, password: string, role: 'STUDENT' | 'TEACHER' = 'STUDENT') =>
+    request<AuthResponse>('/api/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password, role }) }),
   login: (email: string, password: string) =>
     request<AuthResponse>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   me: (token: string) => request<User>('/api/auth/me', {}, token),

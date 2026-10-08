@@ -10,7 +10,7 @@ import static com.quicktest.workspace.WorkspaceStore.*;
 public class QuestionBankService {
     private final WorkspaceStore db; private final AssessmentService assessments; private final WorkspaceAudit audit; private final Clock clock;private final PrivateImageService images;
     public QuestionBankService(WorkspaceStore db,AssessmentService assessments,WorkspaceAudit audit,Clock clock,PrivateImageService images) {this.db=db;this.assessments=assessments;this.audit=audit;this.clock=clock;this.images=images;}
-    public Object list(OrgAccess.Scope scope) {return db.rows("SELECT * FROM question_bank_items WHERE organization_id=? AND (owner_id=? OR shared=TRUE) ORDER BY id DESC",scope.organizationId(),scope.userId());}
+    public Object list(OrgAccess.Scope scope) {return db.rows("SELECT * FROM question_bank_items WHERE (organization_id=? OR ?) AND (owner_id=? OR shared=TRUE) ORDER BY id DESC",scope.organizationId(),scope.platform(),scope.userId());}
     @Transactional public Object save(OrgAccess.Scope scope,Item request) {
         assessments.validateQuestion(request.question());
         images.validateQuestionImage(scope,request.question().imageId());

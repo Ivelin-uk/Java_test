@@ -14,28 +14,30 @@ public class AssignmentService {
     private final OrganizationService organizations;
     private final WorkspaceCrypto crypto;
     private final WorkspaceAudit audit;
-    private final Clock clock;private final NotificationService notifications;private final ChatService chat;private final boolean mobileValidated;
-    public AssignmentService(WorkspaceStore db,OrganizationService organizations,WorkspaceCrypto crypto,WorkspaceAudit audit,Clock clock,NotificationService notifications,ChatService chat,@org.springframework.beans.factory.annotation.Value("${app.exam.mobile-validated:false}") boolean mobileValidated) {this.db=db;this.organizations=organizations;this.crypto=crypto;this.audit=audit;this.clock=clock;this.notifications=notifications;this.chat=chat;this.mobileValidated=mobileValidated;}
+    private final Clock clock;private final NotificationService notifications;private final boolean mobileValidated;
+    public AssignmentService(WorkspaceStore db,OrganizationService organizations,WorkspaceCrypto crypto,WorkspaceAudit audit,Clock clock,NotificationService notifications,@org.springframework.beans.factory.annotation.Value("${app.exam.mobile-validated:false}") boolean mobileValidated) {this.db=db;this.organizations=organizations;this.crypto=crypto;this.audit=audit;this.clock=clock;this.notifications=notifications;this.mobileValidated=mobileValidated;}
     public Map<String,Object> teacherAccess(OrgAccess.Scope scope,long id,boolean lock) {
         var assignment=db.one("SELECT a.*,v.title,v.definition_json FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE a.organization_id=? AND a.id=?"+(lock?" FOR UPDATE":""),scope.organizationId(),id);
         if(number(assignment,"teacher_id")!=scope.userId() && db.count("SELECT COUNT(*) FROM assignment_teachers WHERE organization_id=? AND assignment_id=? AND teacher_id=?",scope.organizationId(),id,scope.userId())==0) throw WorkspaceError.forbidden();
         return assignment;
     }
     public List<Map<String,Object>> list(OrgAccess.Scope scope) {
-        if(scope.roles().contains("TEACHER")) return db.rows("SELECT a.id,a.version_id,a.teacher_id,a.starts_at,a.ends_at,a.max_attempts,v.title,(SELECT COUNT(*) FROM assignment_recipients r WHERE r.organization_id=a.organization_id AND r.assignment_id=a.id) recipients FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE a.organization_id=? AND (a.teacher_id=? OR EXISTS (SELECT 1 FROM assignment_teachers t WHERE t.organization_id=a.organization_id AND t.assignment_id=a.id AND t.teacher_id=?)) ORDER BY a.id DESC",scope.organizationId(),scope.userId(),scope.userId());
-        return db.rows("SELECT a.id,a.starts_at,a.ends_at,r.max_attempts,r.canceled,r.fullscreen_exempt,r.time_multiplier,v.title FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id JOIN assignment_recipients r ON r.organization_id=a.organization_id AND r.assignment_id=a.id WHERE a.organization_id=? AND r.student_id=? ORDER BY a.ends_at DESC",scope.organizationId(),scope.userId());
+        if(scope.roles().contains("TEACHER")) return db.rows("SELECT a.id,a.version_id,a.teacher_id,a.starts_at,a.ends_at,a.max_attempts,v.title,(SELECT COUNT(*) FROM assignment_recipients r WHERE r.organization_id=a.organization_id AND r.assignment_id=a.id) recipients FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE (a.organization_id=? OR ?) AND (a.teacher_id=? OR EXISTS (SELECT 1 FROM assignment_teachers t WHERE t.organization_id=a.organization_id AND t.assignment_id=a.id AND t.teacher_id=?)) ORDER BY a.id DESC",scope.organizationId(),scope.platform(),scope.userId(),scope.userId());
+        return db.rows("SELECT a.id,a.starts_at,a.ends_at,r.max_attempts,r.canceled,r.fullscreen_exempt,r.time_multiplier,v.title FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id JOIN assignment_recipients r ON r.organization_id=a.organization_id AND r.assignment_id=a.id WHERE (a.organization_id=? OR ?) AND r.student_id=? ORDER BY a.ends_at DESC",scope.organizationId(),scope.platform(),scope.userId());
     }
     @Transactional
     public Map<String,Object> create(OrgAccess.Scope scope,AssignmentRequest request) {
-        organizations.requirePaid(scope.organizationId());
+        if(!scope.platform()) organizations.requirePaid(scope.organizationId());
         if(request.startsAt()==null || request.endsAt()==null || !request.startsAt().isBefore(request.endsAt()) || !clock.instant().isBefore(request.endsAt()) || request.maxAttempts()<1 || request.maxAttempts()>20) throw WorkspaceError.validation("Невалиден период или брой опити.");
         var version=db.one("SELECT v.*,t.owner_id,t.shared,t.status FROM assessment_versions v JOIN workspace_assessments t ON t.organization_id=v.organization_id AND t.id=v.assessment_id WHERE v.organization_id=? AND v.id=?",scope.organizationId(),request.versionId());
         if(!flag(version,"shared") && number(version,"owner_id")!=scope.userId() || string(version,"status").equals("archived")) throw WorkspaceError.forbidden();
+        if(scope.platform()) organizations.requireActiveMember(scope,scope.userId(),"TEACHER");
         Map<Long,Set<Long>> recipients=new LinkedHashMap<>(); Set<Long> individual=new HashSet<>(request.studentIds()==null?List.of():request.studentIds());
-        for(Long user:individual) {organizations.requireActiveMember(scope.organizationId(),user,"STUDENT");recipients.put(user,new LinkedHashSet<>());}
+        for(Long user:individual) {organizations.requireActiveMember(scope,user,"STUDENT");recipients.put(user,new LinkedHashSet<>());}
         for(Long group:request.groupIds()==null?List.<Long>of():request.groupIds()) {
             if(!string(organizations.groupAccess(scope,group),"status").equals("active")) throw WorkspaceError.conflict("Групата е архивирана.");
-            for(var member:db.rows("SELECT g.user_id FROM group_members g JOIN memberships m ON m.organization_id=g.organization_id AND m.user_id=g.user_id WHERE g.organization_id=? AND g.group_id=? AND g.active=TRUE AND m.status='active' AND m.roles_json LIKE '%STUDENT%'",scope.organizationId(),group)) recipients.computeIfAbsent(number(member,"user_id"),key->new LinkedHashSet<>()).add(group);
+            long groupWorkspace=number(organizations.groupAccess(scope,group),"organization_id");
+            for(var member:db.rows("SELECT g.user_id FROM group_members g JOIN memberships m ON m.organization_id=g.organization_id AND m.user_id=g.user_id WHERE g.organization_id=? AND g.group_id=? AND g.active=TRUE AND m.status='active' AND m.roles_json LIKE '%STUDENT%'",groupWorkspace,group)) {long user=number(member,"user_id");organizations.requireActiveMember(scope,user,"STUDENT");recipients.computeIfAbsent(user,key->new LinkedHashSet<>()).add(group);}
         }
         if(recipients.isEmpty()) throw WorkspaceError.validation("Изберете поне един получател.");
         long id=db.insert("INSERT INTO exam_assignments(organization_id,version_id,teacher_id,starts_at,ends_at,max_attempts,shuffle_questions,shuffle_options,answers_after_deadline,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",scope.organizationId(),request.versionId(),scope.userId(),request.startsAt(),request.endsAt(),request.maxAttempts(),request.shuffleQuestions(),request.shuffleOptions(),request.answersAfterDeadline(),clock.instant());
@@ -80,14 +82,14 @@ public class AssignmentService {
         return row;
     }
     @Transactional public void shareTeacher(OrgAccess.Scope scope,long id,long teacher,boolean shared) {
-        var assignment=teacherAccess(scope,id,true);if(number(assignment,"teacher_id")!=scope.userId()) throw WorkspaceError.forbidden();organizations.requireActiveMember(scope.organizationId(),teacher,"TEACHER");
+        var assignment=teacherAccess(scope,id,true);if(number(assignment,"teacher_id")!=scope.userId()) throw WorkspaceError.forbidden();organizations.requireActiveMember(scope,teacher,"TEACHER");
         if(shared) db.update("INSERT INTO assignment_teachers(organization_id,assignment_id,teacher_id) VALUES(?,?,?) ON DUPLICATE KEY UPDATE teacher_id=teacher_id",scope.organizationId(),id,teacher);
         else db.update("DELETE FROM assignment_teachers WHERE organization_id=? AND assignment_id=? AND teacher_id=?",scope.organizationId(),id,teacher);
         audit.write(scope.organizationId(),scope.userId(),"assignment.teacher_access_changed",id,Map.of("teacher",teacher,"shared",shared));
     }
     public Object sharedTeachers(OrgAccess.Scope scope,long id) {teacherAccess(scope,id,false);return db.rows("SELECT t.teacher_id,u.name FROM assignment_teachers t JOIN users u ON u.id=t.teacher_id WHERE t.organization_id=? AND t.assignment_id=? ORDER BY u.name",scope.organizationId(),id);}
     @Transactional public void addRecipient(OrgAccess.Scope scope,long id,long student) {
-        var assignment=teacherAccess(scope,id,false);organizations.requirePaid(scope.organizationId());organizations.requireActiveMember(scope.organizationId(),student,"STUDENT");
+        var assignment=teacherAccess(scope,id,false);if(!scope.platform()) organizations.requirePaid(scope.organizationId());organizations.requireActiveMember(scope,student,"STUDENT");
         if(!clock.instant().isBefore(time(assignment,"ends_at"))) throw WorkspaceError.expired("Срокът за това възлагане е изтекъл.");
         db.update("INSERT INTO assignment_recipients(organization_id,assignment_id,student_id,source_groups_json,individually_assigned,max_attempts) VALUES(?,?,?,'[]',TRUE,?) ON DUPLICATE KEY UPDATE individually_assigned=TRUE,canceled=FALSE",scope.organizationId(),id,student,number(assignment,"max_attempts"));
         audit.write(scope.organizationId(),scope.userId(),"assignment.recipient_added",id,Map.of("student",student));
@@ -95,18 +97,16 @@ public class AssignmentService {
     public record AssignmentRequest(long versionId,List<Long> groupIds,List<Long> studentIds,Instant startsAt,Instant endsAt,int maxAttempts,boolean shuffleQuestions,boolean shuffleOptions,boolean answersAfterDeadline) {}
     public record Accommodation(boolean fullscreenExempt,BigDecimal timeMultiplier,int maxAttempts,String reason) {}
     @Transactional public Object dispatchCode(OrgAccess.Scope scope,long id,CodeDelivery request) {
-        if("chat".equals(request.channel())) chat.examGuard(scope);
         teacherAccess(scope,id,false);
         // Start and accommodation also lock recipients before their assignment parent.
         db.rows("SELECT student_id FROM assignment_recipients WHERE organization_id=? AND assignment_id=? ORDER BY student_id FOR UPDATE",scope.organizationId(),id);
         var assignment=teacherAccess(scope,id,true);
-        if(request.code()==null || !Set.of("email","chat").contains(Objects.toString(request.channel(),"")) || !codeHash(scope.organizationId(),id,request.code()).equals(string(assignment,"code_hash"))) throw WorkspaceError.validation("Невалиден или отменен код.");
+        if(request.code()==null || !"email".equals(request.channel()) || !codeHash(scope.organizationId(),id,request.code()).equals(string(assignment,"code_hash"))) throw WorkspaceError.validation("Невалиден или отменен код.");
         int sent=0;var organization=db.one("SELECT name FROM organizations WHERE id=?",scope.organizationId());
         for(var recipient:db.rows("SELECT student_id FROM assignment_recipients WHERE organization_id=? AND assignment_id=? AND canceled=FALSE",scope.organizationId(),id)) {
             long student=number(recipient,"student_id");
             if(db.count("SELECT COUNT(*) FROM assignment_code_deliveries WHERE organization_id=? AND assignment_id=? AND generation=? AND student_id=? AND channel=?",scope.organizationId(),id,number(assignment,"code_generation"),student,request.channel())>0) continue;
-            if(request.channel().equals("email")) notifications.enqueue(scope.organizationId(),null,student,"assignment_code",notifications.verifiedAddress(student),Map.of("code",request.code().strip().toUpperCase(Locale.ROOT),"test",string(assignment,"title"),"organization",string(organization,"name")));
-            else {var conversation=chat.create(scope,new ChatService.Conversation(student,null));chat.send(scope,number(conversation,"id"),string(assignment,"title")+" · Код: "+request.code().strip().toUpperCase(Locale.ROOT));}
+            notifications.enqueue(scope.organizationId(),null,student,"assignment_code",notifications.verifiedAddress(student),Map.of("code",request.code().strip().toUpperCase(Locale.ROOT),"test",string(assignment,"title"),"organization",scope.platform()?"ExamAI":string(organization,"name")));
             db.update("INSERT INTO assignment_code_deliveries(organization_id,assignment_id,generation,student_id,channel,created_at) VALUES(?,?,?,?,?,?)",scope.organizationId(),id,number(assignment,"code_generation"),student,request.channel(),clock.instant());sent++;
         }
         audit.write(scope.organizationId(),scope.userId(),"assignment.code_dispatched",id,Map.of("channel",request.channel(),"recipients",sent));return Map.of("queued",sent);

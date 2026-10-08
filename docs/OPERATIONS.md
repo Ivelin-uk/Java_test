@@ -6,7 +6,7 @@ Development: MAMP on 8889, schema `test_ai`, localhost 8080/5173, seeded demo id
 
 Verification: separate `examai_verification` schema, disposable `example.test` identities, disabled demo seed, fake/stub providers, no external student mail. HTTP load tests refuse the application schema. E2E tests create their own marked organizations on the explicitly configured local server; use a separate backend/database for repeatable CI isolation.
 
-Production preparation: separate database and application credentials, HTTPS reverse proxy with WebSocket upgrade, secure OAuth state cookies, disabled demos/legacy/local fixtures/local mailbox, configured real email and AI, protected secrets/backups and institution-approved retention. `SPRING_PROFILES_ACTIVE=production` activates fail-closed demo/configuration checks. Stripe remains test-only; this project has no approved live payment mode. No public deployment was performed.
+Production preparation: separate database and application credentials, HTTPS reverse proxy, secure OAuth state cookies, disabled demos/legacy/local fixtures/local mailbox, configured real email and AI, protected secrets/backups and institution-approved retention. `SPRING_PROFILES_ACTIVE=production` activates fail-closed demo/configuration checks. Stripe remains test-only; this project has no approved live payment mode. No public deployment was performed.
 
 ## Backup And Restore
 

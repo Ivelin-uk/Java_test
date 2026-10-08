@@ -70,11 +70,11 @@ Compose already addresses Mailpit by its internal service name. Its web UI is ex
 
 Result revisions and unique outbox records commit together. The worker claims committed entries, sends outside its database transaction and saves the receipt. Verified pre-delivery failures receive controlled retries; timeout/unknown outcome becomes `uncertain`, never a blind automatic resend. Manual retry is limited to `failed`. A provider callback for delivered/bounced is not implemented, so the app does not claim those statuses without evidence. A mail failure never rolls back the grade.
 
-Verification, recovery and invitation links are single-use and expiring. Invites and access codes are hashed in their authoritative access tables; delivery payloads necessarily contain mail/chat secrets and must be treated as private data, including backups. Do not enable local mailbox mode in production.
+Verification, recovery and invitation links are single-use and expiring. Invites and access codes are hashed in their authoritative access tables; delivery payloads necessarily contain mail secrets and must be treated as private data, including backups. Do not enable local mailbox mode in production.
 
 ## Workers And AI
 
-`WORKSPACE_WORKERS=true` runs deadline (1 second), AI (1 second), realtime chat (1 second) and outbox (2 seconds) workers in a four-thread scheduler. Work is persisted in MySQL; there is no external Redis dependency. Question deadlines and assignment windows are authoritative UTC times. No browser heartbeat grants extra time.
+`WORKSPACE_WORKERS=true` runs deadline (1 second), AI (1 second), outbox (2 seconds) workers in a four-thread scheduler. Work is persisted in MySQL; there is no external Redis dependency. Question deadlines and assignment windows are authoritative UTC times. No browser heartbeat grants extra time.
 
 AI and SMTP calls run outside the claim transaction. AI completion is bound to its processing generation, so a stale provider response cannot complete a retried job. Abandoned AI work becomes failed and releases its reservation; the teacher chooses whether to retry. A completed job is only a validated draft. Model/type/difficulty failures cannot publish it. See README for Ollama and the explicitly fake `mock` adapter.
 

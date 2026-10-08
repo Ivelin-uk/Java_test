@@ -18,7 +18,7 @@ public class GradingService {
         assignments.teacherAccess(scope,number(attempt,"assignment_id"),false);return attempt;
     }
     public List<Map<String,Object>> queue(OrgAccess.Scope scope) {
-        return db.rows("SELECT a.id,a.assignment_id,a.attempt_number,a.status,a.expired,a.submitted_at,u.name student_name,v.title FROM exam_attempts a JOIN exam_assignments s ON s.organization_id=a.organization_id AND s.id=a.assignment_id JOIN assessment_versions v ON v.organization_id=s.organization_id AND v.id=s.version_id JOIN users u ON u.id=a.student_id WHERE a.organization_id=? AND (s.teacher_id=? OR EXISTS (SELECT 1 FROM assignment_teachers t WHERE t.organization_id=s.organization_id AND t.assignment_id=s.id AND t.teacher_id=?)) AND a.status IN ('pending_review','finalized','voided') ORDER BY a.id DESC",scope.organizationId(),scope.userId(),scope.userId());
+        return db.rows("SELECT a.id,a.assignment_id,a.attempt_number,a.status,a.expired,a.submitted_at,u.name student_name,v.title FROM exam_attempts a JOIN exam_assignments s ON s.organization_id=a.organization_id AND s.id=a.assignment_id JOIN assessment_versions v ON v.organization_id=s.organization_id AND v.id=s.version_id JOIN users u ON u.id=a.student_id WHERE (a.organization_id=? OR ?) AND (s.teacher_id=? OR EXISTS (SELECT 1 FROM assignment_teachers t WHERE t.organization_id=s.organization_id AND t.assignment_id=s.id AND t.teacher_id=?)) AND a.status IN ('pending_review','finalized','voided') ORDER BY a.id DESC",scope.organizationId(),scope.platform(),scope.userId(),scope.userId());
     }
     public Map<String,Object> review(OrgAccess.Scope scope,long id) {
         var attempt=teacherAttempt(scope,id,false);Map<String,Object> result=new LinkedHashMap<>();result.put("attempt",attempt);
@@ -73,7 +73,7 @@ public class GradingService {
         db.update("UPDATE exam_attempts SET status='finalized' WHERE organization_id=? AND id=?",scope.organizationId(),id);
         long student=number(attempt,"student_id");String email=notifications.verifiedAddress(student);
         var organization=db.one("SELECT name FROM organizations WHERE id=?",scope.organizationId());var user=db.one("SELECT name FROM users WHERE id=?",student);
-        Map<String,Object> message=new LinkedHashMap<>(Map.of("organization",string(organization,"name"),"test",string(assignment,"title"),"student",string(user,"name"),"attemptNumber",number(attempt,"attempt_number"),"points",points,"maximumPoints",maximum,"percentage",percent,"grade",grade,"outcome",outcome,"protectedPath","/results/"+id+"?organization="+scope.organizationId()));
+        Map<String,Object> message=new LinkedHashMap<>(Map.of("organization",scope.platform()?"ExamAI":string(organization,"name"),"test",string(assignment,"title"),"student",string(user,"name"),"attemptNumber",number(attempt,"attempt_number"),"points",points,"maximumPoints",maximum,"percentage",percent,"grade",grade,"outcome",outcome,"protectedPath","/results/"+id));
         message.put("corrected",correction);message.put("publishedAt",clock.instant());
         notifications.enqueue(scope.organizationId(),revision,student,"final_result",email,message);
         audit.write(scope.organizationId(),scope.userId(),correction?"result.corrected":"result.published",id,Map.of("revision",next,"reason",Objects.toString(request.reason(),"")));
@@ -87,7 +87,7 @@ public class GradingService {
         Map<String,Object> safe=new LinkedHashMap<>(revision);safe.remove("snapshot_json");safe.remove("publication_key");return safe;
     }
     public List<Map<String,Object>> results(OrgAccess.Scope scope) {
-        return db.rows("SELECT r.id,r.attempt_id,r.revision_number,r.points,r.maximum_points,r.percentage,r.grade,r.outcome,r.published_at,a.assignment_id,a.attempt_number,v.title FROM result_revisions r JOIN exam_attempts a ON a.organization_id=r.organization_id AND a.id=r.attempt_id JOIN exam_assignments s ON s.organization_id=a.organization_id AND s.id=a.assignment_id JOIN assessment_versions v ON v.organization_id=s.organization_id AND v.id=s.version_id WHERE r.organization_id=? AND a.student_id=? AND a.status='finalized' AND r.revision_number=(SELECT MAX(rr.revision_number) FROM result_revisions rr WHERE rr.organization_id=r.organization_id AND rr.attempt_id=r.attempt_id) ORDER BY a.attempt_number DESC,r.published_at DESC",scope.organizationId(),scope.userId());
+        return db.rows("SELECT r.id,r.attempt_id,r.revision_number,r.points,r.maximum_points,r.percentage,r.grade,r.outcome,r.published_at,a.assignment_id,a.attempt_number,v.title FROM result_revisions r JOIN exam_attempts a ON a.organization_id=r.organization_id AND a.id=r.attempt_id JOIN exam_assignments s ON s.organization_id=a.organization_id AND s.id=a.assignment_id JOIN assessment_versions v ON v.organization_id=s.organization_id AND v.id=s.version_id WHERE (r.organization_id=? OR ?) AND a.student_id=? AND a.status='finalized' AND r.revision_number=(SELECT MAX(rr.revision_number) FROM result_revisions rr WHERE rr.organization_id=r.organization_id AND rr.attempt_id=r.attempt_id) ORDER BY a.attempt_number DESC,r.published_at DESC",scope.organizationId(),scope.platform(),scope.userId());
     }
     public List<Map<String,Object>> assignmentResults(OrgAccess.Scope scope) {
         var latest=new LinkedHashMap<Long,Map<String,Object>>();

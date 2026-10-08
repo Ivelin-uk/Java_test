@@ -122,10 +122,10 @@ public class AdminService {
                 return value;
             });
             item.setAllowed(change.allowed());
-            item.setSubscriptionRequired(change.subscriptionRequired());
+            item.setSubscriptionRequired(change.role() != Role.STUDENT && change.subscriptionRequired());
             permissions.save(item);
             audit(actor, null, "PERMISSION_UPDATED", change.key() + "; роля=" + change.role() + "; достъп="
-                    + change.allowed() + "; абонамент=" + change.subscriptionRequired());
+                    + change.allowed() + "; абонамент=" + item.isSubscriptionRequired());
         }
         return matrix();
     }

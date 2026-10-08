@@ -21,7 +21,7 @@ public class AssessmentController {
     @PostMapping("/tests/{id}/duplicate") public Object duplicate(@PathVariable long id) {return assessments.duplicate(access.teacher(),id);}
     @PutMapping("/tests/{id}/sharing") public void sharing(@PathVariable long id,@RequestBody Sharing request) {assessments.share(access.teacher(),id,request.shared());}
     @GetMapping("/assignments") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT,student=true) public Object assignments() {return assignments.list(access.scope());}
-    @PostMapping("/assignments") public Object assign(@RequestBody AssignmentService.AssignmentRequest request) {return assignments.create(access.teacher(),request);}
+    @PostMapping("/assignments") public Object assign(@RequestBody AssignmentService.AssignmentRequest request) {return assignments.create(access.version(request.versionId()),request);}
     @PostMapping("/assignments/{id}/recipients") public void addRecipient(@PathVariable long id,@RequestBody OrganizationController.UserId request) {assignments.addRecipient(access.teacher(),id,request.userId());}
     @GetMapping("/assignments/{id}/preflight") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT,student=true) public Object preflight(@PathVariable long id) {return assignments.preflight(access.student(),id);}
     @PostMapping("/assignments/{id}/code/rotate") public Object rotate(@PathVariable long id) {return assignments.rotate(access.teacher(),id);}

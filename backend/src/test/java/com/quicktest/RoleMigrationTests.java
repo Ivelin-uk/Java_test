@@ -21,7 +21,7 @@ class RoleMigrationTests {
             sql.execute("INSERT INTO auth_token (token, user_id) VALUES ('existing-session', 1)");
         }
         var migration = Flyway.configure().dataSource(source).locations("classpath:db/migration").load().migrate();
-        assertEquals(10, migration.migrationsExecuted);
+        assertEquals(11, migration.migrationsExecuted);
         try (var connection = source.getConnection(); var sql = connection.createStatement()) {
             try (var rows = sql.executeQuery("SELECT role, password_hash, active, subscription_paid FROM users ORDER BY id")) {
                 for (String role : new String[]{"TEACHER", "TEACHER", "STUDENT", "ADMIN"}) {

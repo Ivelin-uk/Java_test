@@ -23,11 +23,12 @@ public class WorkspaceAiService {
         if(request.difficultyCounts()!=null && (!Set.of("EASY","MEDIUM","HARD","VERY_HARD").containsAll(request.difficultyCounts().keySet()) || request.difficultyCounts().values().stream().anyMatch(n->n==null || n<0 || n>20) || request.difficultyCounts().values().stream().mapToInt(Integer::intValue).sum()!=request.questionCount())) throw WorkspaceError.validation("Сумата по трудност трябва да е равна на броя въпроси.");
         organizations.lockQuota(scope.organizationId());
         var existing=db.optional("SELECT * FROM workspace_ai_jobs WHERE organization_id=? AND user_id=? AND request_key=?",scope.organizationId(),scope.userId(),request.requestKey());if(existing.isPresent()) {if(!db.parse(existing.get().get("request_json"),Generate.class).equals(request)) throw WorkspaceError.conflict("Ключът е използван за друга AI заявка.");return existing.get();}
-        reserve(scope.organizationId());
+        reserve(scope);
         long id=db.insert("INSERT INTO workspace_ai_jobs(organization_id,user_id,request_key,request_json,created_at,updated_at) VALUES(?,?,?,?,?,?)",scope.organizationId(),scope.userId(),request.requestKey(),db.json(request),clock.instant(),clock.instant());return get(scope,id);
     }
-    private void reserve(long org) {
-        organizations.requirePaid(org);var sub=organizations.subscription(org);
+    private void reserve(OrgAccess.Scope scope) {
+        long org=scope.organizationId();
+        if(!scope.platform()) organizations.requirePaid(org);var sub=organizations.subscription(org);
         if(number(sub,"ai_used")+number(sub,"ai_reserved")>=number(sub,"ai_limit")) throw WorkspaceError.conflict("Изчерпана AI квота.");
         db.update("UPDATE organization_subscriptions SET ai_reserved=ai_reserved+1 WHERE organization_id=?",org);
     }
@@ -36,7 +37,7 @@ public class WorkspaceAiService {
     public Map<String,Object> retry(OrgAccess.Scope scope,long id) {
         organizations.lockQuota(scope.organizationId());var job=get(scope,id);
         if(!string(job,"status").equals("failed") || number(job,"attempts")>=3) throw WorkspaceError.conflict("Не може да се повтори тази заявка.");
-        reserve(scope.organizationId());db.update("UPDATE workspace_ai_jobs SET status='queued',error_message=NULL,updated_at=? WHERE organization_id=? AND id=?",clock.instant(),scope.organizationId(),id);return get(scope,id);
+        reserve(scope);db.update("UPDATE workspace_ai_jobs SET status='queued',error_message=NULL,updated_at=? WHERE organization_id=? AND id=?",clock.instant(),scope.organizationId(),id);return get(scope,id);
     }
     @Scheduled(fixedDelay=1000)
     public void process() {

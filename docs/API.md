@@ -1,16 +1,16 @@
 # API Contract
 
+Current account workflow: registration accepts `role: STUDENT|TEACHER` (default STUDENT; ADMIN cannot be self-selected). `/api/v1` requests require a Bearer token, not an organization selector or invitation. Existing resource namespaces are resolved internally, while ownership, sharing and assignment recipients continue to govern access. `/members` and `/directory` are teacher-only lists of active registered teachers and students. Organization, invitation, settings, support-grant, organizational billing and platform-organization routes have been removed. Historical contracts below that describe those routes do not apply to the current product.
+
 The implementation uses the existing Spring MVC JSON API, not the illustrative Laravel paths in the brief. Academic operations use `/api/v1`. UTF-8 JSON field names are camelCase on command DTOs; JDBC read projections use database snake_case. Dates returned by the store are UTC ISO-8601. Domain services, not controller visibility, enforce ownership and transitions.
 
-## Authentication And Organization
+## Authentication And Roles
 
-Send `Authorization: Bearer <token>` on authenticated requests. Tenant requests additionally require `X-Organization-Id: <id>`. The header selects an active membership; it never grants access. Sessions expire after 24 hours and are invalidated on recovery/logout-all/deactivation. `ORG_ADMIN`, `TEACHER`, `STUDENT` are membership roles; global `ADMIN` is separate. Public registration cannot choose roles.
-
-Business authorization always applies after the organization method matrix. Restricting a method takes effect on the next request and realtime delivery. Enabling it cannot grant another tenant, another owner's content or prohibited student operations. Platform support requires a current, organization-approved, expiring grant and is audited on every read.
+Send `Authorization: Bearer <token>` on authenticated requests. No organization header or membership invitation is required. Global roles are `ADMIN`, `TEACHER`, `STUDENT`; registration permits teacher or student only. Sessions expire after 24 hours and are invalidated on recovery/logout-all/deactivation. Ownership, explicit sharing and recipient checks enforce access to academic content.
 
 | Method / path | Command / authorization |
 |---|---|
-| POST `/api/auth/register` | `{name,email,password}`; creates ordinary profile, confirmation notification |
+| POST `/api/auth/register` | `{name,email,password,role?:STUDENT|TEACHER}`; creates personal profile, confirmation notification |
 | POST `/api/auth/login` | `{email,password}`; returns `{token,user}` |
 | GET `/api/auth/me` | Current active identity |
 | POST `/api/auth/logout`, `/logout-all` | Revoke current / all bearer sessions |
@@ -24,8 +24,6 @@ Business authorization always applies after the organization method matrix. Rest
 | GET/POST `/api/v1/profile/notification-email` | Current verified address / `{email,password}` confirmation request |
 | POST `/api/v1/profile/notification-email/verify` | `{token}`; new address becomes active only after verification |
 | GET `/api/v1/profile/mailbox` | Own private **local-adapter-only** test mail |
-| GET/POST `/api/v1/organizations` | Own organizations / `{name,organizationType,contactEmail,timezone,studentLabel}` |
-| POST `/api/v1/invitations/accept` | `{token}`; verified matching recipient, one use, bounded role |
 
 Login, registration, recovery and reset are rate-limited per identity and remote IP. Google matching-email identities are not silently merged.
 
@@ -35,16 +33,14 @@ Paths below are relative to `/api/v1`. Teacher access means the explicit owner/s
 
 | Method / path | Contract |
 |---|---|
-| GET `/members`, `/directory` | Teacher/admin member directory / restricted same-organization chat directory |
-| PUT `/members/{user}` | Org admin: `{roles:[...],active:boolean}`; quota, last-admin protection, audit |
-| POST `/invitations` | `{email,roles,groupId}`; org admin or group teacher inviting only students; returns token once and queues invitation |
+| GET `/members`, `/directory` | Active registered teachers and students; teacher access only |
 | GET/POST `/groups` | Scoped groups / `{name,description,subject,schoolYear,classLabel}` |
 | PUT `/groups/{id}` | `{profile:<group fields>,status:active|archived}` |
 | GET/POST `/groups/{id}/members` | Authorized teacher listing / `{userId}`; never creates a password |
 | DELETE `/groups/{id}/members/{user}` | Remove current access, preserve historical attempts |
 | GET/POST `/groups/{id}/teachers` | Explicit teachers / `{userId}` |
 | DELETE `/groups/{id}/teachers/{user}` | Revoke; cannot remove the last teacher |
-| POST `/groups/{id}/csv/preview` | `{csv}` with email header; valid/duplicate/invalid/member/invitation report |
+| POST `/groups/{id}/csv/preview` | `{csv}` with email header; valid/duplicate/invalid/registered/unregistered report |
 | GET `/groups/{id}/summary` | Group assignments, attempts and published results; students only own rows |
 | GET/POST `/tests`, GET/PUT `/tests/{id}` | Own/shared editable assessment definition |
 | POST `/tests/{id}/publish` | Validate and copy immutable version |
@@ -71,13 +67,13 @@ Assessment definition: `{title,description,subject,level,instructions,language,g
 | GET `/assignments/{id}/preflight` | Recipient-only instructions/count/time/window, no scoring keys |
 | POST `/assignments/{id}/code/rotate` | New random code returned once; old code invalidated |
 | DELETE `/assignments/{id}/code` | Revoke code |
-| POST `/assignments/{id}/code/send` | `{code,channel:email|chat}`; current code must match hash; once per generation/recipient/channel |
+| POST `/assignments/{id}/code/send` | `{code,channel:email}`; current code must match hash; once per generation/recipient/channel |
 | GET `/assignments/{id}/monitoring` | Authorized teacher sees recipients, attempt states and accommodations |
 | GET `/assignments/{id}/teachers` | Explicit shared assignment teachers |
 | PUT `/assignments/{id}/teachers/{teacher}` | Assignment owner only: `{shared:boolean}` |
 | PUT `/assignments/{id}/recipients/{student}/accommodation` | `{fullscreenExempt,timeMultiplier,maxAttempts,reason}`; no changes to active attempt |
 
-AI is asynchronous and never publishes or assigns a test. Success consumes one reservation once; failure releases it. A late response cannot complete a newer retry lease. New assignments/recipients and AI need a valid organization subscription. Quotas are serialized by a dedicated organization mutex, not an exclusive parent-row lock.
+AI is asynchronous and never publishes or assigns a test. Success consumes one reservation once; failure releases it. A late response cannot complete a newer retry lease. Assignments do not require school subscriptions. AI and storage quotas are maintained in the account's automatically created internal workspace.
 
 ## Attempts And Results
 
@@ -105,31 +101,14 @@ All subsequent student exam commands require `X-Exam-Session: <sessionToken>` an
 
 The `question` student projection has IDs, text/type/options only when open, points, allowed time, open-instance/server timestamps and draft. It never has `correct`, `acceptedAnswers`, criteria, explanation or `definition_json`. Pending questions do not expose unseen text. Exact deadline uses server UTC, never client time. Duplicate/late events return current state; old-instance events cannot penalize the next question. `blur` alone has no penalty. Deadlines also run in the persistent worker.
 
-## Chat, Settings And Billing
+## Settings And Billing
 
 | Method / path | Contract |
 |---|---|
-| GET/POST `/conversations` | Current authorized conversations / `{userId,groupId}` |
-| GET `/conversations/{id}/messages?after={id}` | Up to 100 authorized visible messages ascending; advances read cursor |
-| POST `/conversations/{id}/messages` | `{body}` text <=4000 chars |
-| POST `/conversations/{id}/ticket` | One-use 30-second WebSocket ticket bound to organization, conversation, user and bearer session |
-| PUT `/conversations/blocks/{user}` | `{blocked:boolean}` |
-| POST `/conversations/messages/{id}/report` | `{reason}` |
-| GET/PUT `/conversations/reports/{id}` | Org admin moderation; list at `/reports`, update `{resolution,hide}` |
-| GET/PUT `/settings`, `/permissions` | Org admin policy / endpoint role matrix; restrictions cannot override domain permissions |
-| GET `/metrics`, `/audit`, `/export` | Org admin operational metrics, audit and scoped export without session/code hashes |
-| GET/POST `/support-grants`, DELETE `/support-grants/{id}` | Org admin: `{administratorId,reason,hours}`; 1-24h audited support grant |
-| GET `/retention/preview`, POST `/retention/run` | Approved policy; `{requestKey,password,reason}`, content deletion with attempt tombstone |
-| GET `/billing`, `/plans` | Current organization subscription/quota and labeled demonstration plans |
-| GET `/billing/config`, `/billing/history` | Provider availability / org-admin billing event history |
-| POST `/billing/checkout` | Org admin: `{requestKey,planId,period:month|year}`; trusted test price mapping, returns URL |
-| POST `/billing/portal` | Org admin provider portal for organization's known test customer |
-| POST `/billing/webhook` | Public raw body, required valid `Stripe-Signature`; never trusts redirect/page success |
-| GET `/notifications`, POST `/notifications/{id}/retry` | Org admin delivery metadata; retry only confirmed failed, not uncertain |
 
-WebSocket URL `/ws/chat`; first text frame is `{"ticket":"..."}`, not a bearer URL parameter. Fresh authorization is checked before each delivery. Unauthorized, removed, deactivated, expired-session or active-exam channels close with policy violation. New chat read/send is blocked across all sessions during an active exam.
+The chat feature and its HTTP/WebSocket endpoints have been removed. Existing chat tables are retained for migration compatibility, but are no longer used by the application.
 
-Global-admin-only `/api/v1/platform/organizations`, `/plans`, organization status controls, approved `/support/{org}/...` read paths and optional disabled-by-default `/organizations/{org}/billing-fixtures` are separate from tenant academic access. Legacy `/api/admin` remains technical account management; legacy individual subscriptions do not grant organization access. See controller records for administrative field schemas.
+Global-admin `/api/admin` manages accounts, roles, permissions and audit. Organization administration routes have been removed.
 
 ## Errors And Idempotency
 

@@ -16,7 +16,7 @@ public class OrganizationControls {
         var profile=settings.profile();if(profile==null || profile.name()==null || profile.name().isBlank() || profile.name().length()>190 || profile.organizationType()==null || !Set.of("school","university","training").contains(profile.organizationType()) || profile.contactEmail()==null || !profile.contactEmail().matches("[^\\s@]+@[^\\s@]+\\.[^\\s@]+") || profile.contactEmail().length()>190 || profile.studentLabel()==null || profile.studentLabel().isBlank() || profile.studentLabel().length()>40) throw WorkspaceError.validation("Невалиден профил на организация.");
         try {ZoneId.of(profile.timezone());}catch(Exception e) {throw WorkspaceError.validation("Невалидна часова зона.");}
         if(settings.retentionDays()<30 || settings.retentionDays()>36500 || !Set.of("bulgarian","percentage","pass_fail").contains(settings.gradingScale()) || settings.passThreshold()==null || settings.passThreshold().signum()<0 || settings.passThreshold().compareTo(new BigDecimal("100"))>0) throw WorkspaceError.validation("Невалидна скала или срок за съхранение.");
-        db.update("UPDATE organizations SET name=?,organization_type=?,contact_email=?,timezone=?,student_label=?,settings_json=? WHERE id=?",profile.name(),profile.organizationType(),profile.contactEmail(),profile.timezone(),profile.studentLabel(),db.json(Map.of("studentChat",settings.studentChat(),"retentionDays",settings.retentionDays(),"gradingScale",settings.gradingScale(),"passThreshold",settings.passThreshold(),"retentionApproved",settings.retentionApproved())),scope.organizationId());
+        db.update("UPDATE organizations SET name=?,organization_type=?,contact_email=?,timezone=?,student_label=?,settings_json=? WHERE id=?",profile.name(),profile.organizationType(),profile.contactEmail(),profile.timezone(),profile.studentLabel(),db.json(Map.of("retentionDays",settings.retentionDays(),"gradingScale",settings.gradingScale(),"passThreshold",settings.passThreshold(),"retentionApproved",settings.retentionApproved())),scope.organizationId());
         audit.write(scope.organizationId(),scope.userId(),"organization.settings_changed",scope.organizationId(),Map.of("retentionDays",settings.retentionDays(),"retentionApproved",settings.retentionApproved()));
     }
     @Transactional public Object support(OrgAccess.Scope scope,Support request) {
@@ -60,7 +60,7 @@ public class OrganizationControls {
             db.update("INSERT INTO organization_plan_prices(plan_id,billing_period,stripe_price_id) VALUES(?,?,?) ON DUPLICATE KEY UPDATE stripe_price_id=VALUES(stripe_price_id)",id,entry.getKey(),entry.getValue());
         }
     }
-    public record Settings(OrganizationService.OrganizationRequest profile,boolean studentChat,int retentionDays,boolean retentionApproved,String gradingScale,BigDecimal passThreshold) {}
+    public record Settings(OrganizationService.OrganizationRequest profile,int retentionDays,boolean retentionApproved,String gradingScale,BigDecimal passThreshold) {}
     public record Support(long administratorId,String reason,int hours) {}
     public record Plan(String name,BigDecimal monthlyEur,BigDecimal yearlyEur,int teacherLimit,int studentLimit,int aiLimit,long storageBytes,boolean demonstration,String monthPriceId,String yearPriceId) {}
 }

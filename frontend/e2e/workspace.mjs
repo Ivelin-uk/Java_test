@@ -8,51 +8,36 @@ const stamp = Date.now()
 const outcomes = []
 const artifacts = new URL('../../.artifacts/', import.meta.url)
 await mkdir(artifacts, { recursive: true })
-async function request(path, auth, org, method = 'GET', data) {
-  const response = await fetch(`${base}${path}`, { method, headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${auth.token}` } : {}), ...(org ? { 'X-Organization-Id': String(org) } : {}) }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) })
+async function request(path, auth, method = 'GET', data) {
+  const response = await fetch(`${base}${path}`, { method, headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${auth.token}` } : {}) }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) })
   const text = await response.text()
   return { status: response.status, data: text ? JSON.parse(text) : null }
 }
 async function account(kind) {
-  const result = await request('/api/auth/register', null, null, 'POST', { name: `E2E ${kind} ${stamp}`, email: `e2e-${kind}-${stamp}@example.test`, password: 'test-password-123' })
+  const result = await request('/api/auth/register', null, 'POST', { name: `E2E ${kind} ${stamp}`, email: `e2e-${kind}-${stamp}@example.test`, password: 'test-password-123', role: kind === 'student' ? 'STUDENT' : 'TEACHER' })
   assert.equal(result.status, 200)
   const auth = result.data
   const mailbox = await request('/api/v1/profile/mailbox', auth)
   const token = JSON.parse(mailbox.data[0].payload_json).token
-  assert.equal((await request('/api/v1/profile/notification-email/verify', auth, null, 'POST', { token })).status, 200)
+  assert.equal((await request('/api/v1/profile/notification-email/verify', auth, 'POST', { token })).status, 200)
   return auth
 }
 const teacher = await account('teacher'), student = await account('student'), second = await account('second')
-const createOrg = async (auth, name) => (await request('/api/v1/organizations', auth, null, 'POST', { name, organizationType: 'school', contactEmail: auth.user.email, timezone: 'Europe/Sofia', studentLabel: 'Ученик' })).data.id
-const org = await createOrg(teacher, `E2E School A ${stamp}`), otherOrg = await createOrg(second, `E2E School B ${stamp}`)
-const invite = await request('/api/v1/invitations', teacher, org, 'POST', { email: student.user.email, roles: ['STUDENT'], groupId: null })
-assert.equal((await request('/api/v1/invitations/accept', student, null, 'POST', { token: invite.data.token })).status, 200)
-assert.equal((await request('/api/v1/invitations/accept', student, null, 'POST', { token: invite.data.token })).status, 410)
-outcomes.push('single-use invitation')
-assert.equal((await request('/api/v1/groups', student, otherOrg)).status, 403)
-assert.equal((await request('/api/v1/tests', student, org)).status, 403)
-outcomes.push('tenant and role boundaries')
+assert.equal((await request('/api/v1/organizations', teacher)).status, 404)
+assert.equal((await request('/api/v1/tests', student)).status, 403)
+outcomes.push('direct registration without school membership')
 const definition = { title: `E2E Exam ${stamp}`, description: '', subject: 'Java', level: '12', instructions: 'Отговорете на двата въпроса.', language: 'bg', gradingScale: 'bulgarian', passThreshold: 50, questions: [
   { type: 'SINGLE_CHOICE', text: 'Кой тип е логически?', difficulty: 'EASY', points: 2, timeSeconds: 120, options: [{ text: 'boolean', correct: true }, { text: 'String', correct: false }], acceptedAnswers: [], caseInsensitive: true, collapseWhitespace: true, criteria: '', explanation: 'boolean' },
   { type: 'OPEN_ANSWER', text: 'Какво е обект?', difficulty: 'MEDIUM', points: 3, timeSeconds: 120, options: [], acceptedAnswers: [], caseInsensitive: true, collapseWhitespace: true, criteria: 'Инстанция на клас.', explanation: '' },
 ] }
-const test = (await request('/api/v1/tests', teacher, org, 'POST', definition)).data
-const version = (await request(`/api/v1/tests/${test.id}/publish`, teacher, org, 'POST')).data
-const assignment = (await request('/api/v1/assignments', teacher, org, 'POST', { versionId: version.id, groupIds: [], studentIds: [student.user.id], startsAt: new Date(Date.now() - 60000).toISOString(), endsAt: new Date(Date.now() + 3600000).toISOString(), maxAttempts: 1, shuffleQuestions: false, shuffleOptions: false, answersAfterDeadline: true })).data
-const conversation = (await request('/api/v1/conversations', teacher, org, 'POST', { userId: student.user.id, groupId: null })).data
-assert.equal((await request(`/api/v1/conversations/${conversation.id}/ticket`, student, otherOrg, 'POST')).status, 403)
-const ticket = (await request(`/api/v1/conversations/${conversation.id}/ticket`, student, org, 'POST')).data.ticket
-const socket = new WebSocket(`${base.replace(/^http/, 'ws')}/ws/chat`)
-let socketClosed = false
-const socketMessages = []
-socket.addEventListener('close', () => { socketClosed = true })
-socket.addEventListener('open', () => socket.send(JSON.stringify({ ticket })))
-socket.addEventListener('message', event => socketMessages.push(JSON.parse(event.data)))
-async function until(predicate) { for (let n = 0; n < 50; n++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 100)) } assert.fail('Timed out waiting for a realtime condition') }
-await until(() => socketMessages.some(m => m.ready))
-await request(`/api/v1/conversations/${conversation.id}/messages`, teacher, org, 'POST', { body: 'Before exam realtime fixture' })
-await until(() => socketMessages.some(m => m.messages?.some(row => row.body === 'Before exam realtime fixture')))
-outcomes.push('authorized WebSocket delivery and tenant rejection')
+const test = (await request('/api/v1/tests', teacher, 'POST', definition)).data
+assert.equal((await request(`/api/v1/tests/${test.id}`, second)).status, 403)
+outcomes.push('private teacher content and role boundaries')
+const version = (await request(`/api/v1/tests/${test.id}/publish`, teacher, 'POST')).data
+const assignment = (await request('/api/v1/assignments', teacher, 'POST', { versionId: version.id, groupIds: [], studentIds: [student.user.id], startsAt: new Date(Date.now() - 60000).toISOString(), endsAt: new Date(Date.now() + 3600000).toISOString(), maxAttempts: 1, shuffleQuestions: false, shuffleOptions: false, answersAfterDeadline: true })).data
+assert.equal((await request('/api/v1/conversations', teacher)).status, 404)
+assert.equal((await request('/ws/chat', teacher)).status, 403)
+outcomes.push('chat endpoints removed')
 const executablePath = process.env.CHROME_PATH ?? (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined)
 const browser = await chromium.launch({ executablePath, headless: process.env.E2E_HEADED !== 'true', args: ['--disable-gpu'] })
 const errors = []
@@ -63,6 +48,9 @@ async function pageWith(auth, viewport) {
   page.on('pageerror', error => errors.push(error.message))
   await page.goto(frontend)
   await page.getByRole('navigation').waitFor()
+  assert.equal(await page.getByRole('combobox', { name: 'Активна организация' }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Нова организация', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Чат', exact: true }).count(), 0)
   return { context, page }
 }
 try {
@@ -77,11 +65,6 @@ try {
   await page.getByRole('button', { name: 'Започни на цял екран', exact: true }).click()
   await page.getByRole('heading', { name: 'Кой тип е логически?' }).waitFor()
   assert.equal(await page.evaluate(() => !!document.fullscreenElement), true)
-  await until(() => socketClosed)
-  await request(`/api/v1/conversations/${conversation.id}/messages`, teacher, org, 'POST', { body: 'Never deliver during exam' })
-  assert.equal((await request(`/api/v1/conversations/${conversation.id}/messages`, student, org)).status, 409)
-  assert.equal(socketMessages.some(m => m.messages?.some(row => row.body === 'Never deliver during exam')), false)
-  outcomes.push('active exam revokes realtime chat across sessions')
   await page.getByRole('radio', { name: 'boolean', exact: true }).check()
   await page.screenshot({ path: new URL('exam-fullscreen.png', artifacts).pathname, fullPage: true })
   await page.getByRole('button', { name: 'Потвърди отговора', exact: true }).click()
@@ -109,10 +92,10 @@ try {
   await page.getByRole('button', { name: 'Профил', exact: true }).click()
   await page.getByText(`${definition.title} · оценка 6`, { exact: true }).waitFor()
   outcomes.push('transactional local result mail')
-  const published = (await request('/api/v1/results', student, org)).data[0]
-  await page.goto(`${frontend}/results/${published.attempt_id}?organization=${org}`)
+  const published = (await request('/api/v1/results', student)).data[0]
+  await page.goto(`${frontend}/results/${published.attempt_id}`)
   await page.getByText('Подробните отговори ще бъдат достъпни след края на разрешения период.', { exact: true }).waitFor()
-  outcomes.push('protected result deep link with authenticated organization selection')
+  outcomes.push('protected personal result deep link')
   await context.close(); await tc.close()
   const { page: mobile, context: mc } = await pageWith(student, { width: 390, height: 844 })
   await mobile.getByRole('button', { name: 'Моите тестове', exact: true }).click()
@@ -122,6 +105,6 @@ try {
   await mc.close()
   outcomes.push('mobile layout without page overflow')
   assert.deepEqual(errors, [])
-  await writeFile(new URL(process.env.E2E_HEADED === 'true' ? 'headed-browser-report.json' : 'browser-report.json', artifacts), JSON.stringify({ checked: outcomes, pageErrors: errors, nativeFullscreen: process.env.E2E_HEADED === 'true' ? 'headed automated Chrome; manual cross-browser checks remain required' : 'headless only; headed browser verification remains required', fixture: { organization: org, otherOrganization: otherOrg, assessment: test.id, assignment: assignment.id } }, null, 2))
+  await writeFile(new URL(process.env.E2E_HEADED === 'true' ? 'headed-browser-report.json' : 'browser-report.json', artifacts), JSON.stringify({ checked: outcomes, pageErrors: errors, nativeFullscreen: process.env.E2E_HEADED === 'true' ? 'headed automated Chrome; manual cross-browser checks remain required' : 'headless only; headed browser verification remains required', fixture: { teacher: teacher.user.id, student: student.user.id, assessment: test.id, assignment: assignment.id } }, null, 2))
   console.log(JSON.stringify({ checked: outcomes, pageErrors: errors }, null, 2))
-} finally { socket.close(); await browser.close() }
+} finally { await browser.close() }

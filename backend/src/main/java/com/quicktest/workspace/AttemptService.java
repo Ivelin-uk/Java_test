@@ -42,7 +42,7 @@ public class AttemptService {
             Session session=new Session(request.sessionToken(),request.browserId(),authSession);
             if(previous.isPresent()) {checkSession(previous.get(),session);sweep(previous.get());return state(previous.get());}
             if(flag(recipient,"canceled")) throw WorkspaceError.forbidden();
-            notifications.verifiedAddress(scope.userId());organizations.requirePaid(scope.organizationId());
+            notifications.verifiedAddress(scope.userId());if(!scope.platform()) organizations.requirePaid(scope.organizationId());
             var a=db.one("SELECT a.*,v.definition_json FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE a.organization_id=? AND a.id=?",scope.organizationId(),assignment);
             if(clock.instant().isBefore(time(a,"starts_at")) || !clock.instant().isBefore(time(a,"ends_at"))) throw WorkspaceError.expired("Тестът е извън разрешения период.");
             if(!flag(recipient,"fullscreen_exempt") && (!request.fullscreenSupported() || !request.fullscreenActive() || !request.visible())) throw WorkspaceError.conflict("Началото изисква поддържан цял екран и видима страница. Опит не е изразходван.");
@@ -219,7 +219,7 @@ public class AttemptService {
         return result;
     }
     public List<Map<String,Object>> mine(OrgAccess.Scope scope) {
-        return db.rows("SELECT a.id,a.assignment_id,a.attempt_number,a.status,a.started_at,a.submitted_at,a.expired,v.title FROM exam_attempts a JOIN exam_assignments s ON s.organization_id=a.organization_id AND s.id=a.assignment_id JOIN assessment_versions v ON v.organization_id=s.organization_id AND v.id=s.version_id WHERE a.organization_id=? AND a.student_id=? ORDER BY a.id DESC",scope.organizationId(),scope.userId());
+        return db.rows("SELECT a.id,a.assignment_id,a.attempt_number,a.status,a.started_at,a.submitted_at,a.expired,v.title FROM exam_attempts a JOIN exam_assignments s ON s.organization_id=a.organization_id AND s.id=a.assignment_id JOIN assessment_versions v ON v.organization_id=s.organization_id AND v.id=s.version_id WHERE (a.organization_id=? OR ?) AND a.student_id=? ORDER BY a.id DESC",scope.organizationId(),scope.platform(),scope.userId());
     }
     @Scheduled(fixedDelay=1000)
     public void expireDue() {

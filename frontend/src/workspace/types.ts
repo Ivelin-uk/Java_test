@@ -1,4 +1,3 @@
-export interface Organization { id: number; name: string; student_label: string; roles_json: string; logo_id?: number | null; subscription_status: string; paid_through: string }
 export interface Member { user_id: number; name: string; email: string; roles_json: string; status: string }
 export interface Group { id: number; name: string; description: string; subject: string; school_year: string; class_label: string; status: string }
 export type QuestionType = 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'TRUE_FALSE' | 'SHORT_ANSWER' | 'OPEN_ANSWER'
@@ -13,16 +12,12 @@ export interface Preflight { mobile_validated?: boolean; id: number; title: stri
 export interface ExamAnswer { optionIds: string[]; text: string }
 export interface ExamState { id: number; assignment_id: number; status: string; server_now: string; question_number: number; question_count: number; question: null | { id: number; imageId?: number | null; type: QuestionType; text: string; status: string; maximum_points: number; time_seconds: number; open_instance: string | null; opened_at: string | null; deadline_at: string | null; options: { id: string; text: string }[]; draft: ExamAnswer | null } }
 export interface ExamSession { token: string; browserId: string; startKey: string; attemptId?: number }
-export interface Subscription { plan_name: string; status: string; paid_through: string; ai_used: number; ai_reserved: number; ai_limit: number; teacher_limit: number; student_limit: number; monthly_eur: number; yearly_eur: number; demonstration: boolean }
 export interface ReviewQuestion { id: number; status: string; definition_json: string; maximum_points: number; automatic_points: number | null; final_points: number | null; reviewed: boolean; draft_json: string | null; answer_json: string | null; teacher_comment: string | null; override_reason: string | null; opened_at: string | null; deadline_at: string | null; closed_at: string | null }
 export interface Review { attempt: Attempt; student: { id: number; name: string; email: string }; questions: ReviewQuestion[]; events: { event_type: string; question_id: number; received_at: string }[]; revisions: Result[] }
 export interface AiJob { id: number; status: string; result_json: string | null; error_message: string | null }
-export interface Conversation { id: number; title: string; group_id: number | null; unread: number }
-export interface Message { id: number; sender_id: number; sender_name: string; body: string; created_at: string }
 export interface Mail { id: number; notification_type: string; recipient_email: string; payload_json: string; status: string; created_at: string }
 
 export const statusLabels: Record<string, string> = { redacted: 'Изтрит по политика', draft: 'Чернова', published: 'Публикуван', archived: 'Архивиран', in_progress: 'В процес', pending_review: 'Чака проверка', finalized: 'Публикуван резултат', voided: 'Анулиран', queued: 'В опашката', running: 'Обработва се', completed: 'Готов', failed: 'Неуспешен', active: 'Активен', inactive: 'Неактивен', trialing: 'Пробен период', expired: 'Изтекъл', past_due: 'Просрочен', canceled: 'Прекратен', passed: 'Успешен', sent: 'Изпратен', timed_out: 'Времето изтече', invalidated: 'Напуснат изпитен екран', unanswered: 'Без отговор', answered: 'Предаден', open: 'Отворен', pending: 'Не е отворен' }
 export const label = (status: string) => statusLabels[status] ?? status
 export const date = (value: string | null, timezone = 'Europe/Sofia') => value ? new Date(value).toLocaleString('bg-BG', { timeZone: timezone }) : '-'
 export const roles = (org: { roles_json: string }) => JSON.parse(org.roles_json) as string[]
-export const roleNames: Record<string, string> = { ORG_ADMIN: 'Администратор на организация', TEACHER: 'Учител', STUDENT: 'Обучаем' }

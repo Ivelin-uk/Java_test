@@ -13,9 +13,10 @@ public class AssessmentService {
     private final WorkspaceAudit audit;
     private final Clock clock;
     private final PrivateImageService images;
-    public AssessmentService(WorkspaceStore db,WorkspaceAudit audit,Clock clock,PrivateImageService images) {this.db=db;this.audit=audit;this.clock=clock;this.images=images;}
+    private final PersonalWorkspace personal;
+    public AssessmentService(WorkspaceStore db,WorkspaceAudit audit,Clock clock,PrivateImageService images,PersonalWorkspace personal) {this.db=db;this.audit=audit;this.clock=clock;this.images=images;this.personal=personal;}
     public List<Map<String,Object>> list(OrgAccess.Scope scope) {
-        return db.rows("SELECT id,title,status,shared,owner_id,updated_at FROM workspace_assessments WHERE organization_id=? AND (owner_id=? OR shared=TRUE) ORDER BY updated_at DESC",scope.organizationId(),scope.userId());
+        return db.rows("SELECT id,title,status,shared,owner_id,updated_at FROM workspace_assessments WHERE (organization_id=? OR ?) AND (owner_id=? OR shared=TRUE) ORDER BY updated_at DESC",scope.organizationId(),scope.platform(),scope.userId());
     }
     public Map<String,Object> get(OrgAccess.Scope scope,long id,boolean edit) {
         var row=db.one("SELECT * FROM workspace_assessments WHERE organization_id=? AND id=?",scope.organizationId(),id);
@@ -26,7 +27,10 @@ public class AssessmentService {
     public Map<String,Object> save(OrgAccess.Scope scope,Long id,Definition definition) {
         if(definition==null || definition.title()==null || definition.title().isBlank() || definition.title().length()>190 || definition.questions()==null || definition.questions().size()>100) throw WorkspaceError.validation("Заглавие до 190 символа и до 100 въпроса.");
         for(var question:definition.questions()) if(question!=null) images.validateQuestionImage(scope,question.imageId());
-        if(id==null) id=db.insert("INSERT INTO workspace_assessments(organization_id,owner_id,title,definition_json,updated_at) VALUES(?,?,?,?,?)",scope.organizationId(),scope.userId(),definition.title(),db.json(definition),clock.instant());
+        if(id==null) {
+            if(scope.platform()) personal.member(scope.organizationId(),scope.userId(),"TEACHER");
+            id=db.insert("INSERT INTO workspace_assessments(organization_id,owner_id,title,definition_json,updated_at) VALUES(?,?,?,?,?)",scope.organizationId(),scope.userId(),definition.title(),db.json(definition),clock.instant());
+        }
         else {
             get(scope,id,true);
             db.update("UPDATE workspace_assessments SET title=?,definition_json=?,status='draft',updated_at=? WHERE organization_id=? AND id=?",definition.title(),db.json(definition),clock.instant(),scope.organizationId(),id);

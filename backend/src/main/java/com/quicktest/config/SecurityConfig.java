@@ -44,7 +44,7 @@ public class SecurityConfig {
                         .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.FORWARD).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/register", "/api/auth/recover", "/api/auth/reset").permitAll()
-                        .requestMatchers("/api/auth/google/config", "/api/auth/google/redirect", "/api/auth/google/exchange", "/api/v1/billing/webhook", "/ws/chat").permitAll()
+                        .requestMatchers("/api/auth/google/config", "/api/auth/google/redirect", "/api/auth/google/exchange", "/api/v1/billing/webhook").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().denyAll())
                 .build();

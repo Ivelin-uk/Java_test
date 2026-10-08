@@ -32,14 +32,14 @@ public class PrivateImageService {
         audit.write(scope.organizationId(),scope.userId(),"image.uploaded",id,Map.of("purpose",request.purpose(),"bytes",canonical.length));return Map.of("id",id,"width",width,"height",height);
     }
     public void validateQuestionImage(OrgAccess.Scope scope,Long id) {
-        if(id==null) return;var file=db.one("SELECT id,owner_id,purpose FROM private_images WHERE organization_id=? AND id=?",scope.organizationId(),id);
+        if(id==null) return;var file=db.one("SELECT id,owner_id,purpose FROM private_images WHERE (organization_id=? OR ?) AND id=?",scope.organizationId(),scope.platform(),id);
         if(!string(file,"purpose").equals("question") || !teacherCanRead(scope,file)) throw WorkspaceError.forbidden();
     }
     private boolean teacherCanRead(OrgAccess.Scope scope,Map<String,Object> file) {
         if(scope.roles().contains("ORG_ADMIN") || number(file,"owner_id")==scope.userId()) return true;
         long id=number(file,"id");
-        for(var row:db.rows("SELECT definition_json FROM workspace_assessments WHERE organization_id=? AND shared=TRUE",scope.organizationId())) if(db.parse(row.get("definition_json"),AssessmentService.Definition.class).questions().stream().anyMatch(q->Objects.equals(q.imageId(),id))) return true;
-        for(var row:db.rows("SELECT definition_json FROM question_bank_items WHERE organization_id=? AND shared=TRUE",scope.organizationId())) if(Objects.equals(db.parse(row.get("definition_json"),AssessmentService.Question.class).imageId(),id)) return true;
+        for(var row:db.rows("SELECT definition_json FROM workspace_assessments WHERE (organization_id=? OR ?) AND shared=TRUE",scope.organizationId(),scope.platform())) if(db.parse(row.get("definition_json"),AssessmentService.Definition.class).questions().stream().anyMatch(q->Objects.equals(q.imageId(),id))) return true;
+        for(var row:db.rows("SELECT definition_json FROM question_bank_items WHERE (organization_id=? OR ?) AND shared=TRUE",scope.organizationId(),scope.platform())) if(Objects.equals(db.parse(row.get("definition_json"),AssessmentService.Question.class).imageId(),id)) return true;
         return false;
     }
     public Image download(OrgAccess.Scope scope,long id,Long attempt,AttemptService.Session session) {
@@ -47,11 +47,11 @@ public class PrivateImageService {
         boolean allowed=string(file,"purpose").equals("logo");
         if(!allowed && (scope.roles().contains("TEACHER") || scope.roles().contains("ORG_ADMIN"))) allowed=teacherCanRead(scope,file);
         if(!allowed && scope.roles().contains("STUDENT") && attempt!=null) {
-            var row=db.one("SELECT a.*,x.ends_at,x.answers_after_deadline FROM exam_attempts a JOIN exam_assignments x ON x.organization_id=a.organization_id AND x.id=a.assignment_id WHERE a.organization_id=? AND a.id=? AND a.student_id=?",scope.organizationId(),attempt,scope.userId());
+            var row=db.one("SELECT a.*,x.ends_at,x.answers_after_deadline FROM exam_attempts a JOIN exam_assignments x ON x.organization_id=a.organization_id AND x.id=a.assignment_id WHERE (a.organization_id=? OR ?) AND a.id=? AND a.student_id=?",scope.organizationId(),scope.platform(),attempt,scope.userId());
             boolean active=string(row,"status").equals("in_progress") && session.token()!=null && session.authorization()!=null && session.browserId()!=null;
             if(active) active=crypto.matches(session.token(),string(row,"session_hash")) && crypto.matches(session.authorization(),string(row,"auth_session_hash")) && session.browserId().equals(string(row,"browser_id"));
             boolean released=string(row,"status").equals("finalized") && (!flag(row,"answers_after_deadline") || !clock.instant().isBefore(time(row,"ends_at")));
-            if(active || released) for(var q:db.rows("SELECT definition_json,status,position_index,deadline_at FROM attempt_questions WHERE organization_id=? AND attempt_id=?",scope.organizationId(),attempt)) {
+            if(active || released) for(var q:db.rows("SELECT definition_json,status,position_index,deadline_at FROM attempt_questions WHERE organization_id=? AND attempt_id=?",number(row,"organization_id"),attempt)) {
                 if(active && (!string(q,"status").equals("open") || number(q,"position_index")!=number(row,"current_position") || !clock.instant().isBefore(time(q,"deadline_at")))) continue;
                 var question=db.parse(db.json(db.object(q.get("definition_json")).get("question")),AssessmentService.Question.class);if(Objects.equals(question.imageId(),id)) allowed=true;
             }

@@ -103,7 +103,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
           <td><strong>{user.name}{user.id === auth.user.id && <small className="inline-muted"> (Вие)</small>}</strong><small>{user.email}</small>{user.passwordChangeRequired && <small className="warning-text">Временна парола</small>}</td>
           <td>{roleLabels[user.role]}</td>
           <td><span className={`status-badge ${user.active ? 'good' : 'inactive'}`}>{user.active ? 'Активен' : 'Неактивен'}</span></td>
-          <td><span className={user.subscription.active ? 'good' : ''}>{subscriptionLabel(user)}</span><small>{formatDate(user.subscription.paidUntil)}</small></td>
+          <td><span className={user.role === 'STUDENT' || user.subscription.active ? 'good' : ''}>{subscriptionLabel(user)}</span>{user.role !== 'STUDENT' && <small>{formatDate(user.subscription.paidUntil)}</small>}</td>
           <td><div className="row-actions">
             <button className="icon-button" title="Редактирай профил и имейл" aria-label={`Редактирай ${user.email}`} disabled={busy} onClick={() => { setError(''); setEditing({ id: user.id, value: userEdit(user) }) }}><Pencil size={16} /></button>
             <button className="icon-button" title={user.id === auth.user.id ? 'Смяна на собствена парола от Профил' : 'Нова временна парола'} aria-label={`Нова парола за ${user.email}`} disabled={busy || user.id === auth.user.id} onClick={() => { setError(''); setConfirming({ user, action: 'reset' }) }}><KeyRound size={16} /></button>
@@ -127,7 +127,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
           {(['TEACHER', 'STUDENT'] as const).map(role => { const grant = row[role === 'TEACHER' ? 'teacher' : 'student']; return <td key={role}>
             {row.mode === 'MANAGED' ? <div className="grant-cell">
               <label className="checkbox-label"><input type="checkbox" aria-label={`${roleLabels[role]}: ${row.key} достъп`} checked={grant.allowed} disabled={busy} onChange={event => changePermission(row, role, 'allowed', event.target.checked)} /> Достъп</label>
-              <label className="checkbox-label muted"><input type="checkbox" aria-label={`${roleLabels[role]}: ${row.key} абонамент`} checked={grant.subscriptionRequired} disabled={busy || !grant.allowed} onChange={event => changePermission(row, role, 'subscriptionRequired', event.target.checked)} /> Абонамент</label>
+              {role === 'TEACHER' && <label className="checkbox-label muted"><input type="checkbox" aria-label={`${roleLabels[role]}: ${row.key} абонамент`} checked={grant.subscriptionRequired} disabled={busy || !grant.allowed} onChange={event => changePermission(row, role, 'subscriptionRequired', event.target.checked)} /> Абонамент</label>}
             </div> : <span className="muted">{grant.allowed ? row.mode === 'PUBLIC' ? 'Публичен' : 'Собствен профил' : 'Няма достъп'}</span>}
           </td> })}
           <td><span className="admin-access"><Check size={16} /> Пълен достъп</span></td>
@@ -147,10 +147,10 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
         <label>Имейл<input type="email" required maxLength={190} value={editing.value.email} onChange={event => setEditing({ ...editing, value: { ...editing.value, email: event.target.value } })} /></label>
         <label>Роля<select aria-label="Роля" value={editing.value.role} onChange={event => setEditing({ ...editing, value: { ...editing.value, role: event.target.value as Role } })}>{Object.entries(roleLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label className="checkbox-label"><input type="checkbox" checked={editing.value.active} onChange={event => setEditing({ ...editing, value: { ...editing.value, active: event.target.checked } })} /> Активен потребител</label>
-        <fieldset className="subscription-fields"><legend>Абонамент</legend>
+        {editing.value.role !== 'STUDENT' && <fieldset className="subscription-fields"><legend>Абонамент</legend>
           <label className="checkbox-label"><input type="checkbox" checked={editing.value.subscriptionPaid} onChange={event => setEditing({ ...editing, value: { ...editing.value, subscriptionPaid: event.target.checked } })} /> Платен</label>
           <label>Валиден до<input type="date" required={editing.value.subscriptionPaid} value={editing.value.subscriptionPaidUntil ?? ''} onChange={event => setEditing({ ...editing, value: { ...editing.value, subscriptionPaidUntil: event.target.value || null } })} /></label>
-        </fieldset>
+        </fieldset>}
         {error && <p className="error" role="alert">{error}</p>}
         <div className="dialog-actions"><button type="button" disabled={busy} onClick={() => setEditing(null)}>Отказ</button><button className="primary command-button" disabled={busy}><Save size={17} /> {busy ? 'Запазване...' : 'Запази'}</button></div>
       </form>

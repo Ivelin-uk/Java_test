@@ -44,6 +44,7 @@ public class AuthService {
         user.setName(request.name().trim());
         user.setEmail(request.email().trim().toLowerCase(Locale.ROOT));
         user.setPasswordHash(passwordEncoder.encode(request.password()));
+        user.setRole(request.role() == Role.TEACHER ? Role.TEACHER : Role.STUDENT);
         users.save(user);
         return issueToken(user);
     }
@@ -120,7 +121,9 @@ public class AuthService {
     }
 
     public record RegisterRequest(@NotBlank @Size(max = 120) String name, @Email @NotBlank @Size(max = 190) String email,
-                                  @NotBlank @Size(min = 8, max = 72) String password) {}
+                                  @NotBlank @Size(min = 8, max = 72) String password, Role role) {
+        public RegisterRequest(String name,String email,String password) {this(name,email,password,Role.STUDENT);}
+    }
     public record LoginRequest(@Email @NotBlank String email, @NotBlank String password) {}
     public record ChangePasswordRequest(@NotBlank String currentPassword, @NotBlank @Size(min = 8, max = 72) String newPassword) {}
     public record UserResponse(Long id, String name, String email, String role, boolean active,

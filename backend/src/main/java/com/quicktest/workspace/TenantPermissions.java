@@ -17,6 +17,7 @@ public class TenantPermissions implements HandlerInterceptor {
     public TenantPermissions(EndpointCatalog catalog,OrgAccess access,WorkspaceStore db,WorkspaceAudit audit) {this.catalog=catalog;this.access=access;this.db=db;this.audit=audit;}
     public boolean allowed(OrgAccess.Scope scope,EndpointCatalog.Endpoint endpoint,String role) {
         boolean baseline=role.equals("TEACHER")?endpoint.teacher():endpoint.student();
+        if(scope.platform()) return Set.of("TEACHER","STUDENT").contains(role) && baseline;
         return baseline && db.optional("SELECT allowed FROM tenant_endpoint_permissions WHERE organization_id=? AND endpoint_key=? AND role=?",scope.organizationId(),endpoint.key(),role).map(row->flag(row,"allowed")).orElse(true);
     }
     @Override public boolean preHandle(HttpServletRequest request,HttpServletResponse response,Object handler) {
