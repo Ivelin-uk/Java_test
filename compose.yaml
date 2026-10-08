@@ -29,8 +29,10 @@ services:
       WORKSPACE_WORKERS: "true"
       LEGACY_API_ENABLED: "false"
       AI_PROVIDER: ${COMPOSE_AI_PROVIDER:-mock}
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-180}
       MAIL_ADAPTER: ${COMPOSE_MAIL_ADAPTER:-local}
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"

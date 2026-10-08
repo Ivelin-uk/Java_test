@@ -68,13 +68,21 @@ MAMP 5.7 е проверен локално, но Hibernate предупрежд
 
 ## AI
 
-`AI_PROVIDER=ollama` използва локалния безплатен модел, без външен API ключ:
+`AI_PROVIDER=openai` (по подразбиране) използва OpenAI Responses API с валидиран структуриран JSON. Ключът е само на backend сървъра, никога във frontend или Git. Абонаментът за ChatGPT не включва API кредит.
+
+В терминала за backend въведете ключа скрито, без да го записвате в shell history:
 ```bash
-brew services start ollama
-ollama pull qwen3:4b
+read -rs 'OPENAI_API_KEY?OpenAI API key: '
+export OPENAI_API_KEY
+export AI_PROVIDER=openai
+export OPENAI_MODEL=gpt-4.1-mini
+cd backend
+./gradlew bootRun
 ```
 
-`OLLAMA_BASE_URL=http://localhost:11434`, `OLLAMA_MODEL=qwen3:4b`, timeout 180 секунди. Моделът трябва да е зареден отделно. AI заданията са асинхронни, резервират квота атомарно, валидират структурирания резултат и не публикуват тест. Невалиден резултат/timeout освобождава резервацията; повторение е изрично и ограничено. Учителят преглежда и може да генерира отново избрани въпроси.
+`OPENAI_BASE_URL=https://api.openai.com/v1`, `OPENAI_MODEL=gpt-4.1-mini`, `OPENAI_TIMEOUT_SECONDS=180`. Локалният Ollama адаптер е премахнат. Заявките са със `store=false`; тема и учебен текст се изпращат към OpenAI, затова не включвайте лични данни. API използването има отделно таксуване и лимити. Ключ, публикуван в чат или Git, трябва да се оттегли и смени.
+
+AI заданията са асинхронни, резервират квота атомарно, валидират структурирания резултат и не публикуват тест. Резултатът се отваря автоматично в редактора. Учителят го преглежда и избира „Запази“ или „Публикувай версия“. Невалиден резултат/timeout освобождава резервацията; повторение е изрично и ограничено. При липсващ ключ, кредит или достъп се показва конкретна грешка.
 
 `AI_PROVIDER=mock` е **фиктивен локален адаптер** за тестове, не реално AI. Използва се по подразбиране само в Compose. Ръчното създаване не зависи от AI. Не поставяйте лични ученически данни в учебния изходен текст.
 
@@ -91,7 +99,7 @@ docker compose up --build -d
 docker compose logs -f backend
 ```
 
-Портовете са отделени от MAMP: frontend **http://localhost:5174**, backend **http://localhost:8082**, MySQL **8890**, Mailpit **http://localhost:8025**. По подразбиране AI е фиктивен, а mail адаптерът е локален. `COMPOSE_MAIL_ADAPTER=smtp` насочва тестовите писма към Mailpit; `COMPOSE_AI_PROVIDER=ollama` използва локалния Ollama на Mac. Спрете чрез `docker compose stop`. Не изтривайте database volume, за да поправяте миграции.
+Портовете са отделени от MAMP: frontend **http://localhost:5174**, backend **http://localhost:8082**, MySQL **8890**, Mailpit **http://localhost:8025**. По подразбиране AI е фиктивен, а mail адаптерът е локален. `COMPOSE_MAIL_ADAPTER=smtp` насочва тестовите писма към Mailpit; `COMPOSE_AI_PROVIDER=openai` и `OPENAI_API_KEY` включват реалния OpenAI API. Спрете чрез `docker compose stop`. Не изтривайте database volume, за да поправяте миграции.
 
 Compose е подготвен и YAML е проверен, но Docker не е наличен на тази машина: целият контейнерен старт трябва да се провери на среда с Docker.
 

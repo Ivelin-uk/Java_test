@@ -2,7 +2,7 @@
 
 ## Environments
 
-Development: MAMP on 8889, schema `test_ai`, localhost 8080/5173, seeded demo identities, local mail, optional Ollama.
+Development: MAMP on 8889, schema `test_ai`, localhost 8080/5173, seeded demo identities, local mail, OpenAI API configured with backend-only `OPENAI_API_KEY`. Manual test creation works without AI credentials.
 
 Verification: separate `examai_verification` schema, disposable `example.test` identities, disabled demo seed, fake/stub providers, no external student mail. HTTP load tests refuse the application schema. E2E tests create their own marked organizations on the explicitly configured local server; use a separate backend/database for repeatable CI isolation.
 

@@ -6,6 +6,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.server.ResponseStatusException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.*;
@@ -13,6 +16,7 @@ import static com.quicktest.workspace.WorkspaceStore.*;
 
 @Service
 public class WorkspaceAiService {
+    private static final Logger log=LoggerFactory.getLogger(WorkspaceAiService.class);
     private final WorkspaceStore db;private final AiProvider provider;private final OrganizationService organizations;
     private final AssessmentService assessments;private final TransactionTemplate transactions;private final Clock clock;private final boolean workers;
     public WorkspaceAiService(WorkspaceStore db,AiProvider provider,OrganizationService organizations,AssessmentService assessments,TransactionTemplate transactions,Clock clock,@Value("${app.workspace.workers:true}") boolean workers) {this.db=db;this.provider=provider;this.organizations=organizations;this.assessments=assessments;this.transactions=transactions;this.clock=clock;this.workers=workers;}
@@ -64,7 +68,11 @@ public class WorkspaceAiService {
             if(definition.questions().size()!=request.questionCount() || request.questionTypes()!=null && definition.questions().stream().anyMatch(q->!request.questionTypes().contains(q.type()))) throw WorkspaceError.validation("AI не спази типовете или броя въпроси.");
             if(request.difficultyCounts()!=null) for(var entry:request.difficultyCounts().entrySet()) if(definition.questions().stream().filter(q->q.difficulty().equals(entry.getKey())).count()!=entry.getValue()) throw WorkspaceError.validation("AI не спази разпределението по трудност.");
             complete(org,id,lease,db.json(Map.of("definition",definition,"model",generated.model(),"inputTokens",generated.inputTokens(),"outputTokens",generated.outputTokens())),null);
-        } catch(Exception error) {complete(org,id,lease,null,"AI не успя да създаде валиден тест. Проверете модела и повторете.");}
+        } catch(Exception error) {
+            log.warn("AI generation job {} failed",id,error);
+            String message=error instanceof ResponseStatusException response && response.getReason()!=null ? response.getReason() : error instanceof WorkspaceError ? error.getMessage() : "AI не успя да създаде валиден тест. Проверете модела и повторете.";
+            complete(org,id,lease,null,message);
+        }
     }
     private void complete(long org,long id,long lease,String result,String error) {
         transactions.executeWithoutResult(tx->{

@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Plus, UserPlus, Trash2, FileUp, ArrowLeft, Save } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Plus, UserPlus, Trash2, FileUp, ArrowLeft, Save, Pencil } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
 import type { Group, Member } from './types'
@@ -13,12 +13,38 @@ export function GroupsPanel({ api, teacher }: { api: WorkspaceApi; teacher: bool
   const [name, setName] = useState('')
   const [subject, setSubject] = useState('')
   const [selected, setSelected] = useState<Group | null>(null)
+  const [dialog, setDialog] = useState<{ group: Group; mode: 'edit' | 'delete' } | null>(null)
+  const [message, setMessage] = useState('')
   if (selected && !teacher) return <GroupSummary api={api} group={selected} back={() => setSelected(null)} />
-  if (selected && teacher) return <GroupMembers api={api} group={selected} back={() => setSelected(null)} />
-  return <section className="ws-section"><SectionHead title="Групи" /><Feedback error={groups.error || action.error} message={action.message} busy={groups.loading || action.busy} />
-    {teacher && <form className="ws-inline-form" onSubmit={e => { e.preventDefault(); void action.run(async () => { await api.post('/groups', { name, subject, description, schoolYear: year, classLabel }); setName(''); await groups.reload() }, 'Групата е създадена.') }}><label>Име<input required maxLength={190} value={name} onChange={e => setName(e.target.value)} /></label><label>Дисциплина<input value={subject} onChange={e => setSubject(e.target.value)} /></label><label>Учебна година<input maxLength={40} value={year} onChange={e => setYear(e.target.value)} /></label><label>Клас / курс<input maxLength={80} value={classLabel} onChange={e => setClassLabel(e.target.value)} /></label><label>Описание<input maxLength={4000} value={description} onChange={e => setDescription(e.target.value)} /></label><button className="primary command-button" disabled={action.busy}><Plus size={17} /> Създай група</button></form>}
-    <div className="ws-table-wrap"><table className="ws-table"><thead><tr><th>Група</th><th>Дисциплина</th><th>Учебна година</th><th>Клас / курс</th></tr></thead><tbody>{groups.data.map(group => <tr key={group.id}><td>{<button className="ws-text-button" onClick={() => setSelected(group)}>{group.name}</button>}</td><td>{group.subject}</td><td>{group.school_year}</td><td>{group.class_label}</td></tr>)}</tbody></table></div>{!groups.data.length && !groups.loading && <Empty />}
+  if (selected && teacher) return <GroupMembers api={api} group={selected} back={() => { setSelected(null); void action.run(() => groups.reload()) }} />
+  return <section className="ws-section"><SectionHead title="Групи" /><Feedback error={groups.error || action.error} message={message || action.message} busy={groups.loading || action.busy} />
+    {teacher && <form className="ws-inline-form" onSubmit={e => { e.preventDefault(); setMessage(''); void action.run(async () => { await api.post('/groups', { name, subject, description, schoolYear: year, classLabel }); setName(''); await groups.reload() }, 'Групата е създадена.') }}><label>Име<input required maxLength={190} value={name} onChange={e => setName(e.target.value)} /></label><label>Дисциплина<input maxLength={190} value={subject} onChange={e => setSubject(e.target.value)} /></label><label>Учебна година<input maxLength={40} value={year} onChange={e => setYear(e.target.value)} /></label><label>Клас / курс<input maxLength={80} value={classLabel} onChange={e => setClassLabel(e.target.value)} /></label><label>Описание<input maxLength={4000} value={description} onChange={e => setDescription(e.target.value)} /></label><button className="primary command-button" disabled={action.busy}><Plus size={17} /> Създай група</button></form>}
+    <div className="ws-table-wrap"><table className="ws-table"><thead><tr><th>Група</th><th>Дисциплина</th><th>Учебна година</th><th>Клас / курс</th>{teacher && <th>Действия</th>}</tr></thead><tbody>{groups.data.map(group => <tr key={group.id}><td>{<button className="ws-text-button" onClick={() => setSelected(group)}>{group.name}</button>}</td><td>{group.subject}</td><td>{group.school_year}</td><td>{group.class_label}</td>{teacher && <td><div className="ws-actions"><button className="icon-button" title="Редактирай групата" onClick={() => setDialog({ group, mode: 'edit' })}><Pencil size={17} /></button><button className="icon-button danger" title="Изтрий групата" onClick={() => setDialog({ group, mode: 'delete' })}><Trash2 size={17} /></button></div></td>}</tr>)}</tbody></table></div>{!groups.data.length && !groups.loading && <Empty />}
+    {dialog && <GroupDialog api={api} group={dialog.group} mode={dialog.mode} close={() => setDialog(null)} saved={async () => { await groups.reload(); setMessage(dialog.mode === 'delete' ? 'Групата е изтрита.' : 'Групата е обновена.'); setDialog(null) }} />}
   </section>
+}
+function GroupDialog({ api, group, mode, close, saved }: { api: WorkspaceApi; group: Group; mode: 'edit' | 'delete'; close: () => void; saved: () => Promise<void> }) {
+  const ref = useRef<HTMLDialogElement>(null)
+  const action = useAction()
+  const [editing, setEditing] = useState(group)
+  const deleting = mode === 'delete'
+  useEffect(() => { ref.current?.showModal() }, [])
+  return <dialog ref={ref} className="delete-dialog ws-group-dialog" aria-labelledby="group-dialog-title" aria-describedby={deleting ? 'group-delete-description' : undefined} onCancel={e => { e.preventDefault(); if (!action.busy) close() }}>
+    <h2 id="group-dialog-title">{deleting ? 'Изтриване на група' : 'Редактиране на група'}</h2>
+    <form onSubmit={e => { e.preventDefault(); void action.run(async () => {
+      if (deleting) await api.remove(`/groups/${group.id}`)
+      else await api.put(`/groups/${group.id}`, { profile: { name: editing.name, subject: editing.subject, description: editing.description, schoolYear: editing.school_year, classLabel: editing.class_label }, status: editing.status })
+      await saved()
+    }) }}>
+      {deleting ? <><p><strong>{group.name}</strong></p><p id="group-delete-description">Да изтрием ли групата? Възложените тестове и резултатите на учениците ще се запазят.</p></> : <fieldset className="ws-editor" disabled={action.busy}>
+        {([['name', 'Име', 190], ['subject', 'Дисциплина', 190], ['school_year', 'Учебна година', 40], ['class_label', 'Клас / курс', 80]] as const).map(([key, title, max]) => <label key={key}>{title}<input autoFocus={key === 'name'} required={key === 'name'} maxLength={max} value={editing[key]} onChange={e => setEditing({ ...editing, [key]: e.target.value })} /></label>)}
+        <label>Описание<textarea maxLength={4000} value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })} /></label>
+        <label>Статус<select value={editing.status} onChange={e => setEditing({ ...editing, status: e.target.value })}><option value="active">Активна</option><option value="archived">Архивирана</option></select></label>
+      </fieldset>}
+      <Feedback error={action.error} busy={action.busy} />
+      <div className="ws-actions dialog-actions"><button type="button" autoFocus={deleting} disabled={action.busy} onClick={close}>Отказ</button><button type="submit" className={deleting ? 'danger command-button' : 'primary command-button'} disabled={action.busy || !deleting && !editing.name.trim()}>{deleting ? <Trash2 size={17} /> : <Save size={17} />}{deleting ? 'Изтрий' : 'Запази'}</button></div>
+    </form>
+  </dialog>
 }
 function GroupMembers({ api, group, back }: { api: WorkspaceApi; group: Group; back: () => void }) {
   const members = useRemote<(Member & { active: boolean })[]>(api, `/groups/${group.id}/members`, [])

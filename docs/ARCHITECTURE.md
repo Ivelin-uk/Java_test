@@ -10,7 +10,7 @@ Creator registers -> creates or generates draft -> edits questions -> publishes 
 
 - `auth`: users, password hashing, bearer token sessions.
 - `tests`: tests, questions, answers, publishing, owned-test deletion, public attempts, scoring, result views.
-- `ai`: provider abstraction, local Ollama generation with structured JSON validation, usage tracking, an explicitly selected mock for automated tests.
+- `ai`: provider abstraction, OpenAI Responses API with structured JSON validation, usage tracking, an explicitly selected mock for automated tests.
 - `dashboard`: creator metrics.
 - `demo`: local seed data.
 
@@ -24,7 +24,7 @@ When `DEMO_SEED=true` (the default), the transactional demo runner populates app
 
 Owned-test deletion removes attempts and submitted answers before cascading to questions and answer choices, within one transaction. Ownership is checked before any deletion; another user's test returns 404.
 
-Normal AI generation calls `POST /api/chat` on the configured Ollama server (`http://localhost:11434`, model `qwen3:4b` by default). The JSON schema constrains question structure and count; validation checks distinct questions and correct answer choices before recording actual token usage. Local inference has zero API cost.
+Normal AI generation calls `POST https://api.openai.com/v1/responses` with `gpt-4.1-mini` by default, `store=false`, and a strict JSON schema. The API key is read only by the backend from `OPENAI_API_KEY`. Validation checks distinct questions and correct answer choices before recording actual token usage. OpenAI API usage is separately billed; ChatGPT subscriptions are not API credit. Missing credentials, quota, refusals and incomplete responses fail visibly without publishing a test or falling back to fake generation. The Ollama implementation has been removed.
 
 Core tables represented by entities:
 

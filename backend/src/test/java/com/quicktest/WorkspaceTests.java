@@ -11,6 +11,8 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.time.*;
 import java.util.*;
@@ -228,11 +230,51 @@ class WorkspaceTests {
         ai.retry(teaching,id);var worker=new WorkspaceAiService(db,new com.quicktest.ai.MockAiProvider(),organizations,assessments,transactions,clock,true);long versions=db.count("SELECT COUNT(*) FROM assessment_versions WHERE organization_id=?",org);worker.process();worker.process();
         assertEquals("completed",string(ai.get(teaching,id),"status"));assertEquals(1,number(organizations.subscription(org),"ai_used"));assertEquals(0,number(organizations.subscription(org),"ai_reserved"));assertEquals(versions,db.count("SELECT COUNT(*) FROM assessment_versions WHERE organization_id=?",org));
     }
+    @Test void aiFailureRetainsActionableProviderMessage() {
+        long id=number(ai.enqueue(teaching,new WorkspaceAiService.Generate("ai-offline-test","Java","","","bg",1,"EASY","")),"id");
+        var worker=new WorkspaceAiService(db,r->{throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Моделът за AI генериране не е зареден.");},organizations,assessments,transactions,clock,true);
+        for(int n=0;n<20 && string(ai.get(teaching,id),"status").equals("queued");n++) worker.process();
+        assertEquals("failed",string(ai.get(teaching,id),"status"));
+        assertEquals("Моделът за AI генериране не е зареден.",string(ai.get(teaching,id),"error_message"));
+        assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
+    }
     @Test void immutableVersionsAndDeduplicatedRecipientSnapshot() {
         long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Group","","Java","2026","12")),"id");organizations.addStudent(teaching,group,student);
         var assigned=assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(group),List.of(student),now,now.plusSeconds(1000),1,false,false,true));assertEquals(1L,number(assigned,"recipients"));
         long test=number(db.one("SELECT assessment_id FROM assessment_versions WHERE id=?",version),"assessment_id");
         assessments.save(teaching,test,definition(true));assertEquals(1,db.parse(db.one("SELECT definition_json FROM assessment_versions WHERE id=?",version).get("definition_json"),AssessmentService.Definition.class).questions().size());
+    }
+    @Test void groupDeletionHidesGroupWithoutRemovingAssignmentsRecipientsOrAttempts() throws Exception {
+        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Delete group","","Java","2026","12")),"id");
+        organizations.addStudent(teaching,group,student);
+        var assigned=assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(group),List.of(),now.minusSeconds(1),now.plusSeconds(3600),1,false,false,true));
+        assignment=number(assigned,"id");code=string(assigned,"code");long attempt=number(start(startRequest()),"id");
+        String teacherToken="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        mvc.perform(delete("/api/v1/groups/"+group).header("Authorization",authorization)).andExpect(status().isForbidden());
+        mvc.perform(delete("/api/v1/groups/"+group).header("Authorization",teacherToken)).andExpect(status().isOk());
+        assertEquals("deleted",string(db.one("SELECT status FROM learning_groups WHERE id=?",group),"status"));
+        assertTrue(organizations.groups(teaching).stream().noneMatch(row->number(row,"id")==group));
+        assertTrue(organizations.groups(learning).stream().noneMatch(row->number(row,"id")==group));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_assignments WHERE id=?",assignment));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM assignment_recipients WHERE assignment_id=? AND canceled=FALSE",assignment));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_attempts WHERE id=?",attempt));
+        mvc.perform(get("/api/v1/groups/"+group+"/summary").header("Authorization",teacherToken)).andExpect(status().isNotFound());
+        mvc.perform(delete("/api/v1/groups/"+group).header("Authorization",teacherToken)).andExpect(status().isNotFound());
+        assertThrows(WorkspaceError.class,()->organizations.updateGroup(teaching,group,new OrganizationService.GroupChange(new OrganizationService.GroupRequest("Restored","","","",""),"active")));
+        assertThrows(WorkspaceError.class,()->assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(group),List.of(),now,now.plusSeconds(3600),1,false,false,true)));
+    }
+    @Test void groupEditingAndDeletionRequireAnAssignedTeacher() {
+        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Original","","Java","2026","12")),"id");
+        var change=new OrganizationService.GroupChange(new OrganizationService.GroupRequest("Edited","Description","Math","2027","11"),"active");
+        var outsider=new OrgAccess.Scope(org,user(Role.TEACHER).getId(),Set.of("TEACHER"),true);
+        assertThrows(WorkspaceError.class,()->organizations.updateGroup(outsider,group,change));
+        assertThrows(WorkspaceError.class,()->organizations.deleteGroup(outsider,group));
+        organizations.updateGroup(new OrgAccess.Scope(other,teacher,Set.of("TEACHER"),true),group,change);
+        var edited=organizations.groupAccess(teaching,group);
+        assertEquals("Edited",string(edited,"name"));assertEquals("Description",string(edited,"description"));
+        assertEquals("Math",string(edited,"subject"));assertEquals("2027",string(edited,"school_year"));assertEquals("11",string(edited,"class_label"));
+        assertThrows(WorkspaceError.class,()->organizations.updateGroup(teaching,group,new OrganizationService.GroupChange(new OrganizationService.GroupRequest(" ","","","",""),"active")));
+        assertThrows(WorkspaceError.class,()->organizations.updateGroup(teaching,group,new OrganizationService.GroupChange(change.profile(),null)));
     }
     @Test void concurrentStartsProduceOneAttemptAndSameSnapshot() throws Exception {
         var r=startRequest();try(var pool=Executors.newFixedThreadPool(8)) {

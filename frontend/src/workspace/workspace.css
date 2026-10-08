@@ -34,6 +34,8 @@
 .ws-metrics strong { font-size: 30px; }
 .ws-metrics strong.ws-metric-text { font-size: 20px; }
 .ws-editor { display: grid; gap: 20px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.ws-group-dialog { overflow-y: auto; }
+.ws-group-dialog form { display: grid; gap: 14px; }
 .ws-ai-band { display: grid; gap: 14px; background: #edf4f1; padding: 20px; border-top: 1px solid #c8dcd4; border-bottom: 1px solid #c8dcd4; }
 .ws-question { display: grid; gap: 16px; padding: 24px 0; border-top: 1px solid #d7e1e8; }
 .ws-question-head { display: flex; align-items: center; gap: 14px; }
