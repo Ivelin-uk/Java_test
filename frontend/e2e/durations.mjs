@@ -15,7 +15,7 @@ const assignment = { id: 301, title: definition.title, teacher_id: teacher.user.
 const artifacts = new URL('../../.artifacts/', import.meta.url)
 await mkdir(artifacts, { recursive: true })
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined), headless: true })
-const errors = [], saved = []
+const errors = [], saved = [], starts = []
 let page
 try {
   async function open(auth) {
@@ -40,7 +40,11 @@ try {
         return respond(assessment)
       }
       if (method === 'POST' && path === `/api/v1/tests/${assessment.id}/publish`) return respond(assessment)
+      if (method === 'POST' && path === `/api/v1/assignments/${assignment.id}/code/rotate`) return respond({ code: 'ABCDEFGH' })
       if (method === 'POST' && path === `/api/v1/assignments/${assignment.id}/attempts`) {
+        const body = request.postDataJSON()
+        if (body.code !== 'ABCDEFGH') return route.fulfill({ status: 400, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Невалиден или отменен код.' }) })
+        starts.push(body)
         const now = await current.evaluate(() => Date.now())
         examState = { id: 401, assignment_id: assignment.id, status: 'in_progress', server_now: new Date(now).toISOString(), question_number: 1, question_count: 2, question: { id: 501, type: 'SINGLE_CHOICE', text: definition.questions[0].text, status: 'open', maximum_points: 1, time_seconds: 60, open_instance: 'timer-instance', opened_at: new Date(now).toISOString(), deadline_at: new Date(now + 60000).toISOString(), options: [{ id: 'a', text: 'boolean' }, { id: 'b', text: 'int' }], draft: null } }
         return respond(examState)
@@ -88,6 +92,11 @@ try {
   await page.getByRole('button', { name: 'Възлагания', exact: true }).click()
   await page.getByRole('combobox', { name: 'Тест', exact: true }).click()
   await page.getByRole('listbox', { name: 'Тестове за възлагане', exact: true }).getByText('8 мин 10 сек', { exact: false }).waitFor()
+  await page.getByRole('button', { name: 'Нов код', exact: true }).click()
+  await page.locator('.ws-code-details').getByText(`${assignment.title} · Възлагане №${assignment.id}`, { exact: true }).waitFor()
+  assert.equal(await page.locator('.ws-code output').innerText(), 'ABCDEFGH')
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  await page.screenshot({ path: new URL('access-code-320.png', artifacts).pathname, fullPage: true })
   await page.context().close()
 
   page = await open(student)
@@ -99,8 +108,17 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   }
   await page.clock.install(); await page.clock.pauseAt(new Date())
-  await page.getByLabel('Код за достъп', { exact: true }).fill('ABCDEFGH')
+  await page.getByText(`Възлагане №${assignment.id}`, { exact: true }).waitFor()
+  const code = page.getByLabel('Код за достъп', { exact: true })
+  const begin = page.getByRole('button', { name: 'Започни на цял екран', exact: true })
+  assert.equal(await begin.isDisabled(), true)
+  await code.fill('WRONG234'); await begin.click()
+  await page.getByRole('alert').getByText('Поискайте текущия код от учителя.', { exact: false }).waitFor()
+  assert.equal(starts.length, 0)
+  await code.fill('  abcd efgh  ')
+  assert.equal(await code.inputValue(), 'ABCDEFGH')
   await page.getByRole('button', { name: 'Започни на цял екран', exact: true }).click()
+  assert.equal(starts.length, 1); assert.equal(starts[0].code, 'ABCDEFGH')
   const timer = page.getByLabel('Оставащо време', { exact: true })
   await timer.getByText('1 мин 0 сек', { exact: true }).waitFor()
   await page.clock.runFor(1000)
@@ -112,7 +130,7 @@ try {
     await page.screenshot({ path: new URL(`duration-timer-${width}.png`, artifacts).pathname })
   }
   assert.deepEqual(errors, [])
-  console.log('Passed: duration boundaries, exact totals, library and question preview, minute/second editing and validation, seconds-only API payload, assignment picker, exam preflight, timer minute rollover, desktop/mobile. API fixtures only.')
+  console.log('Passed: duration boundaries, exact totals, library and question preview, minute/second editing and validation, seconds-only API payload, assignment picker and code identity, required code and wrong-code retry, whitespace-safe paste, exam preflight, timer minute rollover, desktop/mobile. API fixtures only.')
 } catch (error) {
   if (page && !page.isClosed()) await page.screenshot({ path: new URL('durations-failure.png', artifacts).pathname, fullPage: true })
   throw error

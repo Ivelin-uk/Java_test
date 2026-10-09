@@ -124,6 +124,8 @@
 .ws-assignment-form > .ws-editor > .primary { justify-self: start; }
 .ws-code { display: flex; align-items: center; gap: 18px; padding: 18px; background: var(--success-bg); border: 1px solid var(--border); }
 .ws-code output { font-family: ui-monospace, monospace; font-size: 25px; font-weight: 700; }
+.ws-code-details { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.ws-code-details span { font-size: 13px; color: var(--muted); }
 .ws-summary { align-self: center; color: var(--muted); font-size: 13px; }
 .ws-monitor, .ws-publication { display: grid; gap: 18px; padding-top: 24px; border-top: 1px solid var(--border); }
 .ws-student-text { margin: 0; padding: 14px; background: var(--subtle); font: 14px/1.6 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }

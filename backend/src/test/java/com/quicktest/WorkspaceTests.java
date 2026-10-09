@@ -578,6 +578,33 @@ class WorkspaceTests {
         var r=startRequest();var wrong=new AttemptService.StartRequest("BADCODE1",r.idempotencyKey(),r.browserId(),r.sessionToken(),true,true,true);
         for(int i=0;i<5;i++) assertThrows(WorkspaceError.class,()->start(wrong));var error=assertThrows(WorkspaceError.class,()->start(r));assertEquals("rate_limit",error.code());
     }
+    @Test void groupMemberNeedsCurrentCodeAfterReassignmentAndRotation() {
+        String original=code;
+        var first=startRequest();long attempt=number(start(first),"id");
+        assignments.removeRecipient(teaching,assignment,student);
+        assignments.addRecipient(teaching,assignment,student);
+        assertEquals("voided",string(db.one("SELECT status FROM exam_attempts WHERE id=?",attempt),"status"));
+        assertEquals(2,number(db.one("SELECT max_attempts FROM assignment_recipients WHERE assignment_id=? AND student_id=?",assignment,student),"max_attempts"));
+        code=string(assignments.rotate(teaching,assignment),"code");
+        var next=startRequest();
+        for(String rejected:List.of("",original)) {
+            var invalid=new AttemptService.StartRequest(rejected,next.idempotencyKey(),next.browserId(),next.sessionToken(),true,true,true);
+            assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->start(invalid)).getStatusCode());
+        }
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=? AND student_id=?",assignment,student));
+        long resumed=number(start(next),"id");assertNotEquals(attempt,resumed);
+        assertEquals(resumed,number(start(next),"id"));
+        assertEquals(2,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=? AND student_id=?",assignment,student));
+    }
+    @Test void oneGroupCodeStartsSeparateAttemptsForItsAssignedMembers() {
+        var second=enrolledStudent();organizations.addStudent(teaching,defaultGroup,second.getId());
+        assignments.addRecipient(teaching,assignment,second.getId());
+        long first=number(start(startRequest()),"id");
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(second.getEmail(),"password123")).token();
+        long next=number(attempts.start(new OrgAccess.Scope(org,second.getId(),Set.of("STUDENT")),assignment,startRequest(),bearer,"127.0.0.2"),"id");
+        assertNotEquals(first,next);
+        assertEquals(2,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=? AND status='in_progress'",assignment));
+    }
     @Test void aiReservationsDeduplicateAndDoNotPublishAnything() {
         var request=new WorkspaceAiService.Generate("ai-request-123","Java","","","bg",2,"EASY","");var first=ai.enqueue(teaching,request);var second=ai.enqueue(teaching,request);assertEquals(number(first,"id"),number(second,"id"));assertEquals(1,number(organizations.subscription(org),"ai_reserved"));assertEquals(0,number(organizations.subscription(org),"ai_used"));
     }
