@@ -63,8 +63,8 @@ class DemoDataTests {
                 "users", 4L, "tests", 4L, "question", 14L, "answer", 37L,
                 "attempt", 6L, "attempt_answer", 24L, "ai_usage", 2L, "auth_token", 4L
         ), rowCounts());
-        assertEquals(13, flyway.info().applied().length);
-        assertEquals("13", flyway.info().current().getVersion().toString());
+        assertEquals(16, flyway.info().applied().length);
+        assertEquals("16", flyway.info().current().getVersion().toString());
         assertEquals(2L, jdbc.queryForObject("SELECT COUNT(*) FROM demo_seed_history", Long.class));
         assertTrue(jdbc.queryForObject("SELECT COUNT(*) FROM endpoint_permission", Long.class) > 0);
         assertEquals("ADMIN", users.findByEmailIgnoreCase("admin@quicktest.local").orElseThrow().getRole().name());

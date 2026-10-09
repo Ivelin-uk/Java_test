@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "test:e2e": "node e2e/workspace.mjs",
     "test:authoring": "node e2e/authoring.mjs",
+    "test:ai": "node e2e/ai-page.mjs",
     "test:groups": "node e2e/groups.mjs",
     "test:library": "node e2e/test-library.mjs",
     "test:themes": "node e2e/themes.mjs",

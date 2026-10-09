@@ -41,7 +41,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
     if (!job?.result_json) return
     const definition = (JSON.parse(job.result_json) as { definition: Definition }).definition
     if (jobMode === 'append') setDraft(previous => previous ? { ...previous, questions: [...previous.questions, ...definition.questions] } : previous)
-    else { setCurrent(null); setDraft(definition) }
+    else { setCurrent(null); setDraft(definition); setShowAi(false) }
     setJob(null)
   }
   const [current, setCurrent] = useState<Assessment | null>(null)
@@ -61,6 +61,10 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
   const generating = !!job && ['queued', 'running'].includes(job.status)
   const addLimit = Math.min(20, 100 - (draft?.questions.length ?? 0))
   const validAddCount = Number.isInteger(addCount) && addCount >= 1 && addCount <= addLimit
+  const validDistribution = difficulty !== 'MIXED' || Object.values(distribution).every(value => Number.isInteger(value) && value >= 0 && value <= 20) && Object.values(distribution).reduce((sum, value) => sum + value, 0) === count
+  const validGeneration = !!topic.trim() && aiTypes.length > 0 && Number.isInteger(count) && count >= 1 && count <= 20 && validDistribution
+
+  useEffect(() => { window.scrollTo({ top: 0 }) }, [showAi])
 
   useEffect(() => {
     if (!preview) return
@@ -77,7 +81,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
         if (next.status === 'completed' && next.result_json) {
           const definition = (JSON.parse(next.result_json) as { definition: Definition }).definition
           if (jobMode === 'append') setDraft(previous => previous ? { ...previous, questions: [...previous.questions, ...definition.questions] } : previous)
-          else { setCurrent(null); setDraft(definition) }
+          else { setCurrent(null); setDraft(definition); setShowAi(false) }
           setJob(null)
         } else setJob(next)
       }).catch(() => { if (active) setPollError('Не може да се провери AI заявката. Изчаква се връзка със сървъра.') })
@@ -127,9 +131,44 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
       window.scrollTo({ top: 0 })
     }, 'Тестът е запазен.')
   }
+  if (showAi && !draft) return <section className="ws-section" aria-label="Създаване на тест с AI">
+    <SectionHead title="Създаване на тест с AI"><button type="button" title="Към библиотеката" className="icon-button" disabled={action.busy || generating} onClick={() => setShowAi(false)}><ArrowLeft size={18} /></button></SectionHead>
+    <Feedback error={action.error || pollError || (job?.status === 'failed' ? job.error_message ?? 'AI заявката не успя.' : '')} busy={action.busy || generating} />
+    <form className="ws-ai-form" onSubmit={e => {
+      e.preventDefault()
+      if (!validGeneration || action.busy || generating) return
+      void action.run(async () => {
+        setJobMode('new'); setPollError('')
+        setJob(await api.post<AiJob>('/ai/test-generations', { requestKey: crypto.randomUUID(), topic: topic.trim(), subject: aiSubject, level: aiLevel, language: aiLanguage, questionCount: count, difficulty, sourceText: source, questionTypes: aiTypes, difficultyCounts: difficulty === 'MIXED' ? distribution : { [difficulty]: count } }))
+      })
+    }}>
+      <fieldset className="ws-editor" disabled={action.busy || generating}>
+        <div className="ws-form-grid">
+          <label>Тема<input autoFocus required value={topic} maxLength={500} onChange={e => setTopic(e.target.value)} /></label>
+          <label>Въпроси<input type="number" min={1} max={20} step={1} value={count} onChange={e => setCount(Number(e.target.value))} /></label>
+          <label>Трудност<select value={difficulty} onChange={e => setDifficulty(e.target.value)}><option value="EASY">Лесни</option><option value="MEDIUM">Средни</option><option value="HARD">Трудни</option><option value="VERY_HARD">Много трудни</option><option value="MIXED">По разпределение</option></select></label>
+        </div>
+        <div className="ws-form-grid">
+          <label>Дисциплина<input value={aiSubject} maxLength={190} onChange={e => setAiSubject(e.target.value)} /></label>
+          <label>Клас / ниво<input value={aiLevel} maxLength={190} onChange={e => setAiLevel(e.target.value)} /></label>
+          <label>Език<select value={aiLanguage} onChange={e => setAiLanguage(e.target.value)}><option value="bg">Български</option><option value="en">Английски</option></select></label>
+        </div>
+        <fieldset className="ws-ai-types"><legend>Типове въпроси</legend><div className="ws-actions">{types.map(([key, title]) => <label className="ws-check" key={key}><input type="checkbox" checked={aiTypes.includes(key)} onChange={e => setAiTypes(e.target.checked ? [...aiTypes, key] : aiTypes.filter(t => t !== key))} />{title}</label>)}</div></fieldset>
+        {difficulty === 'MIXED' && <div className="ws-form-grid">{Object.entries({ EASY: 'Лесни', MEDIUM: 'Средни', HARD: 'Трудни', VERY_HARD: 'Много трудни' }).map(([key, title]) => <label key={key}>{title}<input type="number" min={0} max={20} step={1} value={distribution[key]} onChange={e => setDistribution({ ...distribution, [key]: Number(e.target.value) })} /></label>)}</div>}
+        {!validDistribution && <p className="error" role="alert">Сумата по трудност трябва да е равна на броя въпроси.</p>}
+        <label>Учебен текст<textarea value={source} maxLength={20000} onChange={e => setSource(e.target.value)} /></label>
+      </fieldset>
+      <div className="ws-actions">
+        <button type="submit" className="primary command-button" disabled={action.busy || generating || !validGeneration}><Sparkles size={17} />{generating ? 'Генериране...' : 'Генерирай'}</button>
+        {job && <span role="status">{label(job.status)}</span>}
+        {job?.status === 'completed' && <button type="button" className="command-button" onClick={reviewJob}><Check size={17} /> Прегледай черновата</button>}
+        {job?.status === 'failed' && <button type="button" className="command-button" disabled={action.busy} onClick={() => void action.run(async () => { setPollError(''); setJob(await api.post<AiJob>(`/ai/test-generations/${job.id}/retry`)) })}><Sparkles size={17} /> Повтори</button>}
+      </div>
+    </form>
+  </section>
   return <section className="ws-section">
     <SectionHead title={draft ? draft.title : 'Библиотека с тестове'}>
-      {draft ? <><button title="Към библиотеката" className="icon-button" disabled={action.busy || generating || pendingImages > 0} onClick={() => { setDraft(null); setCurrent(null); setJob(null) }}><ArrowLeft size={18} /></button><button className="primary command-button" disabled={action.busy || !editable || pendingImages > 0 || !!job && ['queued', 'running'].includes(job.status)} onClick={() => void save()}><Save size={17} /> Запази теста</button></> : <div className="ws-actions"><button className="primary command-button" disabled={!!job && ['queued', 'running'].includes(job.status)} onClick={() => { setCurrent(null); setDraft(blank()); setJob(null) }}><Plus size={17} /> Ръчен тест</button><button aria-expanded={showAi} className="command-button" onClick={() => setShowAi(!showAi)}><Sparkles size={17} /> С AI</button></div>}
+      {draft ? <><button title="Към библиотеката" className="icon-button" disabled={action.busy || generating || pendingImages > 0} onClick={() => { setDraft(null); setCurrent(null); setJob(null); setShowAi(false) }}><ArrowLeft size={18} /></button><button className="primary command-button" disabled={action.busy || !editable || pendingImages > 0 || !!job && ['queued', 'running'].includes(job.status)} onClick={() => void save()}><Save size={17} /> Запази теста</button></> : <div className="ws-actions"><button className="primary command-button" disabled={!!job && ['queued', 'running'].includes(job.status)} onClick={() => { setCurrent(null); setDraft(blank()); setJob(null) }}><Plus size={17} /> Ръчен тест</button><button className="command-button" disabled={action.busy} onClick={() => { setPreview(null); setShowAi(true) }}><Sparkles size={17} /> С AI</button></div>}
     </SectionHead>
     <Feedback error={action.error || list.error || pollError} message={action.message} busy={action.busy || list.loading} />
     {!draft ? <>
@@ -141,7 +180,6 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
         <div className="ws-table-wrap"><table className="ws-table" aria-label="Въпроси на избрания тест"><thead><tr><th>#</th><th>Въпрос и отговори</th><th>Тип</th><th>Точки</th><th>Време</th></tr></thead><tbody>{preview.definition.questions.map((q, index) => <tr key={index}><td>{index + 1}</td><td className="ws-preview-question"><p className="ws-preview-prompt">{q.text}</p><WorkspaceImage api={api} id={q.imageId} />{q.options.length > 0 && <ol className="ws-preview-options">{q.options.map((option, i) => <li key={i} className={option.correct ? 'ws-correct-option' : undefined}>{option.correct && <Check size={15} aria-label="Верен отговор" />}{option.text}</li>)}</ol>}{q.acceptedAnswers.length > 0 && <p>Допустими отговори: {q.acceptedAnswers.join(', ')}</p>}{q.criteria && <p>Критерии: {q.criteria}</p>}{q.explanation && <p className="ws-muted">{q.explanation}</p>}</td><td>{types.find(([key]) => key === q.type)?.[1] ?? q.type}</td><td>{q.points}</td><td>{q.timeSeconds} s</td></tr>)}</tbody></table></div>
         {!preview.definition.questions.length && <Empty>Няма въпроси в този тест.</Empty>}
       </section>}
-      {showAi && <div className="ws-ai-band"><h3><Sparkles size={18} /> Създаване с AI</h3><div className="ws-form-grid"><label>Тема<input value={topic} maxLength={500} onChange={e => setTopic(e.target.value)} /></label><label>Въпроси<input type="number" min={1} max={20} value={count} onChange={e => setCount(Number(e.target.value))} /></label><label>Трудност<select value={difficulty} onChange={e => setDifficulty(e.target.value)}><option value="EASY">Лесни</option><option value="MEDIUM">Средни</option><option value="HARD">Трудни</option><option value="VERY_HARD">Много трудни</option><option value="MIXED">По разпределение</option></select></label></div><div className="ws-form-grid"><label>Дисциплина<input value={aiSubject} maxLength={190} onChange={e => setAiSubject(e.target.value)} /></label><label>Клас / ниво<input value={aiLevel} maxLength={190} onChange={e => setAiLevel(e.target.value)} /></label><label>Език<select value={aiLanguage} onChange={e => setAiLanguage(e.target.value)}><option value="bg">Български</option><option value="en">Английски</option></select></label></div><div className="ws-actions">{types.map(([key, title]) => <label className="ws-check" key={key}><input type="checkbox" checked={aiTypes.includes(key)} onChange={e => setAiTypes(e.target.checked ? [...aiTypes, key] : aiTypes.filter(t => t !== key))} />{title}</label>)}</div>{difficulty === 'MIXED' && <div className="ws-form-grid">{Object.entries({ EASY: 'Лесни', MEDIUM: 'Средни', HARD: 'Трудни', VERY_HARD: 'Много трудни' }).map(([key, title]) => <label key={key}>{title}<input type="number" min={0} max={20} value={distribution[key]} onChange={e => setDistribution({ ...distribution, [key]: Number(e.target.value) })} /></label>)}</div>}<label>Учебен текст<textarea value={source} maxLength={20000} onChange={e => setSource(e.target.value)} /></label><div className="ws-actions"><button disabled={action.busy || !topic.trim() || !aiTypes.length || !Number.isInteger(count) || count < 1 || count > 20 || !!job && ['queued', 'running'].includes(job.status)} onClick={() => void action.run(async () => { setJobMode('new'); setPollError(''); setJob(await api.post<AiJob>('/ai/test-generations', { requestKey: crypto.randomUUID(), topic, subject: aiSubject, level: aiLevel, language: aiLanguage, questionCount: count, difficulty, sourceText: source, questionTypes: aiTypes, difficultyCounts: difficulty === 'MIXED' ? distribution : { [difficulty]: count } })) })}><Sparkles size={16} /> {job && ['queued', 'running'].includes(job.status) ? 'Генериране…' : 'Генерирай'}</button>{job && <span role="status">{label(job.status)}</span>}{job?.status === 'completed' && <button onClick={() => { reviewJob() }}><Check size={16} /> Прегледай черновата</button>}{job?.status === 'failed' && <><span className="error">{job.error_message}</span><button onClick={() => void action.run(async () => setJob(await api.post<AiJob>(`/ai/test-generations/${job.id}/retry`)))}>Повтори</button></>}</div></div>}
     </> : <fieldset className="ws-editor" disabled={action.busy || !editable || generating || pendingImages > 0}>
       <div className="ws-test-settings" role="group" aria-labelledby="test-settings-title">
       <h3 id="test-settings-title">Настройки на теста</h3>

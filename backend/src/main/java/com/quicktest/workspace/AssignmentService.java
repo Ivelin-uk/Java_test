@@ -35,7 +35,6 @@ public class AssignmentService {
         Map<Long,Set<Long>> recipients=new LinkedHashMap<>(); Set<Long> individual=new HashSet<>(request.studentIds()==null?List.of():request.studentIds());
         for(Long user:individual) {organizations.requireActiveMember(scope,user,"STUDENT");recipients.put(user,new LinkedHashSet<>());}
         for(Long group:request.groupIds()==null?List.<Long>of():request.groupIds()) {
-            if(!string(organizations.groupAccess(scope,group),"status").equals("active")) throw WorkspaceError.conflict("Групата е архивирана.");
             long groupWorkspace=number(organizations.groupAccess(scope,group),"organization_id");
             for(var member:db.rows("SELECT g.user_id FROM group_members g JOIN memberships m ON m.organization_id=g.organization_id AND m.user_id=g.user_id WHERE g.organization_id=? AND g.group_id=? AND g.active=TRUE AND m.status='active' AND m.roles_json LIKE '%STUDENT%'",groupWorkspace,group)) {long user=number(member,"user_id");organizations.requireActiveMember(scope,user,"STUDENT");recipients.computeIfAbsent(user,key->new LinkedHashSet<>()).add(group);}
         }

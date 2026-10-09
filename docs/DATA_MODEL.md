@@ -4,6 +4,8 @@ Current model (2026-10-08): accounts register directly as teachers or students. 
 
 V15 adds `assessment_library_removals` for persistent per-user removal of shared tests from the library. Removing a shared test does not change its ownership or sharing. Archived owned tests are excluded from library lists; their published versions, assignments and results remain available to authorized participants.
 
+V16 removes `school_year`, `class_label` and `status` from `learning_groups`. Group profiles contain only name, subject and description. Internal IDs, ownership/membership references and creation timestamps remain. A nullable `deleted_at` replaces the deletion marker without restoring previously deleted groups or removing historical assignments and results; former archived groups become ordinary groups.
+
 The application retains Spring Boot 4 / Java 21 / MySQL and React/TypeScript. Existing identity and legacy records remain; new tenant modules use JDBC with parameterized queries, explicit transactions and structured Jackson JSON definitions. Controllers delegate mutations to module services. Flyway runs before JPA schema validation.
 
 ## ER Relationships

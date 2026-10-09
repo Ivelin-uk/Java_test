@@ -77,7 +77,9 @@
 .ws-group-dialog { overflow-y: auto; }
 .ws-group-dialog form { display: grid; gap: 14px; }
 .ws-group-create-dialog { width: min(560px, calc(100% - 28px)); }
-.ws-ai-band { display: grid; gap: 14px; background: var(--success-bg); padding: 20px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.ws-ai-form { display: grid; gap: 20px; min-width: 0; padding: 20px 0; border-top: 1px solid var(--border); }
+.ws-ai-types { border: 0; padding: 0; margin: 0; min-width: 0; }
+.ws-ai-types legend { padding: 0; margin-bottom: 12px; font-size: 14px; color: var(--muted); }
 .ws-question { display: grid; gap: 16px; padding: 24px 0; border-top: 1px solid var(--border); }
 .ws-editor > .ws-question { min-width: 0; padding: 24px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .ws-editor > .ws-question:focus-within { border-color: var(--hover-border); }

@@ -60,7 +60,7 @@ public class WorkspaceDemo implements CommandLineRunner {
     }
     private void demoGroup(long org,AppUser teacher,AppUser student,String name,String code) {
         var scope=new OrgAccess.Scope(org,teacher.getId(),Set.of("TEACHER"));
-        var group=organizations.createGroup(scope,new OrganizationService.GroupRequest(name,"Демонстрационна група","Програмиране","2026/2027","12 / 1"));
+        var group=organizations.createGroup(scope,new OrganizationService.GroupRequest(name,"Демонстрационна група","Програмиране"));
         organizations.addStudent(scope,number(group,"id"),student.getId());
         var definition=new AssessmentService.Definition("Основи на Java","Демонстрационен тест","Програмиране","Начално ниво","Решете въпросите последователно. Напускането на активния изпитен екран носи 0 точки за текущия въпрос.","bg","bulgarian",new BigDecimal("50"),List.of(new AssessmentService.Question("SINGLE_CHOICE","Кой тип съхранява логическа стойност в Java?","EASY",new BigDecimal("2"),30,List.of(new AssessmentService.Option("boolean",true),new AssessmentService.Option("String",false)),List.of(),true,true,"","boolean има стойности true и false."),new AssessmentService.Question("OPEN_ANSWER","Обяснете разликата между клас и обект.","MEDIUM",new BigDecimal("3"),120,List.of(),List.of(),true,true,"Класът е описание; обектът е конкретна инстанция.","")));
         var test=assessments.save(scope,null,definition);var version=assessments.publish(scope,number(test,"id"));

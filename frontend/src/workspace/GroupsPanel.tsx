@@ -11,19 +11,17 @@ export function GroupsPanel({ api, teacher }: { api: WorkspaceApi; teacher: bool
   const groups = useRemote<Group[]>(api, '/groups', [])
   const [creating, setCreating] = useState(false)
   const [selected, setSelected] = useState<Group | null>(null)
-  const [editing, setEditing] = useState<Group | null>(null)
   const [deleting, setDeleting] = useState<Group | null>(null)
   const [message, setMessage] = useState('')
-  useEffect(() => { if (selected || editing) window.scrollTo({ top: 0 }) }, [selected, editing])
-  if (editing && teacher) return <GroupEditor api={api} group={editing} back={() => setEditing(null)} saved={async () => {
-    await groups.reload()
-    setMessage('Групата е обновена.')
-    setEditing(null)
+  const selectedId = selected?.id
+  useEffect(() => { if (selectedId) window.scrollTo({ top: 0 }) }, [selectedId])
+  if (selected && teacher) return <GroupEditor key={selected.id} api={api} group={selected} back={() => setSelected(null)} saved={async () => {
+    const refreshed = await groups.reload()
+    setSelected(refreshed.find(group => group.id === selected.id) ?? selected)
   }} />
   if (selected && !teacher) return <GroupSummary api={api} group={selected} back={() => setSelected(null)} />
-  if (selected && teacher) return <GroupMembers api={api} group={selected} back={() => setSelected(null)} />
   return <section className="ws-section"><SectionHead title="Групи">{teacher && <button type="button" className="primary command-button" onClick={() => { setMessage(''); setCreating(true) }}><Plus size={17} /> Създай група</button>}</SectionHead><Feedback error={groups.error} message={message} busy={groups.loading} />
-    <div className="ws-table-wrap"><table className="ws-table"><thead><tr><th>Група</th><th>Дисциплина</th><th>Учебна година</th><th>Клас / курс</th>{teacher && <th>Действия</th>}</tr></thead><tbody>{groups.data.map(group => <tr key={group.id}><td><button className="ws-text-button" onClick={() => setSelected(group)}>{group.name}</button></td><td>{group.subject}</td><td>{group.school_year}</td><td>{group.class_label}</td>{teacher && <td><div className="ws-actions"><button className="icon-button" title="Редактирай групата" onClick={() => setEditing(group)}><Pencil size={17} /></button><button className="icon-button danger" title="Изтрий групата" onClick={() => setDeleting(group)}><Trash2 size={17} /></button></div></td>}</tr>)}</tbody></table></div>{!groups.data.length && !groups.loading && <Empty />}
+    <div className="ws-table-wrap"><table className="ws-table" aria-label="Групи"><thead><tr><th>Име</th><th>Дисциплина</th><th>Описание</th>{teacher && <th>Действия</th>}</tr></thead><tbody>{groups.data.map(group => <tr key={group.id}><td><button className="ws-text-button" onClick={() => setSelected(group)}>{group.name}</button></td><td>{group.subject}</td><td>{group.description}</td>{teacher && <td><div className="ws-actions"><button className="icon-button" title="Редактирай групата" onClick={() => setSelected(group)}><Pencil size={17} /></button><button className="icon-button danger" title="Изтрий групата" onClick={() => setDeleting(group)}><Trash2 size={17} /></button></div></td>}</tr>)}</tbody></table></div>{!groups.data.length && !groups.loading && <Empty />}
     {deleting && <GroupDeleteDialog api={api} group={deleting} close={() => setDeleting(null)} saved={async () => { await groups.reload(); setMessage('Групата е изтрита.'); setDeleting(null) }} />}
     {creating && <GroupCreateDialog api={api} close={() => setCreating(false)} created={async () => { await groups.reload(); setMessage('Групата е създадена.') }} />}
   </section>
@@ -48,7 +46,7 @@ function GroupCreateDialog({ api, close, created }: { api: WorkspaceApi; close: 
       e.preventDefault()
       if (!name.trim()) return
       void action.run(async () => {
-        await api.post('/groups', { name: name.trim(), subject, description, schoolYear: '', classLabel: '' })
+        await api.post('/groups', { name: name.trim(), subject, description })
         await created()
         dismiss()
       })
@@ -69,33 +67,29 @@ function GroupCreateDialog({ api, close, created }: { api: WorkspaceApi; close: 
 function GroupEditor({ api, group, back, saved }: { api: WorkspaceApi; group: Group; back: () => void; saved: () => Promise<void> }) {
   const formId = useId()
   const action = useAction()
-  const teachers = useRemote<{ user_id: number; name: string }[]>(api, `/groups/${group.id}/teachers`, [])
   const [editing, setEditing] = useState(group)
   return <section className="ws-section" aria-label="Редактиране на група">
     <SectionHead title={group.name}>
       <button className="icon-button" title="Към групите" disabled={action.busy} onClick={back}><ArrowLeft size={18} /></button>
       <button form={formId} type="submit" className="primary command-button" disabled={action.busy || !editing.name.trim()}><Save size={17} /> Запази</button>
     </SectionHead>
-    <Feedback error={action.error || teachers.error} busy={action.busy || teachers.loading} />
+    <Feedback error={action.error} message={action.message} busy={action.busy} />
     <form id={formId} className="ws-group-settings" aria-label="Данни за групата" onSubmit={e => {
       e.preventDefault()
       void action.run(async () => {
-        await api.put(`/groups/${group.id}`, { profile: { name: editing.name.trim(), subject: editing.subject, description: editing.description, schoolYear: editing.school_year, classLabel: editing.class_label }, status: editing.status })
+        await api.put(`/groups/${group.id}`, { name: editing.name.trim(), subject: editing.subject, description: editing.description })
         await saved()
-      })
+      }, 'Групата е обновена.')
     }}>
       <h3>Данни за групата</h3>
       <fieldset className="ws-editor" disabled={action.busy}>
         <div className="ws-form-grid">
-          {([['name', 'Име', 190], ['subject', 'Дисциплина', 190], ['school_year', 'Учебна година', 40], ['class_label', 'Клас / курс', 80]] as const).map(([key, title, max]) => <label key={key}>{title}<input required={key === 'name'} maxLength={max} value={editing[key]} onChange={e => setEditing({ ...editing, [key]: e.target.value })} /></label>)}
+          {([['name', 'Име', 190], ['subject', 'Дисциплина', 190]] as const).map(([key, title, max]) => <label key={key}>{title}<input required={key === 'name'} maxLength={max} value={editing[key]} onChange={e => setEditing({ ...editing, [key]: e.target.value })} /></label>)}
         </div>
         <label>Описание<textarea maxLength={4000} value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })} /></label>
-        <div className="ws-form-grid">
-          <label>Учител<input readOnly value={teachers.data.map(t => t.name).join(' · ')} /></label>
-          <label>Статус<select value={editing.status} onChange={e => setEditing({ ...editing, status: e.target.value })}><option value="active">Активна</option><option value="archived">Архивирана</option></select></label>
-        </div>
       </fieldset>
     </form>
+    <GroupMembers api={api} group={group} />
   </section>
 }
 
@@ -106,7 +100,7 @@ function GroupDeleteDialog({ api, group, close, saved }: { api: WorkspaceApi; gr
   }} />
 }
 
-function GroupMembers({ api, group, back }: { api: WorkspaceApi; group: Group; back: () => void }) {
+function GroupMembers({ api, group }: { api: WorkspaceApi; group: Group }) {
   const members = useRemote<(Member & { active: boolean })[]>(api, `/groups/${group.id}/members`, [])
   const directory = useRemote<Member[]>(api, '/members', [])
   const action = useAction()
@@ -116,7 +110,7 @@ function GroupMembers({ api, group, back }: { api: WorkspaceApi; group: Group; b
   const participants = members.data.filter(member => member.active)
   const available = directory.data.filter(m => m.status === 'active' && roles(m).includes('STUDENT') && !roles(m).includes('TEACHER') && !participants.some(member => member.user_id === m.user_id))
   return <section className="ws-section ws-group-members" aria-label="Участници в групата">
-    <SectionHead title={group.name}><button className="icon-button" title="Към групите" disabled={action.busy} onClick={back}><ArrowLeft size={18} /></button></SectionHead>
+    <h3>Ученици</h3>
     <Feedback error={members.error || directory.error || action.error} message={message || action.message} busy={action.busy || members.loading || directory.loading} />
     <form className="ws-inline-form" onSubmit={e => {
       e.preventDefault()
@@ -173,5 +167,5 @@ function UserPicker({ users, selected, select, disabled }: { users: Member[]; se
 type GroupSummaryData = { group: Group; teachers: { name: string }[]; assignments: { assignment_id: number; student_id: number; student_name: string; title: string; ends_at: string; attempts: { id: number; attempt_number: number; status: string; grade: string | null; outcome: string | null }[] }[] }
 function GroupSummary({ api, group, embedded = false, back }: { api: WorkspaceApi; group: Group; embedded?: boolean; back?: () => void }) {
   const data = useRemote<GroupSummaryData | null>(api, `/groups/${group.id}/summary`, null)
-  return <section className={embedded ? 'ws-group-report' : 'ws-section'}><SectionHead title={embedded ? 'Възлагания и резултати' : group.name}>{back && <button className="icon-button" title="Към групите" onClick={back}><ArrowLeft size={17} /></button>}</SectionHead><p className="ws-muted">Обобщена оценка: последният публикуван, неанулиран опит по пореден номер.</p><Feedback error={data.error} busy={data.loading} /><p>{group.subject} · {group.school_year} · {group.class_label}</p><p>{group.description}</p><p>{data.data?.teachers.map(t => t.name).join(' · ')}</p><div className="ws-table-wrap"><table className="ws-table"><thead><tr><th>Тест</th><th>Обучаем</th><th>Срок</th><th>Обобщена оценка</th><th>Всички опити</th></tr></thead><tbody>{data.data?.assignments.map(a => <tr key={`${a.assignment_id}-${a.student_id}`}><td>{a.title}</td><td>{a.student_name}</td><td>{date(a.ends_at)}</td><td>{a.attempts.find(x => x.status === 'finalized')?.grade ?? '-'}</td><td>{a.attempts.length ? a.attempts.map(x => <div key={x.id}>#{x.attempt_number} · {label(x.status)}{x.grade ? ` · ${x.grade} · ${label(x.outcome ?? '')}` : ''}</div>) : 'Не е започнал'}</td></tr>)}</tbody></table></div></section>
+  return <section className={embedded ? 'ws-group-report' : 'ws-section'}><SectionHead title={embedded ? 'Възлагания и резултати' : group.name}>{back && <button className="icon-button" title="Към групите" onClick={back}><ArrowLeft size={17} /></button>}</SectionHead><p className="ws-muted">Обобщена оценка: последният публикуван, неанулиран опит по пореден номер.</p><Feedback error={data.error} busy={data.loading} /><p>{group.subject}</p><p>{group.description}</p><p>{data.data?.teachers.map(t => t.name).join(' · ')}</p><div className="ws-table-wrap"><table className="ws-table"><thead><tr><th>Тест</th><th>Обучаем</th><th>Срок</th><th>Обобщена оценка</th><th>Всички опити</th></tr></thead><tbody>{data.data?.assignments.map(a => <tr key={`${a.assignment_id}-${a.student_id}`}><td>{a.title}</td><td>{a.student_name}</td><td>{date(a.ends_at)}</td><td>{a.attempts.find(x => x.status === 'finalized')?.grade ?? '-'}</td><td>{a.attempts.length ? a.attempts.map(x => <div key={x.id}>#{x.attempt_number} · {label(x.status)}{x.grade ? ` · ${x.grade} · ${label(x.outcome ?? '')}` : ''}</div>) : 'Не е започнал'}</td></tr>)}</tbody></table></div></section>
 }

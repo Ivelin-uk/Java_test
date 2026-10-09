@@ -30,7 +30,7 @@ try {
   await page.getByLabel('Заглавие', { exact: true }).fill(title)
   assert.equal(await page.getByRole('button', { name: 'Публикувай версия', exact: true }).count(), 0)
   await page.getByRole('button', { name: 'Запази теста', exact: true }).click()
-  await page.getByRole('alert').waitFor()
+  await page.getByRole('alert').first().waitFor()
   assert.equal(await page.getByLabel('Заглавие', { exact: true }).inputValue(), title)
   await page.getByLabel('Текст', { exact: true }).fill('Кой тип в Java е логически?')
   await page.getByLabel('Опция 1', { exact: true }).fill('boolean')
@@ -49,12 +49,14 @@ try {
   assert.equal(owned.length, 1)
   assert.equal(owned[0].status, 'published')
   await page.getByRole('button', { name: 'С AI', exact: true }).click()
+  await page.getByRole('heading', { name: 'Създаване на тест с AI', exact: true }).waitFor()
+  assert.equal(await page.getByRole('table', { name: 'Тестове', exact: true }).count(), 0)
   await page.getByLabel('Въпроси', { exact: true }).fill('5')
   await page.getByRole('button', { name: 'Генерирай', exact: true }).click()
   await Promise.race([
     page.getByLabel('Заглавие', { exact: true }).waitFor({ timeout: 240000 }),
-    page.locator('.ws-ai-band .error').waitFor({ timeout: 240000 }).then(async () => {
-      throw new Error(await page.locator('.ws-ai-band .error').innerText())
+    page.getByRole('region', { name: 'Създаване на тест с AI', exact: true }).getByRole('alert').waitFor({ timeout: 240000 }).then(async () => {
+      throw new Error(await page.getByRole('region', { name: 'Създаване на тест с AI', exact: true }).getByRole('alert').innerText())
     }),
   ])
   assert.equal(await page.locator('.ws-question').count(), 5)

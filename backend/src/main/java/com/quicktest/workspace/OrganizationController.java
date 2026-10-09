@@ -32,7 +32,7 @@ public class OrganizationController {
     @PostMapping("/profile/notification-email/verify") public void verify(@Valid @RequestBody Token request) {identity.verify(request.token());}
     @GetMapping("/profile/mailbox") public Object mailbox() {return notifications.localInbox(access.user().getId());}
     @GetMapping("/groups/{group}/teachers") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT) public Object teachers(@PathVariable long group) {return service.groupTeachers(access.scope(),group);}
-    @PutMapping("/groups/{group}") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT) public void groupUpdate(@PathVariable long group,@RequestBody OrganizationService.GroupChange request) {service.updateGroup(access.scope(),group,request);}
+    @PutMapping("/groups/{group}") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT) public void groupUpdate(@PathVariable long group,@Valid @RequestBody OrganizationService.GroupRequest request) {service.updateGroup(access.scope(),group,request);}
     @DeleteMapping("/groups/{group}") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT) public void groupDelete(@PathVariable long group) {service.deleteGroup(access.teacher(),group);}
     @DeleteMapping("/groups/{group}/teachers/{user}") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT) public void teacherRemove(@PathVariable long group,@PathVariable long user) {service.removeTeacher(access.scope(),group,user);}
     @GetMapping("/profile/identities") public Object identities() {return db.rows("SELECT provider,linked_at FROM external_identities WHERE user_id=?",access.user().getId());}

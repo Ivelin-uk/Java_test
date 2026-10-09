@@ -127,17 +127,17 @@ public class OrganizationService {
         audit.write(scope.organizationId(),scope.userId(),"membership.changed",user,Map.of("roles",roles,"active",request.active()));
     }
     public Map<String,Object> groupAccess(OrgAccess.Scope scope,long group) {
-        var row=db.one("SELECT * FROM learning_groups WHERE (organization_id=? OR ?) AND id=? AND status<>'deleted'",scope.organizationId(),scope.platform(),group);
+        var row=db.one("SELECT * FROM learning_groups WHERE (organization_id=? OR ?) AND id=? AND deleted_at IS NULL",scope.organizationId(),scope.platform(),group);
         if(!scope.roles().contains("ORG_ADMIN") && db.count("SELECT COUNT(*) FROM group_teachers WHERE organization_id=? AND group_id=? AND user_id=?",number(row,"organization_id"),group,scope.userId())==0) throw WorkspaceError.forbidden();
         return row;
     }
     public List<Map<String,Object>> groups(OrgAccess.Scope scope) {
-        if(scope.roles().contains("ORG_ADMIN")) return db.rows("SELECT * FROM learning_groups WHERE organization_id=? AND status<>'deleted' ORDER BY name",scope.organizationId());
-        return db.rows("SELECT DISTINCT g.* FROM learning_groups g LEFT JOIN group_teachers t ON t.organization_id=g.organization_id AND t.group_id=g.id LEFT JOIN group_members m ON m.organization_id=g.organization_id AND m.group_id=g.id AND m.active=TRUE WHERE (g.organization_id=? OR ?) AND g.status<>'deleted' AND (t.user_id=? OR m.user_id=?) ORDER BY g.name",scope.organizationId(),scope.platform(),scope.userId(),scope.userId());
+        if(scope.roles().contains("ORG_ADMIN")) return db.rows("SELECT * FROM learning_groups WHERE organization_id=? AND deleted_at IS NULL ORDER BY name",scope.organizationId());
+        return db.rows("SELECT DISTINCT g.* FROM learning_groups g LEFT JOIN group_teachers t ON t.organization_id=g.organization_id AND t.group_id=g.id LEFT JOIN group_members m ON m.organization_id=g.organization_id AND m.group_id=g.id AND m.active=TRUE WHERE (g.organization_id=? OR ?) AND g.deleted_at IS NULL AND (t.user_id=? OR m.user_id=?) ORDER BY g.name",scope.organizationId(),scope.platform(),scope.userId(),scope.userId());
     }
     @Transactional
     public Map<String,Object> createGroup(OrgAccess.Scope scope,GroupRequest request) {
-        long id=db.insert("INSERT INTO learning_groups(organization_id,name,description,subject,school_year,class_label,created_at) VALUES(?,?,?,?,?,?,?)",scope.organizationId(),request.name(),request.description(),request.subject(),request.schoolYear(),request.classLabel(),clock.instant());
+        long id=db.insert("INSERT INTO learning_groups(organization_id,name,description,subject,created_at) VALUES(?,?,?,?,?)",scope.organizationId(),request.name(),request.description(),request.subject(),clock.instant());
         db.update("INSERT INTO group_teachers(organization_id,group_id,user_id) VALUES(?,?,?)",scope.organizationId(),id,scope.userId());
         audit.write(scope.organizationId(),scope.userId(),"group.created",id,Map.of());
         return groupAccess(scope,id);
@@ -147,18 +147,17 @@ public class OrganizationService {
         return db.rows("SELECT u.id user_id,u.name,u.email,m.active FROM group_members m JOIN users u ON u.id=m.user_id WHERE m.organization_id=? AND m.group_id=? ORDER BY u.name",scope.organizationId(),group);
     }
     public Object groupTeachers(OrgAccess.Scope scope,long group) {groupAccess(scope,group);return db.rows("SELECT u.id user_id,u.name FROM group_teachers t JOIN users u ON u.id=t.user_id WHERE t.organization_id=? AND t.group_id=? ORDER BY u.name",scope.organizationId(),group);}
-    @Transactional public void updateGroup(OrgAccess.Scope scope,long group,GroupChange request) {
+    @Transactional public void updateGroup(OrgAccess.Scope scope,long group,GroupRequest value) {
         var row=groupAccess(scope,group);long org=number(row,"organization_id");
-        db.one("SELECT id FROM learning_groups WHERE organization_id=? AND id=? AND status<>'deleted' FOR UPDATE",org,group);
-        var value=request==null?null:request.profile();
-        if(value==null || value.name()==null || value.name().isBlank() || value.name().length()>190 || value.description()==null || value.description().length()>4000 || value.subject()==null || value.subject().length()>190 || value.schoolYear()==null || value.schoolYear().length()>40 || value.classLabel()==null || value.classLabel().length()>80 || !Set.of("active","archived").contains(Objects.toString(request.status(),""))) throw WorkspaceError.validation("Невалидни данни за групата.");
-        db.update("UPDATE learning_groups SET name=?,description=?,subject=?,school_year=?,class_label=?,status=? WHERE organization_id=? AND id=?",value.name(),value.description(),value.subject(),value.schoolYear(),value.classLabel(),request.status(),org,group);audit.write(org,scope.userId(),"group.updated",group,Map.of("status",request.status()));
+        db.one("SELECT id FROM learning_groups WHERE organization_id=? AND id=? AND deleted_at IS NULL FOR UPDATE",org,group);
+        if(value==null || value.name()==null || value.name().isBlank() || value.name().length()>190 || value.description()==null || value.description().length()>4000 || value.subject()==null || value.subject().length()>190) throw WorkspaceError.validation("Невалидни данни за групата.");
+        db.update("UPDATE learning_groups SET name=?,description=?,subject=? WHERE organization_id=? AND id=?",value.name(),value.description(),value.subject(),org,group);audit.write(org,scope.userId(),"group.updated",group,Map.of());
     }
     @Transactional public void deleteGroup(OrgAccess.Scope scope,long group) {
         var row=groupAccess(scope,group);long org=number(row,"organization_id");
-        db.one("SELECT id FROM learning_groups WHERE organization_id=? AND id=? AND status<>'deleted' FOR UPDATE",org,group);
+        db.one("SELECT id FROM learning_groups WHERE organization_id=? AND id=? AND deleted_at IS NULL FOR UPDATE",org,group);
         // Keep historical assignment sources and results intact while removing the group from use.
-        db.update("UPDATE learning_groups SET status='deleted' WHERE organization_id=? AND id=?",org,group);
+        db.update("UPDATE learning_groups SET deleted_at=? WHERE organization_id=? AND id=?",clock.instant(),org,group);
         audit.write(org,scope.userId(),"group.deleted",group,Map.of("name",string(row,"name")));
     }
     @Transactional public void removeTeacher(OrgAccess.Scope scope,long group,long teacher) {
@@ -213,6 +212,5 @@ public class OrganizationService {
     public record OrganizationRequest(@NotBlank @Size(max=190) String name,@NotBlank @Size(max=40) String organizationType,@Email @NotBlank @Size(max=190) String contactEmail,@NotBlank @Size(max=80) String timezone,@NotBlank @Size(max=40) String studentLabel) {}
     public record InvitationRequest(@Email @NotBlank @Size(max=190) String email,List<String> roles,Long groupId) {}
     public record MemberChange(List<String> roles,boolean active) {}
-    public record GroupRequest(@NotBlank @Size(max=190) String name,@NotNull @Size(max=4000) String description,@NotNull @Size(max=190) String subject,@NotNull @Size(max=40) String schoolYear,@NotNull @Size(max=80) String classLabel) {}
-    public record GroupChange(GroupRequest profile,String status) {}
+    public record GroupRequest(@NotBlank @Size(max=190) String name,@NotNull @Size(max=4000) String description,@NotNull @Size(max=190) String subject) {}
 }

@@ -1,5 +1,5 @@
 export interface Member { user_id: number; name: string; email: string; roles_json: string; status: string }
-export interface Group { id: number; name: string; description: string; subject: string; school_year: string; class_label: string; status: string }
+export interface Group { id: number; name: string; description: string; subject: string }
 export type QuestionType = 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'TRUE_FALSE' | 'SHORT_ANSWER' | 'OPEN_ANSWER'
 export interface Question { imageId?: number | null; type: QuestionType; text: string; difficulty: string; points: number; timeSeconds: number; options: { text: string; correct: boolean }[]; acceptedAnswers: string[]; caseInsensitive: boolean; collapseWhitespace: boolean; criteria: string; explanation: string }
 export interface Definition { title: string; description: string; subject: string; level: string; instructions: string; language: string; gradingScale: string; passThreshold: number; questions: Question[] }

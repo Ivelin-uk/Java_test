@@ -34,8 +34,8 @@ Paths below are relative to `/api/v1`. Teacher access means the explicit owner/s
 | Method / path | Contract |
 |---|---|
 | GET `/members`, `/directory` | Active registered teachers and students; teacher access only |
-| GET/POST `/groups` | Scoped groups / `{name,description,subject,schoolYear,classLabel}` |
-| PUT `/groups/{id}` | `{profile:<group fields>,status:active|archived}` |
+| GET/POST `/groups` | Scoped groups / `{name,description,subject}` |
+| PUT `/groups/{id}` | `{name,description,subject}` |
 | DELETE `/groups/{id}` | Assigned teacher only; removes the group from lists and future assignments, preserving historical assignments, recipients, attempts and results. Deleted group routes return 404. |
 | GET/POST `/groups/{id}/members` | Authorized teacher listing / `{userId}`; never creates a password |
 | DELETE `/groups/{id}/members/{user}` | Remove current access, preserve historical attempts |

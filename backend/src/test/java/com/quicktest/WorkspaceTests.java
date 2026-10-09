@@ -82,7 +82,7 @@ class WorkspaceTests {
     }
     private AttemptService.StartRequest startRequest() {return new AttemptService.StartRequest(code,UUID.randomUUID().toString(),UUID.randomUUID().toString(),"a".repeat(43),true,true,true);}
     @Test void groupsHaveOneTeacherAndOnlyAcceptStudents() {
-        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("One teacher","","","2026/2027","")),"id");
+        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("One teacher","","")),"id");
         AppUser second=user(Role.TEACHER);
         db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,second.getId(),"[\"TEACHER\"]",now);
         assertThrows(WorkspaceError.class,()->organizations.addTeacher(teaching,group,second.getId()));
@@ -206,7 +206,7 @@ class WorkspaceTests {
     }
 
     @Test void newPersonalTestCanBeAssignedToAnExistingGroup() throws Exception {
-        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Existing group","","Java","2026","")),"id");
+        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Existing group","","Java")),"id");
         organizations.addStudent(teaching,group,student);
         String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
         var created=db.object(mvc.perform(post("/api/v1/tests").header("Authorization",bearer).contentType("application/json").content(db.json(definition(false))))
@@ -305,20 +305,20 @@ class WorkspaceTests {
         assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
     }
     @Test void immutableVersionsAndDeduplicatedRecipientSnapshot() {
-        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Group","","Java","2026","12")),"id");organizations.addStudent(teaching,group,student);
+        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Group","","Java")),"id");organizations.addStudent(teaching,group,student);
         var assigned=assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(group),List.of(student),now,now.plusSeconds(1000),1,false,false,true));assertEquals(1L,number(assigned,"recipients"));
         long test=number(db.one("SELECT assessment_id FROM assessment_versions WHERE id=?",version),"assessment_id");
         assessments.save(teaching,test,definition(true));assertEquals(1,db.parse(db.one("SELECT definition_json FROM assessment_versions WHERE id=?",version).get("definition_json"),AssessmentService.Definition.class).questions().size());
     }
     @Test void groupDeletionHidesGroupWithoutRemovingAssignmentsRecipientsOrAttempts() throws Exception {
-        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Delete group","","Java","2026","12")),"id");
+        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Delete group","","Java")),"id");
         organizations.addStudent(teaching,group,student);
         var assigned=assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(group),List.of(),now.minusSeconds(1),now.plusSeconds(3600),1,false,false,true));
         assignment=number(assigned,"id");code=string(assigned,"code");long attempt=number(start(startRequest()),"id");
         String teacherToken="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
         mvc.perform(delete("/api/v1/groups/"+group).header("Authorization",authorization)).andExpect(status().isForbidden());
         mvc.perform(delete("/api/v1/groups/"+group).header("Authorization",teacherToken)).andExpect(status().isOk());
-        assertEquals("deleted",string(db.one("SELECT status FROM learning_groups WHERE id=?",group),"status"));
+        assertNotNull(db.one("SELECT deleted_at FROM learning_groups WHERE id=?",group).get("deleted_at"));
         assertTrue(organizations.groups(teaching).stream().noneMatch(row->number(row,"id")==group));
         assertTrue(organizations.groups(learning).stream().noneMatch(row->number(row,"id")==group));
         assertEquals(1,db.count("SELECT COUNT(*) FROM exam_assignments WHERE id=?",assignment));
@@ -326,21 +326,37 @@ class WorkspaceTests {
         assertEquals(1,db.count("SELECT COUNT(*) FROM exam_attempts WHERE id=?",attempt));
         mvc.perform(get("/api/v1/groups/"+group+"/summary").header("Authorization",teacherToken)).andExpect(status().isNotFound());
         mvc.perform(delete("/api/v1/groups/"+group).header("Authorization",teacherToken)).andExpect(status().isNotFound());
-        assertThrows(WorkspaceError.class,()->organizations.updateGroup(teaching,group,new OrganizationService.GroupChange(new OrganizationService.GroupRequest("Restored","","","",""),"active")));
+        assertThrows(WorkspaceError.class,()->organizations.updateGroup(teaching,group,new OrganizationService.GroupRequest("Restored","","")));
         assertThrows(WorkspaceError.class,()->assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(group),List.of(),now,now.plusSeconds(3600),1,false,false,true)));
     }
     @Test void groupEditingAndDeletionRequireAnAssignedTeacher() {
-        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Original","","Java","2026","12")),"id");
-        var change=new OrganizationService.GroupChange(new OrganizationService.GroupRequest("Edited","Description","Math","2027","11"),"active");
+        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Original","","Java")),"id");
+        var change=new OrganizationService.GroupRequest("Edited","Description","Math");
         var outsider=new OrgAccess.Scope(org,user(Role.TEACHER).getId(),Set.of("TEACHER"),true);
         assertThrows(WorkspaceError.class,()->organizations.updateGroup(outsider,group,change));
         assertThrows(WorkspaceError.class,()->organizations.deleteGroup(outsider,group));
         organizations.updateGroup(new OrgAccess.Scope(other,teacher,Set.of("TEACHER"),true),group,change);
         var edited=organizations.groupAccess(teaching,group);
         assertEquals("Edited",string(edited,"name"));assertEquals("Description",string(edited,"description"));
-        assertEquals("Math",string(edited,"subject"));assertEquals("2027",string(edited,"school_year"));assertEquals("11",string(edited,"class_label"));
-        assertThrows(WorkspaceError.class,()->organizations.updateGroup(teaching,group,new OrganizationService.GroupChange(new OrganizationService.GroupRequest(" ","","","",""),"active")));
-        assertThrows(WorkspaceError.class,()->organizations.updateGroup(teaching,group,new OrganizationService.GroupChange(change.profile(),null)));
+        assertEquals("Math",string(edited,"subject"));
+        assertFalse(edited.containsKey("school_year"));assertFalse(edited.containsKey("class_label"));assertFalse(edited.containsKey("status"));
+        assertThrows(WorkspaceError.class,()->organizations.updateGroup(teaching,group,new OrganizationService.GroupRequest(" ","","")));
+        assertThrows(WorkspaceError.class,()->organizations.updateGroup(teaching,group,null));
+        assertThrows(WorkspaceError.class,()->organizations.updateGroup(teaching,group,new OrganizationService.GroupRequest("Edited",null,"Math")));
+        assertThrows(WorkspaceError.class,()->organizations.updateGroup(teaching,group,new OrganizationService.GroupRequest("Edited","Description","x".repeat(191))));
+    }
+    @Test void groupApiCreatesAndUpdatesOnlyTheThreeProfileFields() throws Exception {
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        var created=mvc.perform(post("/api/v1/groups").header("Authorization",bearer).header("X-Organization-Id",org).contentType("application/json").content(db.json(new OrganizationService.GroupRequest("Simple group","Description","Java"))))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Simple group"))
+            .andExpect(jsonPath("$.school_year").doesNotExist()).andExpect(jsonPath("$.class_label").doesNotExist()).andExpect(jsonPath("$.status").doesNotExist()).andReturn();
+        long group=number(db.parse(created.getResponse().getContentAsString(),Map.class),"id");
+        mvc.perform(put("/api/v1/groups/"+group).header("Authorization",bearer).contentType("application/json").content(db.json(new OrganizationService.GroupRequest("Updated group","Updated description","Math")))).andExpect(status().isOk());
+        var updated=organizations.groupAccess(teaching,group);
+        assertEquals("Updated group",string(updated,"name"));assertEquals("Updated description",string(updated,"description"));assertEquals("Math",string(updated,"subject"));
+        assertFalse(updated.containsKey("school_year"));assertFalse(updated.containsKey("class_label"));assertFalse(updated.containsKey("status"));
+        mvc.perform(put("/api/v1/groups/"+group).header("Authorization",bearer).contentType("application/json").content(db.json(new OrganizationService.GroupRequest(" ","","")))).andExpect(status().isBadRequest());
+        assertEquals("Updated group",string(organizations.groupAccess(teaching,group),"name"));
     }
     @Test void concurrentStartsProduceOneAttemptAndSameSnapshot() throws Exception {
         var r=startRequest();try(var pool=Executors.newFixedThreadPool(8)) {
@@ -430,7 +446,7 @@ class WorkspaceTests {
         assertEquals(4,db.count("SELECT COUNT(*) FROM organization_invitations WHERE organization_id=?",org));
     }
     @Test void newGroupMemberNeedsExplicitRecipientAdditionAndAdditionIsIdempotent() {
-        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Snapshot group","","Java","2026","12")),"id");organizations.addStudent(teaching,group,student);
+        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Snapshot group","","Java")),"id");organizations.addStudent(teaching,group,student);
         long target=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(group),List.of(student),now,now.plusSeconds(1000),1,false,false,true)),"id");
         var next=user(Role.STUDENT);db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,next.getId(),"[\"STUDENT\"]",now);organizations.addStudent(teaching,group,next.getId());
         assertEquals(1,db.count("SELECT COUNT(*) FROM assignment_recipients WHERE assignment_id=?",target));assignments.addRecipient(teaching,target,next.getId());assignments.addRecipient(teaching,target,next.getId());assertEquals(2,db.count("SELECT COUNT(*) FROM assignment_recipients WHERE assignment_id=?",target));
