@@ -9,9 +9,11 @@ import org.springframework.web.bind.annotation.*;
 @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT)
 @PreAuthorize("isAuthenticated()")
 public class GradingController {
-    private final OrgAccess access;private final GradingService service;
-    public GradingController(OrgAccess access,GradingService service) {this.access=access;this.service=service;}
+    private final OrgAccess access;private final GradingService service;private final AiGradingService ai;
+    public GradingController(OrgAccess access,GradingService service,AiGradingService ai) {this.access=access;this.service=service;this.ai=ai;}
     @GetMapping("/grading") public Object queue() {return service.queue(access.teacher());}
+    @PostMapping("/attempts/{id}/ai-grading") public Object aiGrade(@PathVariable long id,@RequestBody AiGradingService.Request request) {return ai.enqueue(access.teacher(),id,request,false);}
+    @PostMapping("/attempts/{id}/ai-grading/retry") public Object retryAiGrade(@PathVariable long id,@RequestBody AiGradingService.Request request) {return ai.enqueue(access.teacher(),id,request,true);}
     @GetMapping("/attempts/{id}/review") public Object review(@PathVariable long id) {return service.review(access.teacher(),id);}
     @PatchMapping("/attempts/{id}/grading") public void grade(@PathVariable long id,@RequestBody GradingService.GradeRequest request) {service.grade(access.teacher(),id,request);}
     @PostMapping("/attempts/{id}/finalize") public Object publish(@PathVariable long id,@RequestBody GradingService.Finalize request) {return service.finalizeResult(access.teacher(),id,request,false);}

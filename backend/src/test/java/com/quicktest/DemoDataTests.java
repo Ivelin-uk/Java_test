@@ -42,7 +42,7 @@ class DemoDataTests {
             "notification_addresses", "identity_challenges", "notification_outbox", "external_identities",
             "workspace_audit", "admin_audit", "workspace_conversations", "conversation_members",
             "workspace_messages", "message_blocks", "message_reports", "realtime_tickets",
-            "workspace_ai_jobs", "workspace_rate_limits", "workspace_billing_events",
+            "workspace_ai_jobs", "workspace_ai_grading_jobs", "workspace_rate_limits", "workspace_billing_events",
             "private_images", "question_bank_items", "profile_exam_locks", "retention_runs",
             "organization_quota_locks", "organization_retention_locks", "tenant_endpoint_permissions",
             "stripe_checkout_requests", "stripe_subscription_bindings", "support_grants"
@@ -75,8 +75,8 @@ class DemoDataTests {
             assertTrue(passwordEncoder.matches("password123", user.getPasswordHash()));
             if (user.getRole() == Role.STUDENT) assertFalse(user.isSubscriptionPaid());
         }
-        assertEquals(16, flyway.info().applied().length);
-        assertEquals("16", flyway.info().current().getVersion().toString());
+        assertEquals(17, flyway.info().applied().length);
+        assertEquals("17", flyway.info().current().getVersion().toString());
         assertEquals(1L, count("demo_seed_history"));
         assertEquals(3L, count("organization_plans"));
         assertTrue(count("endpoint_permission") > 0);

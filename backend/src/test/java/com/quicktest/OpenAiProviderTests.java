@@ -15,6 +15,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.net.InetSocketAddress;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -73,6 +74,79 @@ class OpenAiProviderTests {
         assertEquals(2, received.path("text").path("format").path("schema").path("properties").path("questions").path("maxItems").asInt());
         assertTrue(received.path("input").get(1).path("content").asString().contains("Mathematics grade 3"));
         assertTrue(received.path("input").get(1).path("content").asString().contains("Bulgarian"));
+    }
+
+    @Test
+    void gradesSubmittedTextWithStrictSchemaAndBoundedPoints() {
+        responseBody = response(gradingDraft());
+        var graded = provider().gradeAnswers(gradingRequest());
+        assertEquals("gpt-4.1-mini", graded.model());
+        assertEquals(123, graded.inputTokens()); assertEquals(456, graded.outputTokens());
+        assertEquals(2, graded.grades().size());
+        assertEquals(new BigDecimal("1.25"), graded.grades().getFirst().points());
+        assertFalse(received.path("store").asBoolean());
+        assertEquals("exam_grading", received.path("text").path("format").path("name").asString());
+        assertTrue(received.path("text").path("format").path("strict").asBoolean());
+        assertEquals(mapper.valueToTree(List.of(11, 12)), received.path("text").path("format").path("schema")
+                .path("properties").path("grades").path("items").path("properties").path("questionId").path("enum"));
+        String input = received.path("input").get(1).path("content").asString();
+        assertTrue(input.contains("Student explanation")); assertTrue(input.contains("Use the rubric"));
+        assertTrue(received.path("input").get(0).path("content").asString().contains("untrusted data"));
+        assertEquals("Bearer test-key", authorization);
+    }
+
+    @Test
+    void rejectsInvalidGradingInsteadOfPublishingOrClampingIt() {
+        for (String points : List.of("22", "-0.1", "1.12345")) {
+            var draft = gradingDraft();
+            ((ObjectNode) draft.path("grades").get(0)).put("points", new BigDecimal(points));
+            responseBody = response(draft); assertGradingFailure(HttpStatus.BAD_GATEWAY);
+        }
+        var draft = gradingDraft(); ((ObjectNode) draft.path("grades").get(1)).put("questionId", 11);
+        responseBody = response(draft); assertGradingFailure(HttpStatus.BAD_GATEWAY);
+        draft = gradingDraft(); ((ObjectNode) draft.path("grades").get(1)).put("questionId", 999);
+        responseBody = response(draft); assertGradingFailure(HttpStatus.BAD_GATEWAY);
+        draft = gradingDraft(); ((ObjectNode) draft.path("grades").get(0)).remove("points");
+        responseBody = response(draft); assertGradingFailure(HttpStatus.BAD_GATEWAY);
+        draft = gradingDraft(); ((ObjectNode) draft.path("grades").get(0)).put("comment", "");
+        responseBody = response(draft); assertGradingFailure(HttpStatus.BAD_GATEWAY);
+        draft = gradingDraft(); ((tools.jackson.databind.node.ArrayNode) draft.path("grades")).remove(1);
+        responseBody = response(draft); assertGradingFailure(HttpStatus.BAD_GATEWAY);
+        responseBody = response(mapper.createObjectNode()); assertGradingFailure(HttpStatus.BAD_GATEWAY);
+        responseBody = "invalid-json"; assertGradingFailure(HttpStatus.BAD_GATEWAY);
+        var incomplete = (ObjectNode) mapper.readTree(response(gradingDraft())); incomplete.put("status", "incomplete");
+        responseBody = mapper.writeValueAsString(incomplete); assertGradingFailure(HttpStatus.BAD_GATEWAY);
+    }
+
+    @Test
+    void gradingReportsProviderFailuresWithoutLeakingResponses() {
+        for (int code : List.of(401, 403, 404, 500)) {
+            responseStatus = code; responseBody = "private upstream error";
+            assertGradingFailure(HttpStatus.SERVICE_UNAVAILABLE);
+        }
+        responseStatus = 429; responseBody = "{\"error\":{\"code\":\"insufficient_quota\"}}";
+        assertTrue(assertGradingFailure(HttpStatus.SERVICE_UNAVAILABLE).getReason().contains("API кредит"));
+        responseStatus = 200;
+        responseBody = mapper.writeValueAsString(Map.of("status", "completed", "output", List.of(Map.of("type", "message", "content", List.of(Map.of("type", "refusal", "refusal", "private upstream error"))))));
+        assertGradingFailure(HttpStatus.BAD_GATEWAY);
+    }
+
+    private ResponseStatusException assertGradingFailure(HttpStatus status) {
+        var error = assertThrows(ResponseStatusException.class, () -> provider().gradeAnswers(gradingRequest()));
+        assertEquals(status, error.getStatusCode()); assertFalse(error.getReason().contains("private upstream error"));
+        return error;
+    }
+
+    private AiProvider.GradeAnswersRequest gradingRequest() {
+        return new AiProvider.GradeAnswersRequest("Bulgarian", List.of(
+                new AiProvider.GradingQuestion(11, "OPEN_ANSWER", "Explain encapsulation", new BigDecimal("2.5"), "Use the rubric", List.of(), "Reference explanation", "Student explanation"),
+                new AiProvider.GradingQuestion(12, "SHORT_ANSWER", "Name the keyword", new BigDecimal("5"), "Accepted answer", List.of("class"), "", "class")));
+    }
+
+    private ObjectNode gradingDraft() {
+        return (ObjectNode) mapper.valueToTree(Map.of("grades", List.of(
+                Map.of("questionId", 11, "points", new BigDecimal("1.25"), "comment", "Частично верен отговор."),
+                Map.of("questionId", 12, "points", 5, "comment", "Верен отговор."))));
     }
 
     @Test

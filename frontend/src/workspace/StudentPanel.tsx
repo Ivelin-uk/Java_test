@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Play, RotateCw, FileCheck, X } from 'lucide-react'
+import { Play, RotateCw, FileCheck, X, Clock3, CircleCheck } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
 import type { Assignment, Attempt, Result, ReviewQuestion, Question, ExamAnswer } from './types'
@@ -25,13 +25,36 @@ export function LearnerPanel({ api, begin }: { api: WorkspaceApi; begin: (assign
     api.get<ResultDetail>('/results/' + id).then(value => { if (active) setDetail(value) }).catch(cause => { if (active) setLinkError(cause.message) })
     return () => { active = false }
   }, [api])
+  const published = new Map<number, Result>()
+  const finalized = new Set(attempts.data.filter(attempt => attempt.status === 'finalized').map(attempt => attempt.id))
+  for (const result of results.data) {
+    if (!finalized.has(result.attempt_id)) continue
+    const previous = published.get(result.attempt_id)
+    if (!previous || result.revision_number > previous.revision_number) published.set(result.attempt_id, result)
+  }
   const summary = new Map<number, Result>()
-  for (const result of results.data) if (!summary.has(result.assignment_id)) summary.set(result.assignment_id, result)
+  for (const result of published.values()) {
+    const best = summary.get(result.assignment_id)
+    if (!best || Number(result.percentage) > Number(best.percentage) || Number(result.percentage) === Number(best.percentage) && result.attempt_number > best.attempt_number) summary.set(result.assignment_id, result)
+  }
   return <section className="ws-section"><SectionHead title="Моите тестове"><button className="icon-button" title="Обнови" onClick={() => void action.run(async () => { await assignments.reload(); await attempts.reload(); await results.reload() })}><RotateCw size={17} /></button></SectionHead><Feedback error={assignments.error || attempts.error || results.error || action.error || linkError} busy={action.busy || assignments.loading || attempts.loading || results.loading} />
-    <div className="ws-table-wrap"><table className="ws-table"><thead><tr><th>Тест</th><th>Начало</th><th>Краен срок</th><th>Опити</th><th>Оценка</th><th>Действие</th></tr></thead><tbody>{assignments.data.map(a => { const active = attempts.data.find(attempt => attempt.assignment_id === a.id && attempt.status === 'in_progress'); const result = summary.get(a.id); return <tr key={a.id}><td>{a.title}</td><td>{date(a.starts_at)}</td><td>{date(a.ends_at)}</td><td>{attempts.data.filter(attempt => attempt.assignment_id === a.id).length}/{a.max_attempts}</td><td>{result ? result.grade + ' · опит ' + result.attempt_number : '-'}</td><td><button className="command-button" disabled={!!a.canceled || !active && new Date(a.ends_at).getTime() <= now} onClick={() => begin(a.id, active?.id)}><Play size={17} /> {active ? 'Продължи' : 'Подготовка'}</button></td></tr> })}</tbody></table></div>{!assignments.data.length && !assignments.loading && <Empty>Нямате възложени тестове.</Empty>}
-    <p className="ws-muted">Обобщена оценка: последният публикуван, неанулиран опит по пореден номер.</p>
-    <h3>Опити</h3><div className="ws-table-wrap"><table className="ws-table"><thead><tr><th>Тест</th><th>Номер</th><th>Статус</th><th>Предаден</th></tr></thead><tbody>{attempts.data.map(a => <tr key={a.id}><td>{a.title}</td><td>{a.attempt_number}</td><td>{label(a.status)}</td><td>{date(a.submitted_at)}</td></tr>)}</tbody></table></div>
-    <h3>Публикувани резултати</h3><div className="ws-table-wrap"><table className="ws-table"><thead><tr><th>Тест</th><th>Опит</th><th>Точки</th><th>Процент</th><th>Оценка</th><th>Изход</th><th>Преглед</th></tr></thead><tbody>{results.data.map(r => <tr key={r.id}><td>{r.title}{r.revision_number > 1 && <div>Корекция №{r.revision_number - 1}</div>}</td><td>{r.attempt_number}</td><td>{r.points}/{r.maximum_points}</td><td>{Number(r.percentage).toFixed(2)}%</td><td>{r.grade}</td><td>{label(r.outcome)}</td><td><button className="icon-button" title="Преглед на резултата" onClick={() => void action.run(async () => setDetail(await api.get('/results/' + r.attempt_id)))}><FileCheck size={17} /></button></td></tr>)}</tbody></table></div>{!results.loading && !results.data.length && <Empty>Няма публикувани резултати.</Empty>}{detail && <div className="ws-result"><SectionHead title={'Оценка ' + detail.grade + ' · ' + label(detail.outcome)}><button className="icon-button" title="Затвори резултата" onClick={() => setDetail(null)}><X size={17} /></button></SectionHead><p>{date(detail.published_at ?? null)}{detail.revision_number > 1 ? ' · Корекция №' + (detail.revision_number - 1) : ''}</p>{detail.reason && <p>{detail.reason}</p>}{detail.details ? <ResultDetails api={api} attempt={detail.attempt_id} value={detail.details} /> : <p>Подробните отговори ще бъдат достъпни след края на разрешения период.</p>}</div>}
+    <div className="ws-table-wrap"><table className="ws-table" aria-label="Възложени тестове"><thead><tr><th>Тест</th><th>Начало</th><th>Краен срок</th><th>Опити</th><th>Оценка</th><th>Действие</th></tr></thead><tbody>{assignments.data.map(a => {
+      const assignedAttempts = attempts.data.filter(attempt => attempt.assignment_id === a.id)
+      const active = assignedAttempts.find(attempt => attempt.status === 'in_progress')
+      const exhausted = assignedAttempts.length >= a.max_attempts
+      const result = summary.get(a.id)
+      return <tr key={a.id}><td>{a.title}</td><td>{date(a.starts_at)}</td><td>{date(a.ends_at)}</td><td>{assignedAttempts.length}/{a.max_attempts}</td><td>{result ? label(result.grade) + ' · опит ' + result.attempt_number : '-'}</td><td><button className="command-button" disabled={attempts.loading || !!attempts.error || !!a.canceled || !active && (exhausted || new Date(a.ends_at).getTime() <= now)} onClick={() => begin(a.id, active?.id)}><Play size={17} /> {active ? 'Продължи' : exhausted ? 'Няма оставащи опити' : 'Подготовка'}</button></td></tr>
+    })}</tbody></table></div>{!assignments.data.length && !assignments.loading && <Empty>Нямате възложени тестове.</Empty>}
+    <section className="ws-best-results" aria-label="Най-високи резултати"><h3>Най-висок резултат</h3>{[...summary.values()].map(result => <article className="ws-best-result" key={result.assignment_id}>
+      <div><strong>{result.title}</strong><span>Възлагане №{result.assignment_id} · Опит {result.attempt_number}</span></div>
+      <div className="ws-best-score"><strong>{Number(result.percentage).toFixed(2)}%</strong><span>{result.points}/{result.maximum_points} точки · Оценка {label(result.grade)}</span></div>
+    </article>)}{!results.loading && !attempts.loading && !summary.size && <Empty>Няма публикувани резултати.</Empty>}</section>
+    <h3>Опити и резултати</h3><div className="ws-table-wrap"><table className="ws-table" aria-label="Опити и резултати"><thead><tr><th scope="col">Тест</th><th scope="col">Опит</th><th scope="col">Статус</th><th scope="col">Предаден</th><th scope="col">Точки</th><th scope="col">Процент</th><th scope="col">Оценка</th><th scope="col">Изход</th><th scope="col">Преглед</th></tr></thead><tbody>{attempts.data.map(attempt => {
+      const result = published.get(attempt.id)
+      const statusClass = attempt.status === 'pending_review' ? 'ws-attempt-pending' : attempt.status === 'finalized' ? 'ws-attempt-finalized' : undefined
+      return <tr key={attempt.id} className={statusClass}><td>{attempt.title}</td><td>{attempt.attempt_number}</td><td><span className="ws-attempt-status">{attempt.status === 'pending_review' && <Clock3 size={16} aria-hidden="true" />}{attempt.status === 'finalized' && <CircleCheck size={16} aria-hidden="true" />}<span>{label(attempt.status)}</span></span>{result && result.revision_number > 1 && <div className="ws-muted">Корекция №{result.revision_number - 1}</div>}</td><td>{date(attempt.submitted_at)}</td><td>{result ? `${result.points}/${result.maximum_points}` : '-'}</td><td>{result ? Number(result.percentage).toFixed(2) + '%' : '-'}</td><td>{result ? label(result.grade) : '-'}</td><td>{result ? label(result.outcome) : '-'}</td><td>{result ? <button className="icon-button" title="Преглед на резултата" disabled={action.busy} onClick={() => void action.run(async () => setDetail(await api.get('/results/' + attempt.id)))}><FileCheck size={17} /></button> : '-'}</td></tr>
+    })}</tbody></table></div>{!attempts.loading && !attempts.data.length && <Empty>Няма започнати опити.</Empty>}
+    {detail && <div className="ws-result"><SectionHead title={'Оценка ' + label(detail.grade) + ' · ' + label(detail.outcome)}><button className="icon-button" title="Затвори резултата" onClick={() => setDetail(null)}><X size={17} /></button></SectionHead><p>{date(detail.published_at ?? null)}{detail.revision_number > 1 ? ' · Корекция №' + (detail.revision_number - 1) : ''}</p>{detail.reason && <p>{detail.reason}</p>}{detail.details ? <ResultDetails api={api} attempt={detail.attempt_id} value={detail.details} /> : <p>Подробните отговори ще бъдат достъпни след края на разрешения период.</p>}</div>}
   </section>
 }
 function ResultDetails({ api, attempt, value }: { api: WorkspaceApi; attempt: number; value: NonNullable<ResultDetail['details']> }) {

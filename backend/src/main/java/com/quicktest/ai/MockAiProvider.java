@@ -13,6 +13,14 @@ import java.util.List;
 @ConditionalOnProperty(name = "app.ai.provider", havingValue = "mock")
 public class MockAiProvider implements AiProvider {
     @Override
+    public GradedAnswers gradeAnswers(GradeAnswersRequest request) {
+        return new GradedAnswers(request.questions().stream().map(q -> new AnswerGrade(q.id(),
+                q.acceptedAnswers().stream().anyMatch(answer -> answer.equalsIgnoreCase(q.answer().strip()))
+                        ? q.maximumPoints() : java.math.BigDecimal.ZERO,
+                "Тестова AI проверка (mock)." )).toList(), "mock-ai-provider", 0, 0);
+    }
+
+    @Override
     public GeneratedTest generateTest(GenerateTestRequest request) {
         List<QuizDtos.QuestionRequest> questions = new ArrayList<>();
         int count = Math.max(1, Math.min(30, request.questionCount()));

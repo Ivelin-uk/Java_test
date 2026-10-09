@@ -41,10 +41,33 @@
 .ws-feedback { display: flex; align-items: center; gap: 8px; padding: 10px 0; white-space: normal; }
 .ws-empty { padding: 24px 0; color: var(--muted); }
 .ws-table-wrap { overflow-x: auto; }
+.ws-table[aria-label="Проверка на опити"] { min-width: 1040px; }
+.ws-table[aria-label="Проверка на опити"] th { white-space: nowrap; }
+.ws-table[aria-label="Проверка на опити"] th:last-child { width: 220px; min-width: 190px; }
+.ws-grading-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.ws-ai-graded { display: block; color: var(--success); margin-top: 4px; }
+.ws-ai-error { max-width: 280px; margin: 8px 0 0; white-space: normal; color: var(--danger); overflow-wrap: anywhere; }
+.ws-spin { animation: ws-spin 1s linear infinite; }
+@keyframes ws-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ws-spin { animation: none; } }
+.ws-best-results { display: grid; gap: 12px; min-width: 0; padding-top: 20px; border-top: 1px solid var(--border); }
+.ws-best-result { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.ws-best-result > div { display: grid; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.ws-best-result span { color: var(--muted); font-size: 13px; }
+.ws-best-score > strong { color: var(--success); font-size: 22px; font-variant-numeric: tabular-nums; }
+.ws-table-wrap > .ws-table[aria-label="Опити и резултати"] { min-width: 1100px; }
+.ws-table[aria-label="Опити и резултати"] th:first-child { width: 25%; }
+.ws-table[aria-label="Опити и резултати"] td:nth-child(5), .ws-table[aria-label="Опити и резултати"] td:nth-child(6) { white-space: nowrap; }
 .ws-table { border-collapse: collapse; width: 100%; text-align: left; font-size: 14px; }
 .ws-table th { font-size: 12px; font-weight: 600; color: var(--muted); background: var(--subtle); }
 .ws-table th, .ws-table td { padding: 13px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; overflow-wrap: anywhere; }
 .ws-table tr:hover td { background: var(--hover); }
+.ws-table .ws-attempt-pending td, .ws-table .ws-attempt-pending:hover td { background: var(--warning-bg); }
+.ws-table .ws-attempt-finalized td, .ws-table .ws-attempt-finalized:hover td { background: var(--success-bg); }
+.ws-attempt-status { display: inline-flex; align-items: center; gap: 6px; }
+.ws-attempt-status svg { flex-shrink: 0; }
+.ws-attempt-pending .ws-attempt-status { color: var(--warning); }
+.ws-attempt-finalized .ws-attempt-status { color: var(--success); }
 .ws-table-wrap > .ws-table[aria-label="Възлагания"] { min-width: 1040px; }
 .ws-assignment-audience { display: grid; gap: 6px; min-width: 180px; max-width: 320px; }
 .ws-assignment-audience > span { display: flex; align-items: flex-start; gap: 6px; }
@@ -128,6 +151,9 @@
 .ws-code-details span { font-size: 13px; color: var(--muted); }
 .ws-summary { align-self: center; color: var(--muted); font-size: 13px; }
 .ws-monitor, .ws-publication { display: grid; gap: 18px; padding-top: 24px; border-top: 1px solid var(--border); }
+.ws-publication-dialog[open] { display: grid; gap: 16px; overflow-y: auto; }
+.ws-publication-dialog h2 { margin: 0; }
+.ws-publication-dialog .dialog-actions { margin-top: 8px; }
 .ws-student-text { margin: 0; padding: 14px; background: var(--subtle); font: 14px/1.6 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ws-billing { display: grid; grid-template-columns: minmax(140px, 240px) 1fr; margin: 0; }
 .ws-billing dt, .ws-billing dd { padding: 12px 0; margin: 0; border-bottom: 1px solid var(--border); }

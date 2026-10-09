@@ -6,7 +6,7 @@ export interface Definition { title: string; description: string; subject: strin
 export interface Assessment { id: number; title: string; status: string; shared: boolean; owner_id: number; definition_json: string; updated_at: string; question_count: number; total_time_seconds: number }
 export interface Version { id: number; version_number: number; title: string; published_at: string }
 export interface Assignment { id: number; teacher_id?: number; title: string; starts_at: string; ends_at: string; max_attempts: number; recipients?: number; recipient_groups?: { id: number; name: string }[]; individual_recipients?: { id: number; name: string }[]; canceled?: boolean; fullscreen_exempt?: boolean }
-export interface Attempt { id: number; assignment_id: number; attempt_number: number; status: string; student_name?: string; title: string; submitted_at: string | null }
+export interface Attempt { id: number; assignment_id: number; attempt_number: number; status: string; student_name?: string; title: string; submitted_at: string | null; ai_status?: string | null; ai_attempts?: number; ai_error?: string | null }
 export interface Result { id: number; assignment_id: number; attempt_id: number; title: string; points: number; maximum_points: number; percentage: number; grade: string; outcome: string; attempt_number: number; revision_number: number; author_id?: number; published_at?: string; reason?: string }
 export interface Preflight { mobile_validated?: boolean; id: number; title: string; instructions: string; starts_at: string; ends_at: string; question_count: number; total_seconds: number; fullscreen_exempt: boolean; max_attempts: number }
 export interface ExamAnswer { optionIds: string[]; text: string }

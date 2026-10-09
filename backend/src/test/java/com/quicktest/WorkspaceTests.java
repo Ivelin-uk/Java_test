@@ -45,6 +45,7 @@ class WorkspaceTests {
     @Autowired GradingService grading;
     @Autowired IdentityWorkflow identity;
     @Autowired WorkspaceAiService ai;
+    @Autowired AiGradingService aiGrading;
     @Autowired MockMvc mvc;
     @Autowired QuestionBankService bank;
     @Autowired OrganizationControls controls;
@@ -560,6 +561,139 @@ class WorkspaceTests {
         grading.grade(teaching,id,new GradingService.GradeRequest(number(q,"id"),BigDecimal.ZERO,"Correction","Incorrect explanation"));grading.finalizeResult(teaching,id,new GradingService.Finalize("correction-key-123","Corrected review",null,null),true);
         assertEquals(2,db.count("SELECT COUNT(*) FROM result_revisions WHERE attempt_id=?",id));assertEquals(2,db.count("SELECT COUNT(*) FROM notification_outbox WHERE organization_id=?",org));assertFalse(grading.studentResult(learning,id).containsKey("details"));
     }
+    @Test void gradingHttpRejectsPointsOutsideEachQuestionsMaximum() throws Exception {
+        var r=startRequest();var state=start(r);long id=number(state,"id"),qid=number(question(state),"id");attempts.submit(learning,id,session(r));
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        long auditCount=db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND action='grading.question_updated'",org);
+        for(String value:List.of("22","1.0001","-0.0001","0.12345")) {
+            mvc.perform(patch("/api/v1/attempts/"+id+"/grading").header("Authorization",bearer).contentType("application/json")
+                    .content(db.json(new GradingService.GradeRequest(qid,new BigDecimal(value),"","Boundary check")))).andExpect(status().isBadRequest());
+            assertEquals(0,decimal(db.one("SELECT final_points FROM attempt_questions WHERE id=?",qid),"final_points").compareTo(BigDecimal.ZERO));
+        }
+        mvc.perform(patch("/api/v1/attempts/"+id+"/grading").header("Authorization",bearer).contentType("application/json")
+                .content(db.json(Map.of("questionId",qid,"comment","Missing points","reason","Boundary check")))).andExpect(status().isBadRequest());
+        assertEquals(auditCount,db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND action='grading.question_updated'",org));
+        for(String value:List.of("0","0.1234","1")) {
+            mvc.perform(patch("/api/v1/attempts/"+id+"/grading").header("Authorization",bearer).contentType("application/json")
+                    .content(db.json(new GradingService.GradeRequest(qid,new BigDecimal(value),"","Boundary check")))).andExpect(status().isOk());
+            assertEquals(0,decimal(db.one("SELECT final_points FROM attempt_questions WHERE id=?",qid),"final_points").compareTo(new BigDecimal(value)));
+        }
+        var published=grading.finalizeResult(teaching,id,new GradingService.Finalize("bounded-grade-publication",null,null,null),false);
+        assertEquals("6",string(published,"grade"));assertEquals("passed",string(published,"outcome"));
+        assertEquals(0,decimal(published,"points").compareTo(BigDecimal.ONE));assertEquals(0,decimal(published,"maximum_points").compareTo(BigDecimal.ONE));
+    }
+    private long submittedWrittenAttempt(String text) {
+        long test=number(assessments.save(teaching,null,definition(true)),"id");
+        long v=number(assessments.publish(teaching,test),"id");
+        var assigned=assignments.create(teaching,new AssignmentService.AssignmentRequest(v,List.of(defaultGroup),List.of(),now,now.plusSeconds(1000),1,false,false,true));
+        assignment=number(assigned,"id");code=string(assigned,"code");
+        var r=startRequest();var state=start(r);long id=number(state,"id");var q=question(state);
+        attempts.answer(learning,id,number(q,"id"),session(r),new AttemptService.AnswerRequest("ai-choice-answer",string(q,"open_instance"),correct(q)));
+        q=question(attempts.open(learning,id,session(r),new AttemptService.Ready(true,true)));
+        attempts.answer(learning,id,number(q,"id"),session(r),new AttemptService.AnswerRequest("ai-text-answer",string(q,"open_instance"),new AttemptService.Answer(List.of(),text)));
+        return id;
+    }
+    private AiGradingService aiWorker(java.util.function.Function<com.quicktest.ai.AiProvider.GradeAnswersRequest,com.quicktest.ai.AiProvider.GradedAnswers> evaluate) {
+        var provider=new com.quicktest.ai.MockAiProvider() {
+            @Override public GradedAnswers gradeAnswers(GradeAnswersRequest request) {return evaluate.apply(request);}
+        };
+        return new AiGradingService(db,provider,organizations,assignments,grading,crypto,audit,transactions,clock,true);
+    }
+    private com.quicktest.ai.AiProvider.GradedAnswers aiScores(com.quicktest.ai.AiProvider.GradeAnswersRequest request,String points) {
+        return new com.quicktest.ai.AiProvider.GradedAnswers(request.questions().stream().map(q->new com.quicktest.ai.AiProvider.AnswerGrade(q.id(),new BigDecimal(points),"Обоснован частичен отговор.")).toList(),"test-model",123,456);
+    }
+    @Test void aiGradingPublishesOnceFromQueueAndRespectsQuestionLimits() throws Exception {
+        long id=submittedWrittenAttempt("Student explanation");
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        mvc.perform(post("/api/v1/attempts/"+id+"/ai-grading").header("Authorization",bearer).header("X-Organization-Id",org).contentType("application/json").content("{\"requestKey\":\"ai-grade-http-key\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("queued")).andExpect(jsonPath("$.snapshot_hash").doesNotExist());
+        var duplicate=aiGrading.enqueue(teaching,id,new AiGradingService.Request("another-start-key"),false);
+        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_ai_grading_jobs WHERE attempt_id=?",id));
+        assertEquals(1,number(organizations.subscription(org),"ai_reserved"));
+        var calls=new java.util.concurrent.atomic.AtomicInteger();
+        var worker=aiWorker(request->{calls.incrementAndGet();assertEquals("bg",request.language());assertEquals(1,request.questions().size());
+            assertEquals("Student explanation",request.questions().getFirst().answer());assertEquals("Private criteria",request.questions().getFirst().criteria());
+            assertFalse(db.json(request).contains("session"));assertFalse(db.json(request).contains(users.findById(student).orElseThrow().getEmail()));
+            return aiScores(request,"0.5");});
+        worker.process();worker.process();
+        assertEquals(1,calls.get());assertEquals("completed",string(db.one("SELECT * FROM workspace_ai_grading_jobs WHERE id=?",number(duplicate,"id")),"status"));
+        assertEquals("finalized",string(db.one("SELECT * FROM exam_attempts WHERE id=?",id),"status"));
+        var result=grading.results(learning).getFirst();assertEquals("5",string(result,"grade"));assertEquals(0,decimal(result,"percentage").compareTo(new BigDecimal("75")));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM result_revisions WHERE attempt_id=?",id));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM notification_outbox WHERE revision_id=?",number(result,"id")));
+        assertEquals(1,number(organizations.subscription(org),"ai_used"));assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
+        assertEquals("completed",aiGrading.enqueue(teaching,id,new AiGradingService.Request("repeat-after-publish"),false).get("status"));
+        var reviewed=grading.review(teaching,id);var reviewedQuestions=(List<?>)reviewed.get("questions");
+        assertEquals(0,decimal((Map<String,Object>)reviewedQuestions.getFirst(),"final_points").compareTo(BigDecimal.ONE));
+        assertTrue(string((Map<String,Object>)reviewedQuestions.getLast(),"teacher_comment").startsWith("AI: "));
+        assertEquals("completed",grading.queue(teaching).getFirst().get("ai_status"));
+    }
+    @Test void aiGradingFailuresAreAtomicRetryableAndIdempotent() {
+        long id=submittedWrittenAttempt("Answer");var before=db.rows("SELECT * FROM attempt_questions WHERE attempt_id=? ORDER BY position_index",id);
+        aiGrading.enqueue(teaching,id,new AiGradingService.Request("invalid-points-job"),false);
+        var worker=aiWorker(request->aiScores(request,"22"));worker.process();
+        assertEquals(before,db.rows("SELECT * FROM attempt_questions WHERE attempt_id=? ORDER BY position_index",id));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM result_revisions WHERE attempt_id=?",id));
+        assertEquals(0,number(organizations.subscription(org),"ai_used"));assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
+        var retry=new AiGradingService.Request("retry-invalid-job");aiGrading.enqueue(teaching,id,retry,true);aiGrading.enqueue(teaching,id,retry,true);
+        assertEquals(1,number(organizations.subscription(org),"ai_reserved"));worker.process();
+        assertEquals("failed",aiGrading.enqueue(teaching,id,retry,true).get("status"));assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
+        aiGrading.enqueue(teaching,id,new AiGradingService.Request("last-invalid-job"),true);worker.process();
+        assertThrows(WorkspaceError.class,()->aiGrading.enqueue(teaching,id,new AiGradingService.Request("too-many-retries"),true));
+        assertEquals(3,number(db.one("SELECT * FROM workspace_ai_grading_jobs WHERE attempt_id=?",id),"attempts"));
+        long question=number(before.getLast(),"id");grading.grade(teaching,id,new GradingService.GradeRequest(question,BigDecimal.ONE,"Manual review",null));
+        assertNotNull(grading.finalizeResult(teaching,id,new GradingService.Finalize("manual-after-ai-error",null,null,null),false));
+    }
+    @Test void aiGradingDoesNotOverwriteConcurrentManualReview() {
+        long id=submittedWrittenAttempt("Answer");long qid=number(db.one("SELECT id FROM attempt_questions WHERE attempt_id=? AND automatic_points IS NULL",id),"id");
+        aiGrading.enqueue(teaching,id,new AiGradingService.Request("manual-race-job"),false);
+        aiWorker(request->{grading.grade(teaching,id,new GradingService.GradeRequest(qid,new BigDecimal("0.25"),"Teacher decision",null));return aiScores(request,"1");}).process();
+        var question=db.one("SELECT * FROM attempt_questions WHERE id=?",qid);assertEquals("Teacher decision",question.get("teacher_comment"));assertEquals(0,decimal(question,"final_points").compareTo(new BigDecimal("0.25")));
+        assertEquals("failed",db.one("SELECT status FROM workspace_ai_grading_jobs WHERE attempt_id=?",id).get("status"));assertEquals(0,db.count("SELECT COUNT(*) FROM result_revisions WHERE attempt_id=?",id));
+        assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
+    }
+    @Test void aiGradingPreservesZeroForBlankTimedOutAndPreviouslyReviewedAnswers() {
+        long id=submittedWrittenAttempt(" ");
+        aiGrading.enqueue(teaching,id,new AiGradingService.Request("blank-answer-job"),false);
+        var worker=aiWorker(request->{fail("No model call is needed");return null;});worker.process();
+        assertEquals(0,number(organizations.subscription(org),"ai_used"));assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
+        assertEquals(0,decimal(grading.results(learning).getFirst(),"points").compareTo(BigDecimal.ONE));
+        id=submittedWrittenAttempt("Unreviewed text");
+        long qid=number(db.one("SELECT id FROM attempt_questions WHERE attempt_id=? AND automatic_points IS NULL",id),"id");
+        grading.grade(teaching,id,new GradingService.GradeRequest(qid,new BigDecimal("0.75"),"Already checked",null));
+        aiGrading.enqueue(teaching,id,new AiGradingService.Request("already-reviewed-job"),false);worker.process();
+        assertEquals("Already checked",db.one("SELECT teacher_comment FROM attempt_questions WHERE id=?",qid).get("teacher_comment"));
+        // Use a fresh assignment for an unanswered attempt with a saved draft.
+        var a=assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now,now.plusSeconds(1000),1,false,false,true));assignment=number(a,"id");code=string(a,"code");var r=startRequest();
+        var state=start(r);id=number(state,"id");var q=question(state);
+        attempts.draft(learning,id,number(q,"id"),session(r),new AttemptService.AnswerRequest("saved-draft-for-ai",string(q,"open_instance"),correct(q)));
+        attempts.submit(learning,id,session(r));
+        aiGrading.enqueue(teaching,id,new AiGradingService.Request("unanswered-draft-job"),false);worker.process();
+        assertEquals(0,decimal(db.one("SELECT points FROM result_revisions WHERE attempt_id=?",id),"points").compareTo(BigDecimal.ZERO));
+    }
+    @Test void aiGradingEnforcesAccessAndRechecksRevocationBeforePublishing() throws Exception {
+        long id=submittedWrittenAttempt("Answer");
+        mvc.perform(post("/api/v1/attempts/"+id+"/ai-grading").header("Authorization",authorization).header("X-Organization-Id",org).contentType("application/json").content("{\"requestKey\":\"student-ai-attempt\"}")) .andExpect(status().isForbidden());
+        assertThrows(WorkspaceError.class,()->aiGrading.enqueue(new OrgAccess.Scope(other,teacher,Set.of("TEACHER")),id,new AiGradingService.Request("cross-tenant-job"),false));
+        var colleague=user(Role.TEACHER);db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,colleague.getId(),"[\"TEACHER\"]",now);
+        var shared=new OrgAccess.Scope(org,colleague.getId(),Set.of("TEACHER"));
+        assertThrows(WorkspaceError.class,()->aiGrading.enqueue(shared,id,new AiGradingService.Request("unshared-ai-job"),false));
+        assignments.shareTeacher(teaching,assignment,colleague.getId(),true);aiGrading.enqueue(shared,id,new AiGradingService.Request("shared-ai-job"),false);
+        aiWorker(request->{assignments.shareTeacher(teaching,assignment,colleague.getId(),false);return aiScores(request,"1");}).process();
+        assertEquals("pending_review",db.one("SELECT status FROM exam_attempts WHERE id=?",id).get("status"));assertEquals(0,db.count("SELECT COUNT(*) FROM result_revisions WHERE attempt_id=?",id));
+        assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
+    }
+    @Test void aiGradingReleasesReservationsForDeletedAttemptsAndInterruptedWorkers() {
+        long id=submittedWrittenAttempt("Answer");aiGrading.enqueue(teaching,id,new AiGradingService.Request("delete-while-ai-job"),false);
+        aiWorker(request->{assignments.remove(teaching,assignment);return aiScores(request,"1");}).process();
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE id=?",id));assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
+        id=submittedWrittenAttempt("Answer");aiGrading.enqueue(teaching,id,new AiGradingService.Request("interrupted-ai-job"),false);
+        db.update("UPDATE workspace_ai_grading_jobs SET status='running',attempts=1,updated_at=? WHERE attempt_id=?",now.minusSeconds(601),id);
+        aiWorker(request->{fail("Stale work must not be repeated automatically");return null;}).process();
+        assertEquals("failed",db.one("SELECT status FROM workspace_ai_grading_jobs WHERE attempt_id=?",id).get("status"));assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
+        aiGrading.enqueue(teaching,id,new AiGradingService.Request("recovered-ai-job"),true);aiWorker(request->aiScores(request,"1")).process();
+        assertEquals("finalized",db.one("SELECT status FROM exam_attempts WHERE id=?",id).get("status"));
+    }
     @Test void invitationAndNotificationAddressChangesAreSingleUse() {
         var newStudent=user(Role.STUDENT);var invite=organizations.invite(teaching,new OrganizationService.InvitationRequest(newStudent.getEmail(),List.of("STUDENT"),null));
         organizations.accept(newStudent.getId(),string(invite,"token"));assertThrows(WorkspaceError.class,()->organizations.accept(newStudent.getId(),string(invite,"token")));
@@ -604,6 +738,28 @@ class WorkspaceTests {
         long next=number(attempts.start(new OrgAccess.Scope(org,second.getId(),Set.of("STUDENT")),assignment,startRequest(),bearer,"127.0.0.2"),"id");
         assertNotEquals(first,next);
         assertEquals(2,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=? AND status='in_progress'",assignment));
+    }
+    @Test void completedGroupAssignmentAllowsThreeDistinctAttemptsAndIdempotentRetries() {
+        assignments.accommodate(teaching,assignment,student,new AssignmentService.Accommodation(false,BigDecimal.ONE,3,"Three attempts allowed"));
+        var ids=new HashSet<Long>();
+        for(int number=1;number<=3;number++) {
+            var request=startRequest();
+            var missingCode=new AttemptService.StartRequest("",request.idempotencyKey(),request.browserId(),request.sessionToken(),true,true,true);
+            assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->start(missingCode)).getStatusCode());
+            var state=start(request);long id=number(state,"id");assertTrue(ids.add(id));
+            assertEquals(number,number(state,"attempt_number"));assertEquals("in_progress",string(state,"status"));
+            assertEquals(id,number(start(request),"id"));
+            assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->start(startRequest())).getStatusCode());
+            var current=question(state);
+            attempts.answer(learning,id,number(current,"id"),session(request),new AttemptService.AnswerRequest("retake-answer-"+number,string(current,"open_instance"),correct(current)));
+            if(number==1) grading.finalizeResult(teaching,id,new GradingService.Finalize("retake-first-result","",null,null),false);
+            var replay=start(request);assertEquals(id,number(replay,"id"));assertNotEquals("in_progress",string(replay,"status"));
+            assertEquals(number,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=? AND student_id=?",assignment,student));
+        }
+        var exhausted=assertThrows(WorkspaceError.class,()->start(startRequest()));
+        assertEquals(HttpStatus.CONFLICT,exhausted.getStatusCode());assertEquals("Няма оставащи опити.",exhausted.getReason());
+        assertEquals(3,attempts.mine(learning).size());assertEquals(1,grading.assignmentResults(learning).size());
+        assertEquals(1,db.count("SELECT COUNT(*) FROM result_revisions WHERE organization_id=?",org));
     }
     @Test void aiReservationsDeduplicateAndDoNotPublishAnything() {
         var request=new WorkspaceAiService.Generate("ai-request-123","Java","","","bg",2,"EASY","");var first=ai.enqueue(teaching,request);var second=ai.enqueue(teaching,request);assertEquals(number(first,"id"),number(second,"id"));assertEquals(1,number(organizations.subscription(org),"ai_reserved"));assertEquals(0,number(organizations.subscription(org),"ai_used"));

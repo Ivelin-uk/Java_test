@@ -18,6 +18,11 @@
     "test:recipients": "node e2e/assignment-recipients.mjs",
     "test:group-recipients": "node e2e/group-recipient-access.mjs",
     "test:durations": "node e2e/durations.mjs",
+    "test:exam-navigation": "node e2e/exam-navigation.mjs",
+    "test:exam-retakes": "node e2e/exam-retakes.mjs",
+    "test:learner-results": "node e2e/learner-results.mjs",
+    "test:grading": "node e2e/grading-limits.mjs",
+    "test:ai-grading": "node e2e/ai-grading.mjs",
     "test:deletions": "node e2e/deletion-confirmations.mjs"
   },
   "dependencies": {
