@@ -43,7 +43,7 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
       {actualView === 'dashboard' && <Dashboard api={api} teacher={teacher} />}
       {actualView === 'groups' && <GroupsPanel api={api} teacher={teacher} />}
       {actualView === 'tests' && <AssessmentEditor api={api} userId={auth.user.id} />}
-      {actualView === 'assignments' && <AssignmentsPanel api={api} />}
+      {actualView === 'assignments' && <AssignmentsPanel api={api} userId={auth.user.id} />}
       {actualView === 'grading' && <GradingPanel api={api} />}
       {actualView === 'learner' && <LearnerPanel api={api} begin={(assignment, attempt) => setExam({ assignment, attempt })} />}
       {actualView === 'profile' && <WorkspaceProfile api={api} auth={auth} onAuth={onAuth} />}

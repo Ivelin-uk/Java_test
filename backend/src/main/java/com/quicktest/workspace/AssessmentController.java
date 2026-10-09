@@ -22,7 +22,10 @@ public class AssessmentController {
     @PutMapping("/tests/{id}/sharing") public void sharing(@PathVariable long id,@RequestBody Sharing request) {assessments.share(access.teacher(),id,request.shared());}
     @GetMapping("/assignments") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT,student=true) public Object assignments() {return assignments.list(access.scope());}
     @PostMapping("/assignments") public Object assign(@RequestBody AssignmentService.AssignmentRequest request) {return assignments.create(access.version(request.versionId()),request);}
+    @DeleteMapping("/assignments/{id}") public void removeAssignment(@PathVariable long id) {assignments.remove(access.teacher(),id);}
     @PostMapping("/assignments/{id}/recipients") public void addRecipient(@PathVariable long id,@RequestBody OrganizationController.UserId request) {assignments.addRecipient(access.teacher(),id,request.userId());}
+    @GetMapping("/assignments/{id}/members") public Object assignmentMembers(@PathVariable long id) {return assignments.groupMembers(access.teacher(),id);}
+    @DeleteMapping("/assignments/{id}/recipients/{user}") public void removeRecipient(@PathVariable long id,@PathVariable long user) {assignments.removeRecipient(access.teacher(),id,user);}
     @GetMapping("/assignments/{id}/preflight") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT,student=true) public Object preflight(@PathVariable long id) {return assignments.preflight(access.student(),id);}
     @PostMapping("/assignments/{id}/code/rotate") public Object rotate(@PathVariable long id) {return assignments.rotate(access.teacher(),id);}
     @DeleteMapping("/assignments/{id}/code") public void revoke(@PathVariable long id) {assignments.revoke(access.teacher(),id);}

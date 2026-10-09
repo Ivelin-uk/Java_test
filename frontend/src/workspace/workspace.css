@@ -17,6 +17,9 @@
 .ws-actions button, .ws-inline-form button, .ws-publication > button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 12px; }
 .ws-actions .icon-button { padding: 0; }
 .ws-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; align-items: end; }
+.ws-duration-input { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; min-width: 0; padding: 0; margin: 0; border: 0; }
+.ws-duration-input legend { padding: 0; margin-bottom: 6px; color: var(--muted); font-size: 14px; }
+.ws-duration-input label { min-width: 0; }
 .ws-inline-form { display: flex; align-items: end; gap: 14px; flex-wrap: wrap; padding: 16px 0; border-bottom: 1px solid var(--border); }
 .ws-inline-form label { flex: 1; min-width: 180px; max-width: 450px; }
 .ws-user-picker { position: relative; flex: 1; min-width: 0; max-width: 520px; display: grid; gap: 6px; }
@@ -42,6 +45,13 @@
 .ws-table th { font-size: 12px; font-weight: 600; color: var(--muted); background: var(--subtle); }
 .ws-table th, .ws-table td { padding: 13px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; overflow-wrap: anywhere; }
 .ws-table tr:hover td { background: var(--hover); }
+.ws-table-wrap > .ws-table[aria-label="Възлагания"] { min-width: 1040px; }
+.ws-assignment-audience { display: grid; gap: 6px; min-width: 180px; max-width: 320px; }
+.ws-assignment-audience > span { display: flex; align-items: flex-start; gap: 6px; }
+.ws-assignment-audience > span > span { min-width: 0; }
+.ws-assignment-audience svg { flex: 0 0 auto; margin-top: 2px; color: var(--muted); }
+.ws-assignment-audience strong { font-weight: 600; }
+.ws-assignment-actions { flex-wrap: nowrap; }
 .ws-table .ws-selected-row td, .ws-table .ws-selected-row:hover td { background: var(--success-bg); }
 .ws-table .ws-selected-row td:first-child { box-shadow: inset 3px 0 var(--success); }
 .ws-selectable-row { cursor: pointer; }
@@ -126,9 +136,9 @@
 .exam-screen { min-height: 100dvh; background: var(--page); padding: 24px; color: var(--text); }
 .exam-screen:fullscreen { overflow: auto; }
 .exam-content { max-width: 980px; margin: 0 auto; }
-.exam-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 60px; border-bottom: 1px solid var(--border); }
-.exam-header strong { font-size: 17px; }
-.exam-timer { display: inline-flex; align-items: center; gap: 9px; min-width: 95px; font-size: 26px; font-variant-numeric: tabular-nums; }
+.exam-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 18px; min-height: 60px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.exam-header strong { min-width: 0; overflow-wrap: anywhere; font-size: 17px; }
+.exam-timer { display: inline-flex; flex: 0 0 215px; align-items: center; gap: 9px; white-space: nowrap; font-size: 26px; font-variant-numeric: tabular-nums; }
 .exam-preflight, .exam-question, .exam-finished { display: grid; gap: 22px; padding: 36px 0; }
 .exam-preflight h1, .exam-question h1, .exam-finished h1 { font-size: 26px; line-height: 1.4; }
 .exam-preflight p { line-height: 1.7; }
@@ -168,6 +178,8 @@
  .ws-question-head select { max-width: 210px; }
  .ws-code { flex-wrap: wrap; }
  .exam-screen { padding: 16px; }
+ .exam-header strong { flex-basis: 100%; }
+ .exam-timer { flex-basis: 180px; font-size: 22px; }
  .exam-question h1, .exam-preflight h1 { font-size: 22px; }
  .exam-preflight dl { grid-template-columns: 100px 1fr; }
 }

@@ -16,6 +16,8 @@
     "test:themes": "node e2e/themes.mjs",
     "test:assignments": "node e2e/assignment-picker.mjs",
     "test:recipients": "node e2e/assignment-recipients.mjs",
+    "test:group-recipients": "node e2e/group-recipient-access.mjs",
+    "test:durations": "node e2e/durations.mjs",
     "test:deletions": "node e2e/deletion-confirmations.mjs"
   },
   "dependencies": {

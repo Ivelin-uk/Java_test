@@ -34,7 +34,9 @@ const test = (await request('/api/v1/tests', teacher, 'POST', definition)).data
 assert.equal((await request(`/api/v1/tests/${test.id}`, second)).status, 403)
 outcomes.push('private teacher content and role boundaries')
 const version = (await request(`/api/v1/tests/${test.id}/publish`, teacher, 'POST')).data
-const assignment = (await request('/api/v1/assignments', teacher, 'POST', { versionId: version.id, groupIds: [], studentIds: [student.user.id], startsAt: new Date(Date.now() - 60000).toISOString(), endsAt: new Date(Date.now() + 3600000).toISOString(), maxAttempts: 1, shuffleQuestions: false, shuffleOptions: false, answersAfterDeadline: true })).data
+const group = (await request('/api/v1/groups', teacher, 'POST', { name: `E2E group ${stamp}`, description: '', subject: 'Java' })).data
+assert.equal((await request(`/api/v1/groups/${group.id}/members`, teacher, 'POST', { userId: student.user.id })).status, 200)
+const assignment = (await request('/api/v1/assignments', teacher, 'POST', { versionId: version.id, groupIds: [group.id], startsAt: new Date(Date.now() - 60000).toISOString(), endsAt: new Date(Date.now() + 3600000).toISOString(), maxAttempts: 1, shuffleQuestions: false, shuffleOptions: false, answersAfterDeadline: true })).data
 assert.equal((await request('/api/v1/conversations', teacher)).status, 404)
 assert.equal((await request('/ws/chat', teacher)).status, 403)
 outcomes.push('chat endpoints removed')

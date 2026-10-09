@@ -1,6 +1,7 @@
 import { useId, useRef, useState } from 'react'
 import { ChevronDown, X } from 'lucide-react'
 import type { Assessment } from './types'
+import { formatDuration } from './duration'
 
 export function TestPicker({ tests, selected, select, disabled, invalid = false }: { tests: Assessment[]; selected: Assessment | null; select: (test: Assessment | null) => void; disabled: boolean; invalid?: boolean }) {
   const id = useId()
@@ -29,7 +30,7 @@ export function TestPicker({ tests, selected, select, disabled, invalid = false 
       </div>
     </div>
     {open && !disabled && <div className="ws-user-options" id={`${id}-results`} role="listbox" aria-label="Тестове за възлагане">
-      {results.map((test, i) => <button type="button" role="option" tabIndex={-1} id={`${id}-option-${test.id}`} aria-selected={i === index} key={test.id} onMouseDown={e => e.preventDefault()} onClick={() => choose(test)}><strong>{test.title}</strong><small>{test.question_count} въпроса · {(test.total_time_seconds / 60).toLocaleString('bg-BG', { maximumFractionDigits: 2 })} мин</small></button>)}
+      {results.map((test, i) => <button type="button" role="option" tabIndex={-1} id={`${id}-option-${test.id}`} aria-selected={i === index} key={test.id} onMouseDown={e => e.preventDefault()} onClick={() => choose(test)}><strong>{test.title}</strong><small>{test.question_count} въпроса · {formatDuration(test.total_time_seconds)}</small></button>)}
       {!results.length && <p>Няма намерени тестове.</p>}
     </div>}
   </div>

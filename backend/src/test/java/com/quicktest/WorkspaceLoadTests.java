@@ -45,13 +45,15 @@ class WorkspaceLoadTests {
         long org=number(organizations.create(teacher.getId(),new OrganizationService.OrganizationRequest("Load fixture "+UUID.randomUUID(),"school",teacher.getEmail(),"Europe/Sofia","Ученик")),"id");
         long plan=number(db.one("SELECT id FROM organization_plans WHERE name='University'"),"id");db.update("UPDATE organization_subscriptions SET plan_id=? WHERE organization_id=?",plan,org);
         var teaching=new OrgAccess.Scope(org,teacher.getId(),Set.of("TEACHER","ORG_ADMIN"));List<Long> learners=new ArrayList<>();List<String> tokens=new ArrayList<>();
+        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Load fixture group","","Java")),"id");
         for(int i=0;i<200;i++) {
             long user=db.insert("INSERT INTO users(name,email,password_hash,role,active,password_change_required,subscription_paid) VALUES(?,?,?,'STUDENT',TRUE,FALSE,FALSE)","Load fixture "+i,UUID.randomUUID()+"@example.test",passwordHash);
             learners.add(user);db.update("INSERT INTO notification_addresses(user_id,email,verified_at) VALUES(?,?,?)",user,"load-fixture-"+user+"@example.test",now);db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,'[\"STUDENT\"]',?)",org,user,now);
+            organizations.addStudent(teaching,group,user);
             String token=UUID.randomUUID().toString();tokens.add(token);db.update("INSERT INTO auth_token(token,user_id,created_at) VALUES(?,?,?)",token,user,now);
         }
         var definition=new AssessmentService.Definition("Load assessment","","","","","bg","bulgarian",new BigDecimal("50"),List.of(new AssessmentService.Question("SINGLE_CHOICE","Choose A","EASY",BigDecimal.ONE,3600,List.of(new AssessmentService.Option("A",true),new AssessmentService.Option("B",false)),List.of(),true,true,"","")));
-        long test=number(assessments.save(teaching,null,definition),"id"),version=number(assessments.publish(teaching,test),"id");var assignment=assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(),learners,now.minusSeconds(1),now.plusSeconds(7200),1,false,false,true));long assignmentId=number(assignment,"id");String code=string(assignment,"code");
+        long test=number(assessments.save(teaching,null,definition),"id"),version=number(assessments.publish(teaching,test),"id");var assignment=assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(group),List.of(),now.minusSeconds(1),now.plusSeconds(7200),1,false,false,true));long assignmentId=number(assignment,"id");String code=string(assignment,"code");
         List<Fixture> fixtures=new ArrayList<>();
         for(int i=0;i<200;i++) {
             var request=new AttemptService.StartRequest(code,UUID.randomUUID().toString(),UUID.randomUUID().toString(),crypto.token(),true,true,true);
