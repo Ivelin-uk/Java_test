@@ -4,6 +4,8 @@
 
 Development: MAMP on 8889, schema `test_ai`, localhost 8080/5173, seeded demo identities, local mail, OpenAI API configured with backend-only `OPENAI_API_KEY`. Manual test creation works without AI credentials.
 
+The local demo baseline is exactly four accounts (`admin@quicktest.local`, `teacher@quicktest.local`, `student@quicktest.local`, `student2@quicktest.local`), with no learning content or assignments. Seeding is one-time and non-destructive: it does not purge existing accounts or user-created content on startup. Resetting an existing local database is a separate, explicit operation requiring a private backup and stopped application writes; never apply a demo cleanup to a production or restored production database. System plans, permissions and Flyway history are required infrastructure, not demo content.
+
 Verification: separate `examai_verification` schema, disposable `example.test` identities, disabled demo seed, fake/stub providers, no external student mail. HTTP load tests refuse the application schema. E2E tests create their own marked organizations on the explicitly configured local server; use a separate backend/database for repeatable CI isolation.
 
 Production preparation: separate database and application credentials, HTTPS reverse proxy, secure OAuth state cookies, disabled demos/legacy/local fixtures/local mailbox, configured real email and AI, protected secrets/backups and institution-approved retention. `SPRING_PROFILES_ACTIVE=production` activates fail-closed demo/configuration checks. Stripe remains test-only; this project has no approved live payment mode. No public deployment was performed.

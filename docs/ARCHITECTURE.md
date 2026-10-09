@@ -20,7 +20,7 @@ Controllers only handle HTTP mapping and validation. Business rules live in serv
 
 Development uses the MySQL `test_ai` database at `localhost:8889` (MAMP or the Compose service). Flyway applies versioned SQL migrations from `backend/src/main/resources/db/migration` before JPA validates the schema with `ddl-auto=validate`. Tests run the same migrations against an in-memory H2 database in MySQL compatibility mode.
 
-When `DEMO_SEED=true` (the default), the transactional demo runner populates application tables after migrations and records completion in `demo_seed_history`. Its fixtures are generated offline, so startup is independent of the AI service. Repeated starts preserve edits and deletions. Set `DEMO_SEED=false` for environments that should not receive sample data.
+When `DEMO_SEED=true` (the default), the transactional demo runner creates only four verified local accounts: one administrator, one teacher and two students. It records completion in `demo_seed_history` without creating sessions, tests, groups, assignments, attempts, results or messages. Existing accounts are not overwritten, and repeated starts preserve user edits, content and deletions. The workspace bootstrap ensures required system plans independently of demo accounts. Set `DEMO_SEED=false` for environments that should not receive demo identities; startup never deletes existing data to enforce the demo baseline.
 
 Owned-test deletion removes attempts and submitted answers before cascading to questions and answer choices, within one transaction. Ownership is checked before any deletion; another user's test returns 404.
 
