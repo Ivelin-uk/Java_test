@@ -15,6 +15,7 @@
     "test:library": "node e2e/test-library.mjs",
     "test:themes": "node e2e/themes.mjs",
     "test:assignments": "node e2e/assignment-picker.mjs",
+    "test:recipients": "node e2e/assignment-recipients.mjs",
     "test:deletions": "node e2e/deletion-confirmations.mjs"
   },
   "dependencies": {

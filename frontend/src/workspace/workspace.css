@@ -29,6 +29,7 @@
 .ws-test-picker .ws-user-options button { padding: 10px 12px; min-height: 58px; }
 .ws-test-picker-input { position: relative; min-width: 0; }
 .ws-test-picker-input input { padding-right: 72px; }
+.ws-test-picker-input input[aria-invalid="true"] { border-color: var(--danger); }
 .ws-test-picker-tools { position: absolute; top: 0; right: 4px; bottom: 0; display: flex; align-items: center; }
 .ws-test-picker-tools .icon-button { width: 30px; height: 30px; min-height: 30px; border: 0; background: transparent; }
 .ws-group-members { grid-template-columns: minmax(0, 1fr); }
@@ -95,7 +96,22 @@
 .ws-role-checks { display: grid; gap: 8px; }
 .ws-assignment-form { display: grid; gap: 18px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
 .ws-recipient-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
-.ws-recipient-columns fieldset { border: 1px solid var(--border); border-radius: 6px; display: grid; gap: 10px; padding: 16px; max-height: 240px; overflow: auto; }
+.ws-recipient-picker { min-width: 0; margin: 0; border: 1px solid var(--border); border-radius: 6px; display: grid; align-content: start; gap: 12px; padding: 16px; }
+.ws-recipient-picker legend { padding: 0 6px; font-size: 15px; }
+.ws-recipient-search { position: relative; min-width: 0; }
+.ws-recipient-search > svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.ws-recipient-search input { padding-left: 36px; padding-right: 38px; }
+.ws-recipient-search input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.ws-recipient-search .icon-button { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 30px; height: 30px; min-height: 30px; border: 0; background: transparent; }
+.ws-recipient-summary { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--muted); }
+.ws-recipient-options { height: 224px; overflow-y: auto; overscroll-behavior: contain; display: grid; grid-auto-rows: max-content; align-content: start; gap: 4px; }
+.ws-recipient-option { align-items: start; min-height: 44px; padding: 8px; border-radius: 4px; cursor: pointer; }
+.ws-recipient-option:hover { background: var(--hover); }
+.ws-recipient-option:has(input:checked) { background: var(--success-bg); color: var(--text); }
+.ws-recipient-option input { margin-top: 2px; }
+.ws-recipient-option > span { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
+.ws-recipient-option small { color: var(--muted); font-size: 12px; }
+.ws-assignment-form > .ws-editor > .primary { justify-self: start; }
 .ws-code { display: flex; align-items: center; gap: 18px; padding: 18px; background: var(--success-bg); border: 1px solid var(--border); }
 .ws-code output { font-family: ui-monospace, monospace; font-size: 25px; font-weight: 700; }
 .ws-summary { align-self: center; color: var(--muted); font-size: 13px; }

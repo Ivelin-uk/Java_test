@@ -2,7 +2,7 @@ import { useId, useRef, useState } from 'react'
 import { ChevronDown, X } from 'lucide-react'
 import type { Assessment } from './types'
 
-export function TestPicker({ tests, selected, select, disabled }: { tests: Assessment[]; selected: Assessment | null; select: (test: Assessment | null) => void; disabled: boolean }) {
+export function TestPicker({ tests, selected, select, disabled, invalid = false }: { tests: Assessment[]; selected: Assessment | null; select: (test: Assessment | null) => void; disabled: boolean; invalid?: boolean }) {
   const id = useId()
   const input = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
@@ -13,7 +13,7 @@ export function TestPicker({ tests, selected, select, disabled }: { tests: Asses
   return <div className="ws-user-picker ws-test-picker" onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false) }}>
     <label htmlFor={id}>Тест</label>
     <div className="ws-test-picker-input">
-      <input ref={input} id={id} role="combobox" required autoComplete="off" placeholder="Търси по име на теста" disabled={disabled} value={selected?.title ?? query} aria-expanded={open} aria-controls={open ? `${id}-results` : undefined} aria-autocomplete="list" aria-activedescendant={open && results[index] ? `${id}-option-${results[index].id}` : undefined}
+      <input ref={input} id={id} role="combobox" required autoComplete="off" placeholder="Търси по име на теста" disabled={disabled} value={selected?.title ?? query} aria-invalid={invalid || undefined} aria-expanded={open} aria-controls={open ? `${id}-results` : undefined} aria-autocomplete="list" aria-activedescendant={open && results[index] ? `${id}-option-${results[index].id}` : undefined}
         onFocus={() => setOpen(true)} onClick={() => setOpen(true)} onChange={e => { select(null); setQuery(e.target.value); setIndex(0); setOpen(true) }}
         onKeyDown={e => {
           if (e.key === 'Escape') { e.preventDefault(); setOpen(false) }

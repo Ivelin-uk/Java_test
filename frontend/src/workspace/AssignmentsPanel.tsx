@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Plus, RotateCw, Ban, Activity, Copy, Mail, UserPlus } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
@@ -6,6 +6,7 @@ import type { Assessment, Assignment, Group, Member, Version } from './types'
 import { date, label, roles } from './types'
 import { Empty, Feedback, SectionHead } from './ui'
 import { TestPicker } from './TestPicker'
+import { RecipientPicker } from './RecipientPicker'
 import { DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
 
 const localTime = (value: Date) => new Date(value.getTime() - value.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
@@ -15,6 +16,12 @@ export function AssignmentsPanel({ api }: { api: WorkspaceApi }) {
   const groups = useRemote<Group[]>(api, '/groups', [])
   const members = useRemote<Member[]>(api, '/members', [])
   const action = useAction()
+  const section = useRef<HTMLElement>(null)
+  const [formError, setFormError] = useState<{ message: string; field?: 'test' } | null>(null)
+  useEffect(() => {
+    if (action.error || formError) section.current?.querySelector('[role="alert"]')?.scrollIntoView({ block: 'nearest' })
+    if (formError?.field === 'test') section.current?.querySelector<HTMLInputElement>('[role="combobox"]')?.focus()
+  }, [action.error, formError])
   const [test, setTest] = useState<Assessment | null>(null)
   const [resolved, setResolved] = useState<{ testId: number; versionId: number | null; error: string } | null>(null)
   const version = test && resolved?.testId === test.id ? resolved.versionId : null
@@ -41,11 +48,35 @@ export function AssignmentsPanel({ api }: { api: WorkspaceApi }) {
   const [monitor, setMonitor] = useState<number | null>(null)
   const [revokingCode, setRevokingCode] = useState<Assignment | null>(null)
   const toggle = (ids: number[], value: number) => ids.includes(value) ? ids.filter(id => id !== value) : [...ids, value]
-  return <section className="ws-section"><SectionHead title="Възлагания" /><Feedback error={assignments.error || tests.error || groups.error || members.error || action.error || (test && resolved?.testId === test.id ? resolved.error : '')} message={action.message} busy={action.busy || loadingVersion} />
-    <form className="ws-assignment-form" onSubmit={e => { e.preventDefault(); if (!test || !version || loadingVersion) return; void action.run(async () => { const value = await api.post<{ id: number; code: string }>('/assignments', { versionId: version, groupIds, studentIds, startsAt: new Date(start).toISOString(), endsAt: new Date(end).toISOString(), maxAttempts: attempts, shuffleQuestions: shuffleQ, shuffleOptions: shuffleA, answersAfterDeadline: afterDeadline }); setCode(value.code); setCodeAssignment(value.id); await assignments.reload() }, 'Възлагането е създадено.') }}>
-      <div className="ws-form-grid"><TestPicker tests={tests.data.filter(t => t.status !== 'archived')} selected={test} select={value => { setTest(value ? { ...value } : null); setResolved(null) }} disabled={action.busy || tests.loading} /><label>Начало<input type="datetime-local" required value={start} onChange={e => setStart(e.target.value)} /></label><label>Краен срок<input type="datetime-local" required value={end} onChange={e => setEnd(e.target.value)} /></label><label>Опити<input type="number" min={1} max={20} value={attempts} onChange={e => setAttempts(Number(e.target.value))} /></label></div>
-      <div className="ws-recipient-columns"><fieldset><legend>Групи</legend>{groups.data.map(g => <label className="ws-check" key={g.id}><input type="checkbox" checked={groupIds.includes(g.id)} onChange={() => setGroupIds(toggle(groupIds, g.id))} />{g.name}</label>)}</fieldset><fieldset><legend>Индивидуални получатели</legend>{members.data.filter(m => m.status === 'active' && roles(m).includes('STUDENT')).map(m => <label className="ws-check" key={m.user_id}><input type="checkbox" checked={studentIds.includes(m.user_id)} onChange={() => setStudentIds(toggle(studentIds, m.user_id))} />{m.name}</label>)}</fieldset></div>
-      <div className="ws-actions"><label className="ws-check"><input type="checkbox" checked={shuffleQ} onChange={e => setShuffleQ(e.target.checked)} /> Разбъркай въпросите</label><label className="ws-check"><input type="checkbox" checked={shuffleA} onChange={e => setShuffleA(e.target.checked)} /> Разбъркай опциите</label><label className="ws-check"><input type="checkbox" checked={afterDeadline} onChange={e => setAfterDeadline(e.target.checked)} /> Верни отговори след срока</label></div><button className="primary command-button" disabled={action.busy || loadingVersion || !version || !groupIds.length && !studentIds.length}><Plus size={17} /> Възложи</button>
+  async function assign() {
+    if (action.busy || loadingVersion || tests.loading || groups.loading || members.loading) return
+    const invalid = (message: string, field?: 'test') => setFormError({ message, field })
+    if (!test) return invalid('Изберете тест за възлагане.', 'test')
+    if (!version) return invalid(resolved?.error || 'Тестът няма запазена версия.', 'test')
+    const startsAt = new Date(start), endsAt = new Date(end)
+    if (!Number.isFinite(startsAt.getTime())) return invalid('Попълнете началната дата и час.')
+    if (!Number.isFinite(endsAt.getTime())) return invalid('Попълнете крайната дата и час.')
+    if (startsAt >= endsAt) return invalid('Крайният срок трябва да е след началото.')
+    if (endsAt.getTime() <= Date.now()) return invalid('Крайният срок трябва да е в бъдещето.')
+    if (!Number.isInteger(attempts) || attempts < 1 || attempts > 20) return invalid('Броят опити трябва да е цяло число от 1 до 20.')
+    if (!groupIds.length && !studentIds.length) return invalid('Изберете поне една група или един ученик.')
+    setFormError(null)
+    await action.run(async () => {
+      const value = await api.post<{ id: number; code: string }>('/assignments', { versionId: version, groupIds, studentIds, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(), maxAttempts: attempts, shuffleQuestions: shuffleQ, shuffleOptions: shuffleA, answersAfterDeadline: afterDeadline })
+      setCode(value.code); setCodeAssignment(value.id)
+      await assignments.reload()
+    }, 'Възлагането е създадено.')
+  }
+  return <section ref={section} className="ws-section"><SectionHead title="Възлагания" /><Feedback error={formError?.message || assignments.error || tests.error || groups.error || members.error || action.error || (test && resolved?.testId === test.id ? resolved.error : '')} message={action.message} busy={action.busy || loadingVersion} />
+    <form className="ws-assignment-form" aria-label="Възлагане на тест" noValidate onChange={() => setFormError(null)} onSubmit={e => { e.preventDefault(); void assign() }}>
+      <fieldset className="ws-editor" disabled={action.busy}>
+      <div className="ws-form-grid"><TestPicker tests={tests.data.filter(t => t.status !== 'archived')} selected={test} select={value => { setTest(value ? { ...value } : null); setResolved(null); setFormError(null) }} disabled={action.busy || tests.loading} invalid={formError?.field === 'test'} /><label>Начало<input type="datetime-local" required value={start} onChange={e => setStart(e.target.value)} /></label><label>Краен срок<input type="datetime-local" required value={end} onChange={e => setEnd(e.target.value)} /></label><label>Опити<input type="number" min={1} max={20} value={attempts} onChange={e => setAttempts(Number(e.target.value))} /></label></div>
+      <div className="ws-recipient-columns">
+        <RecipientPicker title="Групи" searchLabel="Търси групи" placeholder="Име или дисциплина" emptyMessage="Няма налични групи." options={groups.data.map(group => ({ id: group.id, name: group.name, detail: group.subject }))} selected={groupIds} toggle={id => setGroupIds(ids => toggle(ids, id))} disabled={action.busy} loading={groups.loading} />
+        <RecipientPicker title="Индивидуални получатели" searchLabel="Търси ученици" placeholder="Име или имейл" emptyMessage="Няма налични ученици." options={members.data.filter(member => member.status === 'active' && roles(member).includes('STUDENT')).map(member => ({ id: member.user_id, name: member.name, detail: member.email }))} selected={studentIds} toggle={id => setStudentIds(ids => toggle(ids, id))} disabled={action.busy} loading={members.loading} />
+      </div>
+      <div className="ws-actions"><label className="ws-check"><input type="checkbox" checked={shuffleQ} onChange={e => setShuffleQ(e.target.checked)} /> Разбъркай въпросите</label><label className="ws-check"><input type="checkbox" checked={shuffleA} onChange={e => setShuffleA(e.target.checked)} /> Разбъркай опциите</label><label className="ws-check"><input type="checkbox" checked={afterDeadline} onChange={e => setAfterDeadline(e.target.checked)} /> Верни отговори след срока</label></div><button className="primary command-button" disabled={action.busy || loadingVersion || tests.loading || groups.loading || members.loading}><Plus size={17} /> Възложи</button>
+      </fieldset>
     </form>
     {code && <div className="ws-code"><strong>Код за достъп</strong><output>{code}</output><button className="icon-button" title="Копирай кода" onClick={() => void navigator.clipboard.writeText(code)}><Copy size={18} /></button>{codeAssignment && <><button disabled={action.busy} onClick={() => void action.run(() => api.post(`/assignments/${codeAssignment}/code/send`, { code, channel: 'email' }), 'Известията са добавени в опашката.')}><Mail size={17} /> Изпрати по имейл</button></>}</div>}
     <div className="ws-table-wrap"><table className="ws-table"><thead><tr><th>Тест</th><th>Начало</th><th>Краен срок</th><th>Получатели</th><th>Действия</th></tr></thead><tbody>{assignments.data.map(a => <tr key={a.id}><td>{a.title}</td><td>{date(a.starts_at)}</td><td>{date(a.ends_at)}</td><td>{a.recipients}</td><td><div className="ws-actions"><button className="icon-button" title="Наблюдение" onClick={() => setMonitor(a.id)}><Activity size={17} /></button><button className="icon-button" title="Нов код" onClick={() => void action.run(async () => { const value = await api.post<{ code: string }>(`/assignments/${a.id}/code/rotate`); setCode(value.code); setCodeAssignment(a.id) })}><RotateCw size={17} /></button><button className="icon-button danger" title="Отмени кода" disabled={action.busy} onClick={() => setRevokingCode(a)}><Ban size={17} /></button></div></td></tr>)}</tbody></table></div>{!assignments.data.length && <Empty />}{monitor && <Monitoring api={api} assignment={monitor} />}
