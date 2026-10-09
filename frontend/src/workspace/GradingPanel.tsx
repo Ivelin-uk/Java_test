@@ -6,6 +6,7 @@ import type { Attempt, ExamAnswer, Question, Review, ReviewQuestion } from './ty
 import { date, label } from './types'
 import { Empty, Feedback, SectionHead } from './ui'
 import { WorkspaceImage } from './WorkspaceImage'
+import { DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
 
 export function GradingPanel({ api }: { api: WorkspaceApi }) {
   const queue = useRemote<Attempt[]>(api, '/grading', [])
@@ -20,6 +21,7 @@ function ReviewPanel({ api, id, back }: { api: WorkspaceApi; id: number; back: (
   const [grade, setGrade] = useState('')
   const [outcome, setOutcome] = useState('')
   const [confirm, setConfirm] = useState(false)
+  const [voiding, setVoiding] = useState(false)
   const [key, setKey] = useState(() => crypto.randomUUID())
   if (!review.data) return <Feedback error={review.error} busy={review.loading} />
   const value = review.data
@@ -27,13 +29,21 @@ function ReviewPanel({ api, id, back }: { api: WorkspaceApi; id: number; back: (
   const max = value.questions.reduce((sum, q) => sum + Number(q.maximum_points), 0)
   const pending = value.questions.filter(q => !q.reviewed || q.final_points === null).length
   const correction = value.attempt.status === 'finalized'
-  return <section className="ws-section"><SectionHead title={`Опит #${id} · ${value.student.name}`}><button className="icon-button danger" title="Анулирай опита с причина" disabled={action.busy || value.attempt.status === 'voided'} onClick={() => { const reason = window.prompt('Причина за анулиране'); if (reason) void action.run(async () => { await api.post(`/attempts/${id}/void`, { reason }); await review.reload() }) }}><Ban size={17} /></button><button className="icon-button" title="Към проверките" onClick={back}><ArrowLeft size={18} /></button></SectionHead><Feedback error={action.error || review.error} message={action.message} busy={action.busy} /><p>{label(value.attempt.status)} · {points} / {max} точки · {pending} непроверени отговора</p>
+  return <section className="ws-section"><SectionHead title={`Опит #${id} · ${value.student.name}`}><button className="icon-button danger" title="Анулирай опита с причина" disabled={action.busy || value.attempt.status === 'voided'} onClick={() => setVoiding(true)}><Ban size={17} /></button><button className="icon-button" title="Към проверките" onClick={back}><ArrowLeft size={18} /></button></SectionHead><Feedback error={action.error || review.error} message={action.message} busy={action.busy} /><p>{label(value.attempt.status)} · {points} / {max} точки · {pending} непроверени отговора</p>
     {value.questions.map(q => <QuestionReview key={`${q.id}-${q.final_points}-${q.reviewed}`} api={api} attempt={id} question={q} refresh={review.reload} />)}
     <section className="ws-publication"><h3>{correction ? 'Нова резултатна ревизия' : 'Окончателен резултат'}</h3><div className="ws-form-grid"><label>Коригирана оценка<input value={grade} maxLength={40} onChange={e => setGrade(e.target.value)} /></label><label>Коригиран изход<select value={outcome} onChange={e => setOutcome(e.target.value)}><option value="">По прага на теста</option><option value="passed">Успешен</option><option value="failed">Неуспешен</option></select></label><label>Причина за корекция<input value={reason} onChange={e => setReason(e.target.value)} /></label></div><button className="primary command-button" disabled={pending > 0 || action.busy || value.attempt.status === 'voided'} onClick={() => setConfirm(true)}><Send size={17} /> {correction ? 'Публикувай корекция' : 'Потвърди оценката и изпрати резултата'}</button></section>
     <h3>История на резултатите</h3>{!value.revisions.length ? <Empty>Резултатът още не е публикуван.</Empty> : <table className="ws-table"><thead><tr><th>Ревизия</th><th>Точки</th><th>Оценка</th><th>Изход</th><th>Автор / дата</th><th>Причина</th></tr></thead><tbody>{value.revisions.map(r => <tr key={r.id}><td>{r.revision_number}</td><td>{r.points}/{r.maximum_points}</td><td>{r.grade}</td><td>{label(r.outcome)}</td><td>#{r.author_id} · {date(r.published_at ?? null)}</td><td>{r.reason || '-'}</td></tr>)}</tbody></table>}
     <details><summary>Журнал на изпитните събития ({value.events.length})</summary><table className="ws-table"><thead><tr><th>Събитие</th><th>Въпрос</th><th>Сървърно време</th></tr></thead><tbody>{value.events.map((e, i) => <tr key={i}><td>{e.event_type}</td><td>{e.question_id ?? '-'}</td><td>{date(e.received_at)}</td></tr>)}</tbody></table></details>
+    {voiding && <VoidAttemptDialog api={api} id={id} student={value.student.name} close={() => setVoiding(false)} saved={review.reload} />}
     {confirm && <div className="dialog-backdrop"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="publish-result"><h2 id="publish-result">Публикуване на резултат</h2><p>{value.student.name} · {points}/{max} точки</p><p>Известието ще бъде адресирано до потвърдения имейл за известия на обучаемия.</p><Feedback error={action.error} /><div className="ws-actions"><button disabled={action.busy} onClick={() => setConfirm(false)}>Отказ</button><button className="primary" disabled={action.busy} onClick={() => void action.run(async () => { await api.post(`/attempts/${id}/${correction ? 'result-revisions' : 'finalize'}`, { idempotencyKey: key, reason, gradeOverride: grade, outcomeOverride: outcome }); setKey(crypto.randomUUID()); setConfirm(false); await review.reload() }, 'Резултатът е публикуван; известието е в опашката.')}><Send size={17} /> Потвърди</button></div></section></div>}
   </section>
+}
+function VoidAttemptDialog({ api, id, student, close, saved }: { api: WorkspaceApi; id: number; student: string; close: () => void; saved: () => Promise<unknown> }) {
+  const [reason, setReason] = useState('')
+  return <DeleteConfirmationDialog title="Анулиране на опит" confirmLabel="Анулирай опита" confirmIcon={Ban} confirmDisabled={!reason.trim()} description={<>Да анулираме ли опит #{id} на <strong>{student}</strong>? Резултатът от този опит няма да участва в обобщената оценка.</>} onCancel={close} onConfirm={async () => {
+    await api.post(`/attempts/${id}/void`, { reason: reason.trim() })
+    await saved()
+  }}><label>Причина за анулиране<textarea required value={reason} onChange={event => setReason(event.target.value)} /></label></DeleteConfirmationDialog>
 }
 function QuestionReview({ api, attempt, question: row, refresh }: { api: WorkspaceApi; attempt: number; question: ReviewQuestion; refresh: () => Promise<unknown> }) {
   const snapshot = JSON.parse(row.definition_json) as { question: Question; options: { id: string; text: string; correct: boolean }[] }

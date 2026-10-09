@@ -16,7 +16,7 @@ public class AssessmentService {
     private final PersonalWorkspace personal;
     public AssessmentService(WorkspaceStore db,WorkspaceAudit audit,Clock clock,PrivateImageService images,PersonalWorkspace personal) {this.db=db;this.audit=audit;this.clock=clock;this.images=images;this.personal=personal;}
     public List<Map<String,Object>> list(OrgAccess.Scope scope) {
-        return db.rows("SELECT id,title,status,shared,owner_id,updated_at,definition_json FROM workspace_assessments WHERE (organization_id=? OR ?) AND (owner_id=? OR shared=TRUE) ORDER BY updated_at DESC",scope.organizationId(),scope.platform(),scope.userId()).stream().map(row -> {
+        return db.rows("SELECT a.id,a.title,a.status,a.shared,a.owner_id,a.updated_at,a.definition_json FROM workspace_assessments a WHERE (a.organization_id=? OR ?) AND (a.owner_id=? OR a.shared=TRUE) AND a.status<>'archived' AND NOT EXISTS (SELECT 1 FROM assessment_library_removals r WHERE r.assessment_id=a.id AND r.user_id=?) ORDER BY a.updated_at DESC",scope.organizationId(),scope.platform(),scope.userId(),scope.userId()).stream().map(row -> {
             Definition definition=db.parse(row.remove("definition_json"),Definition.class);
             row.put("question_count",definition.questions().size());
             row.put("total_time_seconds",definition.questions().stream().mapToInt(Question::timeSeconds).sum());
@@ -65,7 +65,12 @@ public class AssessmentService {
     }
     @Transactional
     public void archive(OrgAccess.Scope scope,long id) {
-        get(scope,id,true);
+        var row=get(scope,id,false);
+        if(number(row,"owner_id")!=scope.userId()) {
+            db.update("INSERT INTO assessment_library_removals(organization_id,assessment_id,user_id,removed_at) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE removed_at=VALUES(removed_at)",scope.organizationId(),id,scope.userId(),clock.instant());
+            audit.write(scope.organizationId(),scope.userId(),"assessment.removed_from_library",id,Map.of());
+            return;
+        }
         if(db.count("SELECT COUNT(*) FROM assessment_versions WHERE organization_id=? AND assessment_id=?",scope.organizationId(),id)==0) db.update("DELETE FROM workspace_assessments WHERE organization_id=? AND id=?",scope.organizationId(),id);
         else db.update("UPDATE workspace_assessments SET status='archived' WHERE organization_id=? AND id=?",scope.organizationId(),id);
         audit.write(scope.organizationId(),scope.userId(),"assessment.removed_or_archived",id,Map.of());

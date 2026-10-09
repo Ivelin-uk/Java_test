@@ -1,0 +1,100 @@
+import assert from 'node:assert/strict'
+import { mkdir } from 'node:fs/promises'
+import { chromium } from 'playwright'
+
+const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
+const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173'
+const stamp = Date.now()
+async function request(path, auth, method = 'GET', data) {
+  const response = await fetch(`${base}${path}`, { method, headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${auth.token}` } : {}) }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) })
+  assert.equal(response.status, 200)
+  const text = await response.text()
+  return text ? JSON.parse(text) : null
+}
+async function account(role) {
+  return request('/api/auth/register', null, 'POST', { name: `Picker ${role} ${stamp}`, email: `picker-${role}-${stamp}@example.test`, password: 'test-password-123', role })
+}
+const teacher = await account('TEACHER'), student = await account('STUDENT')
+const definition = title => ({ title, description: '', subject: 'Java', level: '12', instructions: '', language: 'bg', gradingScale: 'bulgarian', passThreshold: 50, questions: [{ type: 'SINGLE_CHOICE', text: 'Кой тип е логически?', difficulty: 'EASY', points: 1, timeSeconds: 30, options: [{ text: 'boolean', correct: true }, { text: 'String', correct: false }], acceptedAnswers: [], caseInsensitive: true, collapseWhitespace: true, criteria: '', explanation: '' }] })
+const java = await request('/api/v1/tests', teacher, 'POST', definition(`Java picker ${stamp}`))
+await request(`/api/v1/tests/${java.id}/publish`, teacher, 'POST')
+await request(`/api/v1/tests/${java.id}`, teacher, 'PUT', definition(`Java picker ${stamp}`))
+const latest = await request(`/api/v1/tests/${java.id}/publish`, teacher, 'POST')
+const math = await request('/api/v1/tests', teacher, 'POST', definition(`Math picker ${stamp}`))
+const mathVersion = await request(`/api/v1/tests/${math.id}/publish`, teacher, 'POST')
+const draft = await request('/api/v1/tests', teacher, 'POST', definition(`Draft picker ${stamp}`))
+const versions = await request(`/api/v1/tests/${java.id}/versions`, teacher)
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined), headless: true, args: ['--disable-gpu'] })
+const artifacts = new URL('../../.artifacts/', import.meta.url)
+await mkdir(artifacts, { recursive: true })
+try {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+  await context.addInitScript(value => localStorage.setItem('quicktest.auth', JSON.stringify(value)), teacher)
+  const page = await context.newPage()
+  const errors = [], submitted = []
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('request', request => { if (request.method() === 'POST' && request.url() === `${base}/api/v1/assignments`) submitted.push(request.postDataJSON()) })
+  await page.goto(frontend)
+  await page.getByRole('button', { name: 'Възлагания', exact: true }).click()
+  const picker = page.getByRole('combobox', { name: 'Тест', exact: true })
+  const options = page.getByRole('listbox', { name: 'Тестове за възлагане' })
+  const assign = page.getByRole('button', { name: 'Възложи', exact: true })
+  assert.equal(await page.getByLabel('Публикувана версия', { exact: true }).count(), 0)
+  await picker.fill('missing-test-title')
+  await options.getByText('Няма намерени тестове.', { exact: true }).waitFor()
+  await picker.fill(draft.title)
+  await page.keyboard.press('Enter')
+  await page.getByRole('alert').filter({ hasText: 'Тестът няма запазена версия.' }).waitFor()
+  assert.equal(await assign.isDisabled(), true)
+  await page.getByRole('checkbox', { name: student.user.name, exact: true }).check()
+
+  let release, finished
+  const gate = new Promise(resolve => { release = resolve })
+  const completed = new Promise(resolve => { finished = resolve })
+  await page.route(`**/api/v1/tests/${java.id}/versions`, async route => { await gate; await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(versions) }); finished() })
+  await picker.fill(java.title.toUpperCase())
+  await options.getByRole('option').filter({ hasText: java.title }).waitFor()
+  const pending = page.waitForRequest(`**/api/v1/tests/${java.id}/versions`)
+  await page.keyboard.press('Enter')
+  await pending
+  assert.equal(await assign.isDisabled(), true)
+  await picker.fill(math.title)
+  await options.getByRole('option').filter({ hasText: math.title }).click()
+  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(b => b.textContent.includes('Възложи'))?.disabled)
+  release()
+  await completed
+  await page.unroute(`**/api/v1/tests/${java.id}/versions`)
+  await assign.click()
+  await page.getByText('Възлагането е създадено.', { exact: true }).waitFor()
+  assert.equal(submitted.at(-1).versionId, mathVersion.id)
+
+  await page.route(`**/api/v1/tests/${java.id}/versions`, route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Temporary version failure' }) }))
+  await picker.fill(java.title)
+  await page.keyboard.press('Enter')
+  await page.getByRole('alert').filter({ hasText: 'Temporary version failure' }).waitFor()
+  assert.equal(await assign.isDisabled(), true)
+  await page.unroute(`**/api/v1/tests/${java.id}/versions`)
+  await picker.click()
+  await options.getByRole('option').filter({ hasText: java.title }).click()
+  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(b => b.textContent.includes('Възложи'))?.disabled)
+  await assign.click()
+  await page.getByText('Възлагането е създадено.', { exact: true }).waitFor()
+  assert.equal(submitted.at(-1).versionId, latest.id)
+  const rows = await request('/api/v1/assignments', teacher)
+  assert.equal(rows.some(row => row.version_id === latest.id), true)
+  assert.equal(rows.some(row => row.version_id === mathVersion.id), true)
+  await page.getByRole('button', { name: 'Изчисти избрания тест', exact: true }).click()
+  assert.equal(await assign.isDisabled(), true)
+  await picker.fill(`picker ${stamp}`)
+  await page.screenshot({ path: new URL('assignment-picker-desktop.png', artifacts).pathname })
+  await page.setViewportSize({ width: 390, height: 844 })
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  await page.screenshot({ path: new URL('assignment-picker-mobile.png', artifacts).pathname })
+  await page.keyboard.press('Escape')
+  assert.equal(await options.count(), 0)
+  await page.getByRole('button', { name: 'Тъмна тема', exact: true }).click()
+  await picker.click()
+  await page.screenshot({ path: new URL('assignment-picker-dark-mobile.png', artifacts).pathname })
+  assert.deepEqual(errors, [])
+  console.log('Passed: searchable dropdown, keyboard/mouse selection, no version field, latest version assignment, missing version handling, stale response isolation and desktop/mobile themes.')
+} finally { await browser.close() }

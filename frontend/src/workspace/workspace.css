@@ -25,8 +25,15 @@
 .ws-user-options button[aria-selected="true"], .ws-user-options button:hover { background: var(--success-bg); }
 .ws-user-options span, .ws-user-options small { color: var(--muted); }
 .ws-user-options p { padding: 12px; margin: 0; color: var(--muted); }
+.ws-test-picker { width: 100%; max-width: none; }
+.ws-test-picker .ws-user-options button { padding: 10px 12px; min-height: 58px; }
+.ws-test-picker-input { position: relative; min-width: 0; }
+.ws-test-picker-input input { padding-right: 72px; }
+.ws-test-picker-tools { position: absolute; top: 0; right: 4px; bottom: 0; display: flex; align-items: center; }
+.ws-test-picker-tools .icon-button { width: 30px; height: 30px; min-height: 30px; border: 0; background: transparent; }
 .ws-group-members { grid-template-columns: minmax(0, 1fr); }
 .ws-group-members > * { min-width: 0; }
+.ws-group-settings { display: grid; gap: 20px; min-width: 0; padding: 20px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .ws-feedback { display: flex; align-items: center; gap: 8px; padding: 10px 0; white-space: normal; }
 .ws-empty { padding: 24px 0; color: var(--muted); }
 .ws-table-wrap { overflow-x: auto; }
@@ -69,6 +76,7 @@
 .ws-add-questions .ws-inline-form label { flex: 0 1 180px; }
 .ws-group-dialog { overflow-y: auto; }
 .ws-group-dialog form { display: grid; gap: 14px; }
+.ws-group-create-dialog { width: min(560px, calc(100% - 28px)); }
 .ws-ai-band { display: grid; gap: 14px; background: var(--success-bg); padding: 20px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .ws-question { display: grid; gap: 16px; padding: 24px 0; border-top: 1px solid var(--border); }
 .ws-editor > .ws-question { min-width: 0; padding: 24px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
@@ -132,6 +140,9 @@
  .ws-recipient-columns { grid-template-columns: 1fr; }
  .ws-table th, .ws-table td { padding: 10px; font-size: 12px; }
  .ws-table-wrap .ws-table { min-width: 650px; }
+ .ws-group-members .ws-table-wrap .ws-table { min-width: 0; table-layout: fixed; }
+ .ws-group-members .ws-table th:first-child { width: 30%; }
+ .ws-group-members .ws-table th:last-child { width: 88px; white-space: nowrap; }
  .ws-form-grid { grid-template-columns: 1fr; }
  .ws-question-head { flex-wrap: wrap; }
  .ws-editor > .ws-question { padding: 16px; }

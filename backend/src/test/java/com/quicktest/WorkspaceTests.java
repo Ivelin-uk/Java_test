@@ -100,6 +100,53 @@ class WorkspaceTests {
         assertEquals(90,number(row,"total_time_seconds"));
         assertFalse(row.containsKey("definition_json"));
     }
+    @Test void deletingPublishedTestRemovesItFromLibraryAndPreservesItsAssignmentAndAttempt() throws Exception {
+        long test=number(db.one("SELECT assessment_id FROM assessment_versions WHERE id=?",version),"assessment_id");
+        var request=startRequest();var state=start(request);long attempt=number(state,"id");var current=question(state);
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        mvc.perform(delete("/api/v1/tests/"+test).header("Authorization",bearer)).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/tests").header("Authorization",bearer)).andExpect(status().isOk()).andExpect(jsonPath("$[?(@.id == "+test+")]").isEmpty());
+        assertEquals("archived",string(db.one("SELECT status FROM workspace_assessments WHERE id=?",test),"status"));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM assessment_versions WHERE id=?",version));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_assignments WHERE id=?",assignment));
+        assertEquals(assignment,number(assignments.preflight(learning,assignment),"id"));
+        attempts.answer(learning,attempt,number(current,"id"),session(request),new AttemptService.AnswerRequest("answer-after-test-removal",string(current,"open_instance"),correct(current)));
+        assertNotNull(grading.review(teaching,attempt));
+        mvc.perform(delete("/api/v1/tests/"+test).header("Authorization",bearer)).andExpect(status().isOk());
+    }
+    @Test void sharedTestCanBeRemovedFromOneTeachersLibraryWithoutChangingTheSource() throws Exception {
+        long test=number(db.one("SELECT assessment_id FROM assessment_versions WHERE id=?",version),"assessment_id");
+        assessments.share(teaching,test,true);
+        var colleague=user(Role.TEACHER);var observer=user(Role.TEACHER);
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(colleague.getEmail(),"password123")).token();
+        String observerToken="Bearer "+auth.login(new AuthService.LoginRequest(observer.getEmail(),"password123")).token();
+        mvc.perform(get("/api/v1/tests").header("Authorization",bearer)).andExpect(status().isOk()).andExpect(jsonPath("$[?(@.id == "+test+")]").isNotEmpty());
+        mvc.perform(delete("/api/v1/tests/"+test).header("Authorization",bearer)).andExpect(status().isOk());
+        mvc.perform(delete("/api/v1/tests/"+test).header("Authorization",bearer)).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/tests").header("Authorization",bearer)).andExpect(status().isOk()).andExpect(jsonPath("$[?(@.id == "+test+")]").isEmpty());
+        mvc.perform(get("/api/v1/tests").header("Authorization",observerToken)).andExpect(status().isOk()).andExpect(jsonPath("$[?(@.id == "+test+")]").isNotEmpty());
+        assertTrue(assessments.list(teaching).stream().anyMatch(row->number(row,"id")==test));
+        var original=assessments.get(teaching,test,true);
+        assertEquals(teacher,number(original,"owner_id"));assertEquals("published",string(original,"status"));assertTrue(flag(original,"shared"));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM assessment_library_removals WHERE assessment_id=? AND user_id=?",test,colleague.getId()));
+        assessments.share(teaching,test,false);assessments.share(teaching,test,true);
+        mvc.perform(get("/api/v1/tests").header("Authorization",bearer)).andExpect(status().isOk()).andExpect(jsonPath("$[?(@.id == "+test+")]").isEmpty());
+        var copy=db.object(mvc.perform(post("/api/v1/tests/"+test+"/duplicate").header("Authorization",bearer)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        mvc.perform(delete("/api/v1/tests/"+number(copy,"id")).header("Authorization",bearer)).andExpect(status().isOk());
+        assertEquals(0,db.count("SELECT COUNT(*) FROM workspace_assessments WHERE id=?",number(copy,"id")));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_assessments WHERE id=?",test));
+    }
+    @Test void libraryRemovalDoesNotAllowStudentsOrPrivateTestAccess() throws Exception {
+        long test=number(db.one("SELECT assessment_id FROM assessment_versions WHERE id=?",version),"assessment_id");
+        var stranger=user(Role.TEACHER);
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(stranger.getEmail(),"password123")).token();
+        mvc.perform(delete("/api/v1/tests/"+test).header("Authorization",bearer)).andExpect(status().isForbidden());
+        assessments.share(teaching,test,true);
+        mvc.perform(delete("/api/v1/tests/"+test).header("Authorization",authorization)).andExpect(status().isForbidden());
+        mvc.perform(put("/api/v1/tests/"+test).header("Authorization",bearer).contentType("application/json").content(db.json(definition(false)))).andExpect(status().isForbidden());
+        assertEquals(0,db.count("SELECT COUNT(*) FROM assessment_library_removals WHERE assessment_id=?",test));
+        assertEquals("published",string(db.one("SELECT status FROM workspace_assessments WHERE id=?",test),"status"));
+    }
     private AttemptService.Session session(AttemptService.StartRequest r) {return new AttemptService.Session(r.sessionToken(),r.browserId(),authorization);}
     private Map<String,Object> start(AttemptService.StartRequest r) {return attempts.start(learning,assignment,r,authorization,"127.0.0.1");}
     @SuppressWarnings("unchecked") private Map<String,Object> question(Map<String,Object> state) {return (Map<String,Object>)state.get("question");}

@@ -237,6 +237,23 @@ button:disabled {
   margin-top: 12px;
 }
 
+.delete-dialog-fields {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 16px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.delete-confirmation-dialog .dialog-actions button {
+  white-space: normal;
+}
+
+.delete-dialog.delete-confirmation-dialog h2 {
+  font-size: 20px;
+}
+
 .dialog-actions {
   justify-content: flex-end;
   margin-top: 24px;

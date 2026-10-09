@@ -12,7 +12,9 @@
     "test:authoring": "node e2e/authoring.mjs",
     "test:groups": "node e2e/groups.mjs",
     "test:library": "node e2e/test-library.mjs",
-    "test:themes": "node e2e/themes.mjs"
+    "test:themes": "node e2e/themes.mjs",
+    "test:assignments": "node e2e/assignment-picker.mjs",
+    "test:deletions": "node e2e/deletion-confirmations.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.52.0",

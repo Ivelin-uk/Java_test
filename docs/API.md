@@ -48,7 +48,7 @@ Paths below are relative to `/api/v1`. Teacher access means the explicit owner/s
 | GET `/tests/{id}/versions` | Authorized version IDs and publication timestamps |
 | POST `/tests/{id}/duplicate` | Independent editable copy |
 | PUT `/tests/{id}/sharing` | Owner: `{shared:boolean}` |
-| DELETE `/tests/{id}` | Delete unused unpublished draft; archive content with published versions |
+| DELETE `/tests/{id}` | Remove any visible test from the caller's library. Own unpublished drafts are deleted; own published tests are archived and excluded from the library while versions/assignments/results remain. Shared tests are removed only for the caller; the owner's test and other teachers' libraries are unchanged. |
 | GET/POST `/question-bank` | Own/shared bank / `{subject,shared,question}` |
 | DELETE `/question-bank/{id}` | Owner/admin scoped deletion |
 | POST `/files` | `{purpose:question|logo,base64}`; PNG/JPEG <=2 MiB, normalized image <=2048 px / 4 MP; logo requires org admin |

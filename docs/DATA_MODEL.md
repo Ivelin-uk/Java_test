@@ -2,6 +2,8 @@
 
 Current model (2026-10-08): accounts register directly as teachers or students. `personal_workspaces` automatically maps each account to an internal namespace. The organization and membership tables remain for composite foreign keys and historical data; users never create/select schools or join institutional memberships. Account-wide lists filter by ownership/sharing or assigned student, while resource IDs resolve the original namespace. Teacher-to-student assignment is allowed between any active registered profiles. V13 preserves historical content and promotes existing teaching memberships to the global TEACHER role.
 
+V15 adds `assessment_library_removals` for persistent per-user removal of shared tests from the library. Removing a shared test does not change its ownership or sharing. Archived owned tests are excluded from library lists; their published versions, assignments and results remain available to authorized participants.
+
 The application retains Spring Boot 4 / Java 21 / MySQL and React/TypeScript. Existing identity and legacy records remain; new tenant modules use JDBC with parameterized queries, explicit transactions and structured Jackson JSON definitions. Controllers delegate mutations to module services. Flyway runs before JPA schema validation.
 
 ## ER Relationships
