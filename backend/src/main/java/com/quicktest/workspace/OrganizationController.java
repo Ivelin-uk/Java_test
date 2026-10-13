@@ -14,10 +14,9 @@ import java.util.*;
 public class OrganizationController {
     private final OrgAccess access;
     private final OrganizationService service;
-    private final WorkspaceStore db;
     private final IdentityWorkflow identity;
     private final NotificationService notifications;
-    public OrganizationController(OrgAccess access,OrganizationService service,WorkspaceStore db,IdentityWorkflow identity,NotificationService notifications) {this.access=access;this.service=service;this.db=db;this.identity=identity;this.notifications=notifications;}
+    public OrganizationController(OrgAccess access,OrganizationService service,IdentityWorkflow identity,NotificationService notifications) {this.access=access;this.service=service;this.identity=identity;this.notifications=notifications;}
     @GetMapping("/members") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT) public Object members() {return service.members(access.scope());}
     @GetMapping("/directory") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT) public Object directory() {return service.members(access.teacher());}
     @GetMapping("/groups") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT,student=true) public Object groups() {return service.groups(access.scope());}
@@ -35,7 +34,7 @@ public class OrganizationController {
     @PutMapping("/groups/{group}") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT) public void groupUpdate(@PathVariable long group,@Valid @RequestBody OrganizationService.GroupRequest request) {service.updateGroup(access.scope(),group,request);}
     @DeleteMapping("/groups/{group}") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT) public void groupDelete(@PathVariable long group) {service.deleteGroup(access.teacher(),group);}
     @DeleteMapping("/groups/{group}/teachers/{user}") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT) public void teacherRemove(@PathVariable long group,@PathVariable long user) {service.removeTeacher(access.scope(),group,user);}
-    @GetMapping("/profile/identities") public Object identities() {return db.rows("SELECT provider,linked_at FROM external_identities WHERE user_id=?",access.user().getId());}
+    @GetMapping("/profile/identities") public Object identities() {return identity.identities(access.user());}
     public record Token(@NotBlank @Size(max=100) String token) {}
     public record UserId(long userId) {}
     public record Csv(String csv) {}

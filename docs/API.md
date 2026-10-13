@@ -1,5 +1,7 @@
 # API Contract
 
+Backend errors use `application/problem+json` with `status`, `title`, `type`, `detail` and a stable `code`. Invalid request fields may additionally produce `errors:[{field,message}]`; rejected values and internal database details are never returned. Existing routes and success-response fields are unchanged by the controller/service/repository refactor. See [Backend Structure](BACKEND_STRUCTURE.md).
+
 Current account workflow: registration accepts optional `role: STUDENT|TEACHER`. Omitting it requires a one-time role choice before workspace access; ADMIN cannot be self-selected. `/api/v1` requests require a Bearer token, not an organization selector or invitation. Existing resource namespaces are resolved internally, while ownership, sharing and assignment recipients continue to govern access. `/members` and `/directory` are teacher-only lists of active registered teachers and students. Organization, invitation, settings, support-grant, organizational billing and platform-organization routes have been removed. Historical contracts below that describe those routes do not apply to the current product.
 
 The implementation uses the existing Spring MVC JSON API, not the illustrative Laravel paths in the brief. Academic operations use `/api/v1`. UTF-8 JSON field names are camelCase on command DTOs; JDBC read projections use database snake_case. Dates returned by the store are UTC ISO-8601. Domain services, not controller visibility, enforce ownership and transitions.

@@ -1,5 +1,6 @@
 package com.quicktest.auth;
 
+import com.quicktest.exception.ApiException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -9,7 +10,6 @@ import com.quicktest.access.PermissionAccess;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.UUID;
 import java.util.List;
@@ -39,7 +39,7 @@ public class AuthService {
     public AuthResponse register(@Valid RegisterRequest request) {
         validatePassword(request.password());
         if (users.existsByEmailIgnoreCase(request.email())) {
-            throw new ResponseStatusException(CONFLICT, "Email is already registered");
+            throw new ApiException(CONFLICT, "Email is already registered");
         }
         AppUser user = new AppUser();
         user.setName(request.name().trim());
@@ -54,9 +54,9 @@ public class AuthService {
     @Transactional
     public AuthResponse login(@Valid LoginRequest request) {
         AppUser user = users.findByEmailIgnoreCase(request.email())
-                .orElseThrow(() -> new ResponseStatusException(UNAUTHORIZED, "Invalid credentials"));
+                .orElseThrow(() -> new ApiException(UNAUTHORIZED, "Invalid credentials"));
         if (!user.isActive() || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            throw new ResponseStatusException(UNAUTHORIZED, "Invalid credentials");
+            throw new ApiException(UNAUTHORIZED, "Invalid credentials");
         }
         return issueToken(user);
     }
@@ -64,12 +64,12 @@ public class AuthService {
     @Transactional
     public UserResponse selectRole(long userId, SelectRoleRequest request) {
         if (request.role() != Role.TEACHER && request.role() != Role.STUDENT) {
-            throw new ResponseStatusException(BAD_REQUEST, "Изберете учител / асистент или ученик / студент.");
+            throw new ApiException(BAD_REQUEST, "Изберете учител / асистент или ученик / студент.");
         }
         AppUser user = users.lockById(userId).filter(AppUser::isActive)
-                .orElseThrow(() -> new ResponseStatusException(UNAUTHORIZED, "Неактивен профил."));
+                .orElseThrow(() -> new ApiException(UNAUTHORIZED, "Неактивен профил."));
         if (!user.isRoleSelectionRequired()) {
-            throw new ResponseStatusException(CONFLICT, "Ролята за този профил вече е избрана.");
+            throw new ApiException(CONFLICT, "Ролята за този профил вече е избрана.");
         }
         user.setRole(request.role());
         user.setRoleSelectionRequired(false);
@@ -79,14 +79,14 @@ public class AuthService {
 
     public AppUser requireUser(String authorizationHeader) {
         if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
-            throw new ResponseStatusException(UNAUTHORIZED, "Missing Bearer token");
+            throw new ApiException(UNAUTHORIZED, "Missing Bearer token");
         }
         String token = authorizationHeader.substring("Bearer ".length());
         return tokens.findById(token)
                 .filter(session -> session.getCreatedAt() != null && session.getCreatedAt().plus(java.time.Duration.ofHours(24)).isAfter(java.time.Instant.now()))
                 .map(AuthToken::getUser)
                 .filter(AppUser::isActive)
-                .orElseThrow(() -> new ResponseStatusException(UNAUTHORIZED, "Invalid token"));
+                .orElseThrow(() -> new ApiException(UNAUTHORIZED, "Invalid token"));
     }
 
     @Transactional
@@ -100,10 +100,10 @@ public class AuthService {
     public AuthResponse changePassword(AppUser user, ChangePasswordRequest request) {
         validatePassword(request.newPassword());
         if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
-            throw new ResponseStatusException(BAD_REQUEST, "Текущата парола е неправилна.");
+            throw new ApiException(BAD_REQUEST, "Текущата парола е неправилна.");
         }
         if (passwordEncoder.matches(request.newPassword(), user.getPasswordHash())) {
-            throw new ResponseStatusException(BAD_REQUEST, "Новата парола трябва да е различна.");
+            throw new ApiException(BAD_REQUEST, "Новата парола трябва да е различна.");
         }
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         user.setPasswordChangeRequired(false);
@@ -114,7 +114,7 @@ public class AuthService {
 
     private void validatePassword(String password) {
         if (password.getBytes(StandardCharsets.UTF_8).length > 72)
-            throw new ResponseStatusException(BAD_REQUEST, "Паролата е твърде дълга (до 72 UTF-8 байта).");
+            throw new ApiException(BAD_REQUEST, "Паролата е твърде дълга (до 72 UTF-8 байта).");
     }
 
     public UserResponse toResponse(AppUser user) {
@@ -134,7 +134,7 @@ public class AuthService {
     @Transactional
     public AuthResponse externalLogin(long userId) {
         AppUser user = users.findById(userId).filter(AppUser::isActive)
-                .orElseThrow(() -> new ResponseStatusException(UNAUTHORIZED, "Неактивен профил."));
+                .orElseThrow(() -> new ApiException(UNAUTHORIZED, "Неактивен профил."));
         return issueToken(user);
     }
 

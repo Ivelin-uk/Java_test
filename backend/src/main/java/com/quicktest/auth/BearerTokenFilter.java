@@ -10,10 +10,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.ObjectMapper;
+import com.quicktest.exception.ApiProblems;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 public class BearerTokenFilter extends OncePerRequestFilter {
@@ -56,8 +56,6 @@ public class BearerTokenFilter extends OncePerRequestFilter {
     }
 
     private void error(HttpServletResponse response, int status, String message) throws IOException {
-        response.setStatus(status);
-        response.setContentType("application/json;charset=UTF-8");
-        mapper.writeValue(response.getOutputStream(), Map.of("status", status, "detail", message));
+        ApiProblems.write(response,mapper,status,message);
     }
 }

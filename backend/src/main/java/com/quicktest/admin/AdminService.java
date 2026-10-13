@@ -1,5 +1,6 @@
 package com.quicktest.admin;
 
+import com.quicktest.exception.ApiException;
 import com.quicktest.access.*;
 import com.quicktest.auth.*;
 import jakarta.validation.Valid;
@@ -7,7 +8,6 @@ import jakarta.validation.constraints.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -49,7 +49,7 @@ public class AdminService {
     public PasswordResponse create(AppUser actor, UserEdit request) {
         checkSubscription(request);
         String email = normalizeEmail(request.email());
-        if (users.existsByEmailIgnoreCase(email)) throw new ResponseStatusException(CONFLICT, "Имейлът вече се използва.");
+        if (users.existsByEmailIgnoreCase(email)) throw new ApiException(CONFLICT, "Имейлът вече се използва.");
         AppUser user = new AppUser();
         apply(user, request);
         String password = temporaryPassword();
@@ -68,11 +68,11 @@ public class AdminService {
         AppUser user = requireUser(id);
         if (user.getRole() == Role.ADMIN && user.isActive() && (!request.active() || request.role() != Role.ADMIN)
                 && administrators.stream().filter(AppUser::isActive).count() <= 1) {
-            throw new ResponseStatusException(CONFLICT, "Трябва да остане поне един активен администратор.");
+            throw new ApiException(CONFLICT, "Трябва да остане поне един активен администратор.");
         }
         String email = normalizeEmail(request.email());
         users.findByEmailIgnoreCase(email).filter(other -> !other.getId().equals(id)).ifPresent(other -> {
-            throw new ResponseStatusException(CONFLICT, "Имейлът вече се използва.");
+            throw new ApiException(CONFLICT, "Имейлът вече се използва.");
         });
         boolean revoke = !user.getEmail().equals(email) || user.getRole() != request.role() || user.isActive() != request.active();
         String previous = "Преди: " + user.getRole() + ", " + user.getEmail() + ", active=" + user.isActive();
@@ -87,7 +87,7 @@ public class AdminService {
     @Transactional
     public PasswordResponse resetPassword(AppUser actor, Long id) {
         if (actor.getId().equals(id))
-            throw new ResponseStatusException(BAD_REQUEST, "Сменете собствената си парола от Моят профил.");
+            throw new ApiException(BAD_REQUEST, "Сменете собствената си парола от Моят профил.");
         AppUser user = requireUser(id);
         String password = temporaryPassword();
         user.setPasswordHash(encoder.encode(password));
@@ -110,9 +110,9 @@ public class AdminService {
         for (PermissionChange change : request.changes()) {
             var endpoint = catalog.get(change.key());
             if (endpoint == null || endpoint.mode() != EndpointPolicy.Mode.MANAGED || change.role() == Role.ADMIN)
-                throw new ResponseStatusException(BAD_REQUEST, "Тези права не могат да се променят: " + change.key());
+                throw new ApiException(BAD_REQUEST, "Тези права не могат да се променят: " + change.key());
             if (!seen.add(change.key() + ":" + change.role()))
-                throw new ResponseStatusException(BAD_REQUEST, "Повторено право в заявката.");
+                throw new ApiException(BAD_REQUEST, "Повторено право в заявката.");
         }
         for (PermissionChange change : request.changes()) {
             EndpointPermission item = permissions.findByEndpointKeyAndRole(change.key(), change.role()).orElseGet(() -> {
@@ -151,11 +151,11 @@ public class AdminService {
 
     private void checkSubscription(UserEdit request) {
         if (request.subscriptionPaid() && request.subscriptionPaidUntil() == null)
-            throw new ResponseStatusException(BAD_REQUEST, "Посочете дата за платения абонамент.");
+            throw new ApiException(BAD_REQUEST, "Посочете дата за платения абонамент.");
     }
 
     private AppUser requireUser(Long id) {
-        return users.findById(id).orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Потребителят не съществува."));
+        return users.findById(id).orElseThrow(() -> new ApiException(NOT_FOUND, "Потребителят не съществува."));
     }
 
     private String normalizeEmail(String email) { return email.trim().toLowerCase(Locale.ROOT); }

@@ -6,7 +6,7 @@ import org.springframework.mail.javamail.*;
 import org.springframework.stereotype.Component;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import static com.quicktest.workspace.WorkspaceStore.*;
+import static com.quicktest.workspace.WorkspaceValues.*;
 
 @Component
 public class ConfiguredMailGateway implements MailGateway {

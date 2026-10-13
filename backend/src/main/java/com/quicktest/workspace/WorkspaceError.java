@@ -1,14 +1,12 @@
 package com.quicktest.workspace;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
+import com.quicktest.exception.ApiException;
 
-public class WorkspaceError extends ResponseStatusException {
-    private final String code;
+public class WorkspaceError extends ApiException {
     public WorkspaceError(HttpStatus status, String code, String detail) {
-        super(status, detail); this.code = code;
+        super(status, code, detail);
     }
-    public String code() { return code; }
     public static WorkspaceError validation(String detail) { return new WorkspaceError(HttpStatus.BAD_REQUEST, "validation", detail); }
     public static WorkspaceError forbidden() { return new WorkspaceError(HttpStatus.FORBIDDEN, "forbidden", "Нямате достъп до този ресурс."); }
     public static WorkspaceError notFound() { return new WorkspaceError(HttpStatus.NOT_FOUND, "not_found", "Ресурсът не е намерен."); }

@@ -1,30 +1,33 @@
 package com.quicktest.workspace;
 
+import com.quicktest.workspace.repository.AssessmentRepository;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.*;
-import static com.quicktest.workspace.WorkspaceStore.*;
+import static com.quicktest.workspace.WorkspaceValues.*;
 
 @Service
 public class AssessmentService {
-    private final WorkspaceStore db;
+    private final WorkspaceJson json;
+    private final AssessmentRepository repository;
     private final WorkspaceAudit audit;
     private final Clock clock;
     private final PrivateImageService images;
     private final PersonalWorkspace personal;
-    public AssessmentService(WorkspaceStore db,WorkspaceAudit audit,Clock clock,PrivateImageService images,PersonalWorkspace personal) {this.db=db;this.audit=audit;this.clock=clock;this.images=images;this.personal=personal;}
+    public AssessmentService(AssessmentRepository repository,WorkspaceJson json,WorkspaceAudit audit,Clock clock,PrivateImageService images,PersonalWorkspace personal) {this.repository=repository;this.json=json;this.audit=audit;this.clock=clock;this.images=images;this.personal=personal;}
     public List<Map<String,Object>> list(OrgAccess.Scope scope) {
-        return db.rows("SELECT a.id,a.title,a.status,a.shared,a.owner_id,a.updated_at,a.definition_json FROM workspace_assessments a WHERE (a.organization_id=? OR ?) AND (a.owner_id=? OR a.shared=TRUE) AND a.status<>'archived' AND NOT EXISTS (SELECT 1 FROM assessment_library_removals r WHERE r.assessment_id=a.id AND r.user_id=?) ORDER BY a.updated_at DESC",scope.organizationId(),scope.platform(),scope.userId(),scope.userId()).stream().map(row -> {
-            Definition definition=db.parse(row.remove("definition_json"),Definition.class);
+        return repository.findVisibleTests(scope.organizationId(), scope.platform(), scope.userId(), scope.userId()).stream().map(row -> {
+            Definition definition=json.parse(row.remove("definition_json"),Definition.class);
             row.put("question_count",definition.questions().size());
             row.put("total_time_seconds",definition.questions().stream().mapToInt(Question::timeSeconds).sum());
             return row;
         }).toList();
     }
     public Map<String,Object> get(OrgAccess.Scope scope,long id,boolean edit) {
-        var row=db.one("SELECT * FROM workspace_assessments WHERE organization_id=? AND id=?",scope.organizationId(),id);
+        var row=repository.requireTest(scope.organizationId(), id);
         if(number(row,"owner_id")!=scope.userId() && (edit || !flag(row,"shared"))) throw WorkspaceError.forbidden();
         return row;
     }
@@ -34,51 +37,51 @@ public class AssessmentService {
         for(var question:definition.questions()) if(question!=null) images.validateQuestionImage(scope,question.imageId());
         if(id==null) {
             if(scope.platform()) personal.member(scope.organizationId(),scope.userId(),"TEACHER");
-            id=db.insert("INSERT INTO workspace_assessments(organization_id,owner_id,title,definition_json,updated_at) VALUES(?,?,?,?,?)",scope.organizationId(),scope.userId(),definition.title(),db.json(definition),clock.instant());
+            id=repository.insertTest(scope.organizationId(), scope.userId(), definition.title(), json.write(definition), clock.instant());
         }
         else {
             get(scope,id,true);
-            db.update("UPDATE workspace_assessments SET title=?,definition_json=?,status='draft',updated_at=? WHERE organization_id=? AND id=?",definition.title(),db.json(definition),clock.instant(),scope.organizationId(),id);
+            repository.updateDraft(definition.title(), json.write(definition), clock.instant(), scope.organizationId(), id);
         }
         audit.write(scope.organizationId(),scope.userId(),"assessment.saved",id,Map.of());
         return get(scope,id,true);
     }
     @Transactional
     public Map<String,Object> publish(OrgAccess.Scope scope,long id) {
-        db.one("SELECT id FROM workspace_assessments WHERE organization_id=? AND id=? FOR UPDATE",scope.organizationId(),id);
-        var row=get(scope,id,true); Definition definition=db.parse(row.get("definition_json"),Definition.class);validate(definition);
+        repository.lockTest(scope.organizationId(), id);
+        var row=get(scope,id,true); Definition definition=json.parse(row.get("definition_json"),Definition.class);validate(definition);
         for(var question:definition.questions()) images.validateQuestionImage(scope,question.imageId());
-        int next=(int)db.count("SELECT COALESCE(MAX(version_number),0)+1 FROM assessment_versions WHERE organization_id=? AND assessment_id=?",scope.organizationId(),id);
-        long version=db.insert("INSERT INTO assessment_versions(organization_id,assessment_id,version_number,title,definition_json,published_at) VALUES(?,?,?,?,?,?)",scope.organizationId(),id,next,definition.title(),db.json(definition),clock.instant());
-        db.update("UPDATE workspace_assessments SET status='published' WHERE organization_id=? AND id=?",scope.organizationId(),id);
+        int next=(int)repository.nextVersionNumber(scope.organizationId(), id);
+        long version=repository.insertVersion(scope.organizationId(), id, next, definition.title(), json.write(definition), clock.instant());
+        repository.markPublished(scope.organizationId(), id);
         audit.write(scope.organizationId(),scope.userId(),"assessment.published",id,Map.of("version",version,"number",next));
-        return db.one("SELECT id,assessment_id,version_number,title,published_at FROM assessment_versions WHERE organization_id=? AND id=?",scope.organizationId(),version);
+        return repository.requireVersion(scope.organizationId(), version);
     }
     public List<Map<String,Object>> versions(OrgAccess.Scope scope,long id) {
         get(scope,id,false);
-        return db.rows("SELECT id,version_number,title,published_at FROM assessment_versions WHERE organization_id=? AND assessment_id=? ORDER BY version_number DESC",scope.organizationId(),id);
+        return repository.findVersions(scope.organizationId(), id);
     }
     @Transactional
     public Map<String,Object> duplicate(OrgAccess.Scope scope,long id) {
-        Definition old=db.parse(get(scope,id,false).get("definition_json"),Definition.class);
+        Definition old=json.parse(get(scope,id,false).get("definition_json"),Definition.class);
         return save(scope,null,new Definition(old.title()+" (копие)",old.description(),old.subject(),old.level(),old.instructions(),old.language(),old.gradingScale(),old.passThreshold(),old.questions()));
     }
     @Transactional
     public void archive(OrgAccess.Scope scope,long id) {
         var row=get(scope,id,false);
         if(number(row,"owner_id")!=scope.userId()) {
-            db.update("INSERT INTO assessment_library_removals(organization_id,assessment_id,user_id,removed_at) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE removed_at=VALUES(removed_at)",scope.organizationId(),id,scope.userId(),clock.instant());
+            repository.removeFromLibrary(scope.organizationId(), id, scope.userId(), clock.instant());
             audit.write(scope.organizationId(),scope.userId(),"assessment.removed_from_library",id,Map.of());
             return;
         }
-        if(db.count("SELECT COUNT(*) FROM assessment_versions WHERE organization_id=? AND assessment_id=?",scope.organizationId(),id)==0) db.update("DELETE FROM workspace_assessments WHERE organization_id=? AND id=?",scope.organizationId(),id);
-        else db.update("UPDATE workspace_assessments SET status='archived' WHERE organization_id=? AND id=?",scope.organizationId(),id);
+        if(repository.countVersions(scope.organizationId(), id)==0) repository.deleteTest(scope.organizationId(), id);
+        else repository.archiveTest(scope.organizationId(), id);
         audit.write(scope.organizationId(),scope.userId(),"assessment.removed_or_archived",id,Map.of());
     }
     @Transactional
     public void share(OrgAccess.Scope scope,long id,boolean shared) {
         get(scope,id,true);
-        db.update("UPDATE workspace_assessments SET shared=? WHERE organization_id=? AND id=?",shared,scope.organizationId(),id);
+        repository.updateSharing(shared, scope.organizationId(), id);
         audit.write(scope.organizationId(),scope.userId(),"assessment.sharing_changed",id,Map.of("shared",shared));
     }
     public void validate(Definition definition) {

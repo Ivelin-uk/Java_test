@@ -1,11 +1,11 @@
 package com.quicktest.tests;
 
+import com.quicktest.exception.ApiException;
 import com.quicktest.auth.AppUser;
 import com.quicktest.auth.Role;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -52,7 +52,7 @@ public class QuizService {
         QuizTest test = requireOwned(owner, id);
         boolean submitted = attempts.existsByTestId(id);
         if (submitted && !questionRequests(test).equals(request.questions()))
-            throw new ResponseStatusException(CONFLICT, "Тестът има предадени опити. Въпросите не могат да се променят; създайте нов тест.");
+            throw new ApiException(CONFLICT, "Тестът има предадени опити. Въпросите не могат да се променят; създайте нов тест.");
         apply(test, request, !submitted);
         tests.flush();
         return toDetail(test);
@@ -82,7 +82,7 @@ public class QuizService {
     @Transactional(readOnly = true)
     public QuizDtos.PublicTest publicTest(String code) {
         QuizTest test = tests.findByPublicCodeAndStatus(code, TestStatus.PUBLISHED)
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Published test not found"));
+                .orElseThrow(() -> new ApiException(NOT_FOUND, "Published test not found"));
         return toPublic(test);
     }
 
@@ -94,7 +94,7 @@ public class QuizService {
     @Transactional
     public QuizDtos.AttemptResult submit(String code, QuizDtos.SubmitAttemptRequest request, AppUser participant) {
         QuizTest test = tests.findByPublicCodeAndStatus(code, TestStatus.PUBLISHED)
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Published test not found"));
+                .orElseThrow(() -> new ApiException(NOT_FOUND, "Published test not found"));
 
         Map<Long, QuizDtos.SubmittedAnswer> submitted = request.answers().stream()
                 .collect(Collectors.toMap(QuizDtos.SubmittedAnswer::questionId, item -> item, (a, b) -> b));
@@ -231,18 +231,18 @@ public class QuizService {
 
     private void validatePublishable(QuizTest test) {
         if (test.getQuestions().isEmpty()) {
-            throw new ResponseStatusException(BAD_REQUEST, "A test needs at least one question");
+            throw new ApiException(BAD_REQUEST, "A test needs at least one question");
         }
         for (Question question : test.getQuestions()) {
             if (question.getType() != QuestionType.OPEN_ANSWER && question.getAnswers().stream().noneMatch(Answer::isCorrect)) {
-                throw new ResponseStatusException(BAD_REQUEST, "Every auto-scored question needs a correct answer");
+                throw new ApiException(BAD_REQUEST, "Every auto-scored question needs a correct answer");
             }
         }
     }
 
     private QuizTest requireOwned(AppUser owner, Long id) {
         return (owner.getRole() == Role.ADMIN ? tests.findById(id) : tests.findByIdAndOwner(id, owner))
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Test not found"));
+                .orElseThrow(() -> new ApiException(NOT_FOUND, "Test not found"));
     }
 
     private String generatePublicCode() {

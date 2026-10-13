@@ -1,5 +1,7 @@
 package com.quicktest.workspace;
 
+import com.quicktest.workspace.repository.WorkspaceBootstrapRepository;
+
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -10,10 +12,10 @@ import java.util.List;
 @Component
 @Order(200)
 public class WorkspaceDemo implements CommandLineRunner {
-    private final WorkspaceStore db;
+    private final WorkspaceBootstrapRepository repository;
 
-    public WorkspaceDemo(WorkspaceStore db) {
-        this.db = db;
+    public WorkspaceDemo(WorkspaceBootstrapRepository repository) {
+        this.repository = repository;
     }
 
     @Override
@@ -24,8 +26,8 @@ public class WorkspaceDemo implements CommandLineRunner {
                 new Object[]{"Starter", 19, 190, 5, 100, 50, 1_000_000_000L},
                 new Object[]{"School", 69, 690, 30, 1000, 300, 10_000_000_000L},
                 new Object[]{"University", 199, 1990, 200, 10000, 2000, 100_000_000_000L})) {
-            if (db.count("SELECT COUNT(*) FROM organization_plans WHERE name=?", plan[0]) == 0) {
-                db.insert("INSERT INTO organization_plans(name,monthly_eur,yearly_eur,teacher_limit,student_limit,ai_limit,storage_bytes) VALUES(?,?,?,?,?,?,?)", plan);
+            if (repository.countPlans(plan[0]) == 0) {
+                repository.insertPlan(plan);
             }
         }
     }

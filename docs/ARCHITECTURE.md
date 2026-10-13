@@ -1,5 +1,7 @@
 # QuickTest Architecture
 
+Current backend layering (2026-10-13): Spring MVC controllers delegate to application services, which use feature-specific repositories. SQL and JDBC access live only in repositories; workspace services no longer execute raw queries. The React frontend is the view, while entities, request records and response projections form the model. [Backend Structure](BACKEND_STRUCTURE.md) documents the current implementation and its architecture tests. The original MVP contracts below remain historical; `/api/v1` is the active workspace API.
+
 ## Product Decision
 
 The MVP is a test management platform first, with AI as a helper engine. The fastest valuable path is:
@@ -14,7 +16,7 @@ Creator registers -> creates or generates draft -> edits questions -> publishes 
 - `dashboard`: creator metrics.
 - `demo`: local seed data.
 
-Controllers only handle HTTP mapping and validation. Business rules live in services. Repositories are Spring Data JPA interfaces.
+Controllers only handle HTTP mapping, validation and response construction. Business rules and transaction boundaries live in services. Repositories use Spring Data JPA for the original entity modules and JDBC for the workspace schema, preserving its composite keys and explicit locking.
 
 ## Database Schema
 

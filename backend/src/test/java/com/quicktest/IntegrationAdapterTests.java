@@ -20,6 +20,9 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest(properties={"spring.datasource.url=jdbc:h2:mem:adapter_tests;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1","app.workspace.workers=false"})
 class IntegrationAdapterTests {
     @Autowired WorkspaceStore db;
+    @Autowired WorkspaceJson workspaceJson;
+    @Autowired com.quicktest.workspace.repository.NotificationRepository notificationRepository;
+    @Autowired com.quicktest.workspace.repository.BillingRepository billingRepository;
     @Autowired AppUserRepository users;
     @Autowired PasswordEncoder passwords;
     @Autowired GoogleIdentityService google;
@@ -83,21 +86,21 @@ class IntegrationAdapterTests {
     }
     @Test void stripeSignaturesAreCheckedAgainstUnmodifiedBody() throws Exception {
         String secret="whsec_local_signature_fixture",timestamp=Long.toString(Instant.now().getEpochSecond());
-        var adapter=new StripeTestGateway(db,"sk_test_local_fixture",secret);
+        var adapter=new StripeTestGateway(workspaceJson,"sk_test_local_fixture",secret);
         String body="{\"id\":\"evt_fixture\",\"object\":\"event\",\"created\":"+timestamp+",\"livemode\":false,\"type\":\"customer.subscription.created\",\"data\":{\"object\":{\"id\":\"sub_fixture\",\"object\":\"subscription\"}}}";
         Mac hmac=Mac.getInstance("HmacSHA256");hmac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8),"HmacSHA256"));String signature="t="+timestamp+",v1="+HexFormat.of().formatHex(hmac.doFinal((timestamp+"."+body).getBytes(StandardCharsets.UTF_8)));
         assertEquals("evt_fixture",string(adapter.verifyWebhook(body,signature),"id"));assertThrows(WorkspaceError.class,()->adapter.verifyWebhook(body+" ",signature));assertThrows(WorkspaceError.class,()->adapter.verifyWebhook(body,"t="+timestamp+",v1=bad"));
     }
     @Test void localBillingEventsDeduplicateRejectStaleStateAndPreservePaidCancellation() {
         var user=user();long org=number(organizations.create(user.getId(),new OrganizationService.OrganizationRequest("Billing test","school",user.getEmail(),"Europe/Sofia","Ученик")),"id");long plan=number(organizations.subscription(org),"plan_id");
-        var service=new BillingService(db,gateway,audit,clock,organizations,"http://localhost:5173",true);Instant now=Instant.now();
+        var service=new BillingService(billingRepository,workspaceJson,gateway,audit,clock,organizations,"http://localhost:5173",true);Instant now=Instant.now();
         var active=new BillingService.Fixture("evt_active_"+org,200,new BillingService.Snapshot(plan,"active",now,now.plusSeconds(30*86400),false));service.fixture(user.getId(),org,active);service.fixture(user.getId(),org,active);
         service.fixture(user.getId(),org,new BillingService.Fixture("evt_old_"+org,100,new BillingService.Snapshot(plan,"expired",now,now.minusSeconds(1),false)));assertEquals("active",string(organizations.subscription(org),"status"));
         service.fixture(user.getId(),org,new BillingService.Fixture("evt_cancel_"+org,300,new BillingService.Snapshot(plan,"canceled",now,now.plusSeconds(1),true)));assertTrue(time(organizations.subscription(org),"paid_through").isAfter(now.plusSeconds(86400)));organizations.requirePaid(org);assertEquals(3,db.count("SELECT COUNT(*) FROM workspace_billing_events WHERE organization_id=?",org));
     }
     @Test void unknownMailOutcomeIsNotAutomaticallyRetried() {
         var user=user();long id=db.insert("INSERT INTO notification_outbox(user_id,notification_type,recipient_email,payload_json,available_at,created_at) VALUES(?,'final_result',?,'{}',?,?)",user.getId(),user.getEmail(),Instant.now(),Instant.now());
-        var worker=new NotificationService(db,clock,transactions,(notification,email,payload)->{throw new IllegalStateException("simulated timeout");},true,"local");worker.deliver();worker.deliver();
+        var worker=new NotificationService(notificationRepository,workspaceJson,clock,transactions,(notification,email,payload)->{throw new IllegalStateException("simulated timeout");},true,"local");worker.deliver();worker.deliver();
         var result=db.one("SELECT status,attempts FROM notification_outbox WHERE id=?",id);assertEquals("uncertain",string(result,"status"));assertEquals(1,number(result,"attempts"));
     }
 }

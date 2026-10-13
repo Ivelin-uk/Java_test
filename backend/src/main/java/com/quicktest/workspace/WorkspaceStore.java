@@ -2,8 +2,7 @@ package com.quicktest.workspace;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
-import org.springframework.stereotype.Component;
-import tools.jackson.databind.ObjectMapper;
+import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.sql.Statement;
@@ -11,12 +10,12 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.*;
 
-@Component
+@Repository
 public class WorkspaceStore {
-    public final JdbcTemplate jdbc;
-    private final ObjectMapper json;
+    private final JdbcTemplate jdbc;
+    private final WorkspaceJson json;
 
-    public WorkspaceStore(JdbcTemplate jdbc, ObjectMapper json) { this.jdbc = jdbc; this.json = json; }
+    public WorkspaceStore(JdbcTemplate jdbc, WorkspaceJson json) { this.jdbc = jdbc; this.json = json; }
 
     public List<Map<String, Object>> rows(String sql, Object... args) {
         return jdbc.query(sql, (rs, n) -> {
@@ -47,6 +46,8 @@ public class WorkspaceStore {
 
     public int update(String sql, Object... args) { return jdbc.update(sql, arguments(args)); }
 
+    public byte[] bytes(String sql, Object... args) { return jdbc.queryForObject(sql, byte[].class, arguments(args)); }
+
     public long insert(String sql, Object... args) {
         GeneratedKeyHolder key = new GeneratedKeyHolder();
         jdbc.update(connection -> {
@@ -62,18 +63,13 @@ public class WorkspaceStore {
         return Arrays.stream(args).map(value -> value instanceof Instant time ? java.time.LocalDateTime.ofInstant(time, java.time.ZoneOffset.UTC) : value).toArray();
     }
 
-    public String json(Object value) { return json.writeValueAsString(value); }
-    public <T> T parse(Object value, Class<T> type) { return json.readValue(String.valueOf(value), type); }
-    @SuppressWarnings("unchecked")
-    public Map<String, Object> object(Object value) { return parse(value, Map.class); }
-    public static long number(Map<String, Object> row, String key) { return ((Number) row.get(key)).longValue(); }
-    public static String string(Map<String, Object> row, String key) { return Objects.toString(row.get(key), ""); }
-    public static boolean flag(Map<String, Object> row, String key) {
-        Object value = row.get(key);
-        return Boolean.TRUE.equals(value) || value instanceof Number n && n.intValue() != 0;
-    }
-    public static Instant time(Map<String, Object> row, String key) { return Instant.parse(string(row, key)); }
-    public static BigDecimal decimal(Map<String, Object> row, String key) {
-        return new BigDecimal(string(row, key));
-    }
+    // Retained for existing verification fixtures; application services use the mapping helpers directly.
+    public String json(Object value) { return json.write(value); }
+    public <T> T parse(Object value, Class<T> type) { return json.parse(value,type); }
+    public Map<String, Object> object(Object value) { return json.object(value); }
+    public static long number(Map<String, Object> row, String key) { return WorkspaceValues.number(row,key); }
+    public static String string(Map<String, Object> row, String key) { return WorkspaceValues.string(row,key); }
+    public static boolean flag(Map<String, Object> row, String key) { return WorkspaceValues.flag(row,key); }
+    public static Instant time(Map<String, Object> row, String key) { return WorkspaceValues.time(row,key); }
+    public static BigDecimal decimal(Map<String, Object> row, String key) { return WorkspaceValues.decimal(row,key); }
 }

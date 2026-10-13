@@ -2,6 +2,7 @@ package com.quicktest.config;
 
 import com.quicktest.auth.AuthService;
 import com.quicktest.auth.BearerTokenFilter;
+import com.quicktest.exception.ApiProblems;
 import jakarta.servlet.DispatcherType;
 import org.springframework.http.HttpMethod;
 import org.springframework.context.annotation.Bean;
@@ -15,7 +16,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 import tools.jackson.databind.ObjectMapper;
-import java.util.Map;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -31,14 +31,10 @@ public class SecurityConfig {
                 .addFilterBefore(new BearerTokenFilter(authService, mapper), AnonymousAuthenticationFilter.class)
                 .exceptionHandling(errors -> errors
                         .authenticationEntryPoint((request, response, exception) -> {
-                            response.setStatus(401);
-                            response.setContentType("application/json;charset=UTF-8");
-                            mapper.writeValue(response.getOutputStream(), Map.of("detail", "Необходим е вход в профила."));
+                            ApiProblems.write(response,mapper,401,"Необходим е вход в профила.");
                         })
                         .accessDeniedHandler((request, response, exception) -> {
-                            response.setStatus(403);
-                            response.setContentType("application/json;charset=UTF-8");
-                            mapper.writeValue(response.getOutputStream(), Map.of("detail", "Нямате право за това действие."));
+                            ApiProblems.write(response,mapper,403,"Нямате право за това действие.");
                         }))
                 .authorizeHttpRequests(auth -> auth
                         .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.FORWARD).permitAll()

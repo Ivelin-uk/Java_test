@@ -1,5 +1,7 @@
 package com.quicktest.workspace;
 
+import com.quicktest.workspace.repository.AiGradingRepository;
+
 import com.quicktest.ai.AiProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,12 +16,13 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.*;
 
-import static com.quicktest.workspace.WorkspaceStore.*;
+import static com.quicktest.workspace.WorkspaceValues.*;
 
 @Service
 public class AiGradingService {
+    private final WorkspaceJson json;
     private static final Logger log = LoggerFactory.getLogger(AiGradingService.class);
-    private final WorkspaceStore db;
+    private final AiGradingRepository repository;
     private final AiProvider provider;
     private final OrganizationService organizations;
     private final AssignmentService assignments;
@@ -30,11 +33,11 @@ public class AiGradingService {
     private final Clock clock;
     private final boolean workers;
 
-    public AiGradingService(WorkspaceStore db, AiProvider provider, OrganizationService organizations,
+    public AiGradingService(AiGradingRepository repository,WorkspaceJson json, AiProvider provider, OrganizationService organizations,
                             AssignmentService assignments, GradingService grading, WorkspaceCrypto crypto,
                             WorkspaceAudit audit, TransactionTemplate transactions, Clock clock,
                             @Value("${app.workspace.workers:true}") boolean workers) {
-        this.db = db; this.provider = provider; this.organizations = organizations; this.assignments = assignments;
+        this.repository = repository;this.json=json; this.provider = provider; this.organizations = organizations; this.assignments = assignments;
         this.grading = grading; this.crypto = crypto; this.audit = audit; this.transactions = transactions;
         this.clock = clock; this.workers = workers;
     }
@@ -45,7 +48,7 @@ public class AiGradingService {
             throw WorkspaceError.validation("Невалиден ключ за AI проверка.");
         organizations.lockQuota(scope.organizationId());
         var attempt = authorizedAttempt(scope, attemptId, true);
-        var existing = db.optional("SELECT * FROM workspace_ai_grading_jobs WHERE organization_id=? AND attempt_id=? FOR UPDATE", scope.organizationId(), attemptId);
+        var existing = repository.findJobByAttemptForUpdate(scope.organizationId(), attemptId);
         if (existing.isPresent() && (!retry || !string(existing.get(), "status").equals("failed")
                 || string(existing.get(), "request_key").equals(request.requestKey()))) return safe(existing.get());
         if (!string(attempt, "status").equals("pending_review")) throw WorkspaceError.conflict("AI проверка е достъпна само за опити, чакащи проверка.");
@@ -58,48 +61,46 @@ public class AiGradingService {
             var subscription = organizations.subscription(scope.organizationId());
             if (number(subscription, "ai_used") + number(subscription, "ai_reserved") >= number(subscription, "ai_limit"))
                 throw WorkspaceError.conflict("Изчерпана AI квота. Ръчната проверка остава достъпна.");
-            db.update("UPDATE organization_subscriptions SET ai_reserved=ai_reserved+1 WHERE organization_id=?", scope.organizationId());
+            repository.reserveQuota(scope.organizationId());
         }
         long id;
         if (existing.isPresent()) {
             id = number(existing.get(), "id");
-            db.update("UPDATE workspace_ai_grading_jobs SET user_id=?,platform_scope=?,request_key=?,snapshot_hash=?,status='queued',quota_reserved=?,error_message=NULL,updated_at=? WHERE organization_id=? AND id=?",
-                    scope.userId(), scope.platform(), request.requestKey(), fingerprint(questions), reserved, clock.instant(), scope.organizationId(), id);
+            repository.requeueJob(scope.userId(), scope.platform(), request.requestKey(), fingerprint(questions), reserved, clock.instant(), scope.organizationId(), id);
         } else {
-            id = db.insert("INSERT INTO workspace_ai_grading_jobs(organization_id,attempt_id,user_id,platform_scope,request_key,snapshot_hash,quota_reserved,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                    scope.organizationId(), attemptId, scope.userId(), scope.platform(), request.requestKey(), fingerprint(questions), reserved, clock.instant(), clock.instant());
+            id = repository.insertJob(scope.organizationId(), attemptId, scope.userId(), scope.platform(), request.requestKey(), fingerprint(questions), reserved, clock.instant(), clock.instant());
         }
         audit.write(scope.organizationId(), scope.userId(), "grading.ai_queued", attemptId, Map.of("job", id));
-        return safe(db.one("SELECT * FROM workspace_ai_grading_jobs WHERE id=?", id));
+        return safe(repository.requireJob(id));
     }
 
     private Map<String, Object> authorizedAttempt(OrgAccess.Scope scope, long id, boolean lock) {
         if (!scope.roles().contains("TEACHER")) throw WorkspaceError.forbidden();
-        if (scope.platform()) db.one("SELECT id FROM users WHERE id=? AND active=TRUE AND role='TEACHER'", scope.userId());
+        if (scope.platform()) repository.requireActiveTeacher(scope.userId());
         else {
             organizations.requireActiveMember(scope.organizationId(), scope.userId(), "TEACHER");
-            db.one("SELECT id FROM organizations WHERE id=? AND status='active'", scope.organizationId());
+            repository.requireActiveOrganization(scope.organizationId());
         }
-        var attempt = db.one("SELECT * FROM exam_attempts WHERE organization_id=? AND id=?" + (lock ? " FOR UPDATE" : ""), scope.organizationId(), id);
+        var attempt = repository.findAttempt(scope.organizationId(), id, lock);
         assignments.teacherAccess(scope, number(attempt, "assignment_id"), false);
         return attempt;
     }
 
     private List<Map<String, Object>> questions(long org, long attempt) {
-        return db.rows("SELECT * FROM attempt_questions WHERE organization_id=? AND attempt_id=? ORDER BY position_index", org, attempt);
+        return repository.findQuestions(org, attempt);
     }
 
-    private String fingerprint(List<Map<String, Object>> questions) { return crypto.hash(db.json(questions)); }
+    private String fingerprint(List<Map<String, Object>> questions) { return crypto.hash(json.write(questions)); }
 
     private List<AiProvider.GradingQuestion> targets(List<Map<String, Object>> questions) {
         var result = new ArrayList<AiProvider.GradingQuestion>();
         for (var row : questions) {
             if (flag(row, "reviewed") && row.get("final_points") != null) continue;
             if (!string(row, "status").equals("answered") || row.get("answer_json") == null) continue;
-            var answer = db.parse(row.get("answer_json"), AttemptService.Answer.class);
+            var answer = json.parse(row.get("answer_json"), AttemptService.Answer.class);
             if (answer.text() == null || answer.text().isBlank()) continue;
-            var snapshot = db.object(row.get("definition_json"));
-            var question = db.parse(db.json(snapshot.get("question")), AssessmentService.Question.class);
+            var snapshot = json.object(row.get("definition_json"));
+            var question = json.parse(json.write(snapshot.get("question")), AssessmentService.Question.class);
             if (!Set.of("SHORT_ANSWER", "OPEN_ANSWER").contains(question.type())) throw WorkspaceError.conflict("Този отговор изисква ръчна проверка.");
             if (question.imageId() != null) throw WorkspaceError.conflict("Текстовите въпроси с изображение изискват ръчна проверка.");
             result.add(new AiProvider.GradingQuestion(number(row, "id"), question.type(), question.text(), decimal(row, "maximum_points"),
@@ -112,13 +113,13 @@ public class AiGradingService {
     @Scheduled(fixedDelay = 1000)
     public void process() {
         if (!workers) return;
-        for (var stale : db.rows("SELECT id,organization_id,attempts FROM workspace_ai_grading_jobs WHERE status='running' AND updated_at<?", clock.instant().minusSeconds(600)))
+        for (var stale : repository.findStaleJobs(clock.instant().minusSeconds(600)))
             fail(number(stale, "organization_id"), number(stale, "id"), number(stale, "attempts"), "Прекъсната AI проверка. Повторете или проверете ръчно.");
         var job = transactions.execute(tx -> {
-            var next = db.optional("SELECT * FROM workspace_ai_grading_jobs WHERE status='queued' ORDER BY id LIMIT 1 FOR UPDATE");
+            var next = repository.findNextJobForUpdate();
             if (next.isEmpty()) return null;
             var row = next.get();
-            db.update("UPDATE workspace_ai_grading_jobs SET status='running',attempts=attempts+1,updated_at=? WHERE id=?", clock.instant(), number(row, "id"));
+            repository.markRunning(clock.instant(), number(row, "id"));
             return row;
         });
         if (job == null) return;
@@ -130,7 +131,7 @@ public class AiGradingService {
             checkSnapshot(job, attempt, questions);
             var targets = targets(questions);
             var assignment = assignments.teacherAccess(scope, number(attempt, "assignment_id"), false);
-            var definition = db.parse(assignment.get("definition_json"), AssessmentService.Definition.class);
+            var definition = json.parse(assignment.get("definition_json"), AssessmentService.Definition.class);
             // Only submitted text is sent, without student identity, drafts or session secrets.
             var result = targets.isEmpty() ? new AiProvider.GradedAnswers(List.of(), "automatic", 0, 0)
                     : provider.gradeAnswers(new AiProvider.GradeAnswersRequest(definition.language(), targets));
@@ -168,7 +169,7 @@ public class AiGradingService {
         long org = scope.organizationId(), id = number(original, "id"), attemptId = number(original, "attempt_id");
         organizations.lockQuota(org);
         var attempt = authorizedAttempt(scope, attemptId, true);
-        var job = db.one("SELECT * FROM workspace_ai_grading_jobs WHERE organization_id=? AND id=? FOR UPDATE", org, id);
+        var job = repository.requireJobForUpdate(org, id);
         if (!string(job, "status").equals("running") || number(job, "attempts") != lease) return;
         var questions = questions(org, attemptId);
         checkSnapshot(job, attempt, questions);
@@ -181,8 +182,7 @@ public class AiGradingService {
             grading.grade(scope, attemptId, new GradingService.GradeRequest(questionId, grade.points(), "AI: " + grade.comment(), "AI проверка"));
         }
         var revision = grading.finalizeResult(scope, attemptId, new GradingService.Finalize("ai-grading-" + id, "AI проверка", null, null), false);
-        db.update("UPDATE workspace_ai_grading_jobs SET status='completed',quota_reserved=FALSE,model=?,input_tokens=?,output_tokens=?,revision_id=?,updated_at=? WHERE organization_id=? AND id=?",
-                result.model(), result.inputTokens(), result.outputTokens(), number(revision, "id"), clock.instant(), org, id);
+        repository.markCompleted(result.model(), result.inputTokens(), result.outputTokens(), number(revision, "id"), clock.instant(), org, id);
         settleQuota(job, true);
         audit.write(org, scope.userId(), "grading.ai_published", attemptId, Map.of("job", id, "revision", number(revision, "id"), "model", Objects.toString(result.model(), "")));
     }
@@ -190,18 +190,17 @@ public class AiGradingService {
     private void fail(long org, long id, long lease, String message) {
         transactions.executeWithoutResult(tx -> {
             organizations.lockQuota(org);
-            var existing = db.optional("SELECT * FROM workspace_ai_grading_jobs WHERE organization_id=? AND id=? FOR UPDATE", org, id);
+            var existing = repository.findJobForUpdate(org, id);
             if (existing.isEmpty()) return;
             var job = existing.get();
             if (!string(job, "status").equals("running") || number(job, "attempts") != lease) return;
-            db.update("UPDATE workspace_ai_grading_jobs SET status='failed',quota_reserved=FALSE,error_message=?,updated_at=? WHERE organization_id=? AND id=?",
-                    message.substring(0, Math.min(message.length(), 500)), clock.instant(), org, id);
+            repository.markFailed(message.substring(0, Math.min(message.length(), 500)), clock.instant(), org, id);
             settleQuota(job, false);
         });
     }
 
     private void settleQuota(Map<String, Object> job, boolean success) {
-        if (flag(job, "quota_reserved")) db.update("UPDATE organization_subscriptions SET ai_reserved=ai_reserved-1,ai_used=ai_used+? WHERE organization_id=?", success ? 1 : 0, number(job, "organization_id"));
+        if (flag(job, "quota_reserved")) repository.settleQuota(success ? 1 : 0, number(job, "organization_id"));
     }
 
     private Map<String, Object> safe(Map<String, Object> job) {

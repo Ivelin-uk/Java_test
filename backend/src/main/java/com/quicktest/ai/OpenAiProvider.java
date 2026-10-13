@@ -1,5 +1,6 @@
 package com.quicktest.ai;
 
+import com.quicktest.exception.ApiException;
 import com.quicktest.tests.QuestionType;
 import com.quicktest.tests.QuizDtos;
 import jakarta.validation.Validator;
@@ -94,7 +95,7 @@ public class OpenAiProvider implements AiProvider {
     @Override
     public GeneratedTest generateTest(GenerateTestRequest request) {
         if (apiKey == null || apiKey.isBlank()) {
-            throw new ResponseStatusException(SERVICE_UNAVAILABLE, "Липсва OPENAI_API_KEY на сървъра. Ръчното създаване остава достъпно.");
+            throw new ApiException(SERVICE_UNAVAILABLE, "Липсва OPENAI_API_KEY на сървъра. Ръчното създаване остава достъпно.");
         }
         try {
             ObjectNode schema = (ObjectNode) mapper.readTree(SCHEMA);
@@ -152,21 +153,21 @@ public class OpenAiProvider implements AiProvider {
                     .build();
             HttpResponse<String> response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 401 || response.statusCode() == 403) {
-                throw new ResponseStatusException(SERVICE_UNAVAILABLE, "OpenAI отхвърли API ключа или достъпа до модела. Проверете настройките на сървъра.");
+                throw new ApiException(SERVICE_UNAVAILABLE, "OpenAI отхвърли API ключа или достъпа до модела. Проверете настройките на сървъра.");
             }
             if (response.statusCode() == 429) {
                 JsonNode error = mapper.readTree(response.body()).path("error");
                 String code = error.path("code").asString("");
                 if ("insufficient_quota".equals(code)) {
-                    throw new ResponseStatusException(SERVICE_UNAVAILABLE, "Няма наличен OpenAI API кредит. API се таксува отделно от абонамента за ChatGPT.");
+                    throw new ApiException(SERVICE_UNAVAILABLE, "Няма наличен OpenAI API кредит. API се таксува отделно от абонамента за ChatGPT.");
                 }
-                throw new ResponseStatusException(SERVICE_UNAVAILABLE, "Достигнат е лимитът на OpenAI. Изчакайте и повторете заявката.");
+                throw new ApiException(SERVICE_UNAVAILABLE, "Достигнат е лимитът на OpenAI. Изчакайте и повторете заявката.");
             }
             if (response.statusCode() == 404) {
-                throw new ResponseStatusException(SERVICE_UNAVAILABLE, "Избраният OpenAI модел не е достъпен. Проверете OPENAI_MODEL.");
+                throw new ApiException(SERVICE_UNAVAILABLE, "Избраният OpenAI модел не е достъпен. Проверете OPENAI_MODEL.");
             }
             if (response.statusCode() != 200) {
-                throw new ResponseStatusException(SERVICE_UNAVAILABLE, "AI услугата не е достъпна в момента.");
+                throw new ApiException(SERVICE_UNAVAILABLE, "AI услугата не е достъпна в момента.");
             }
             JsonNode result = mapper.readTree(response.body());
             if (!"completed".equals(result.path("status").asString())) {
@@ -177,7 +178,7 @@ public class OpenAiProvider implements AiProvider {
                 if (!"message".equals(output.path("type").asString())) continue;
                 for (JsonNode part : output.path("content")) {
                     if ("refusal".equals(part.path("type").asString())) {
-                        throw new ResponseStatusException(BAD_GATEWAY, "OpenAI отказа тази заявка. Променете темата или учебния текст.");
+                        throw new ApiException(BAD_GATEWAY, "OpenAI отказа тази заявка. Променете темата или учебния текст.");
                     }
                     if ("output_text".equals(part.path("type").asString())) content.append(part.path("text").asString(""));
                 }
@@ -193,12 +194,12 @@ public class OpenAiProvider implements AiProvider {
             return new GeneratedTest(test, result.path("model").asString(model),
                     result.path("usage").path("input_tokens").asInt(0), result.path("usage").path("output_tokens").asInt(0));
         } catch (HttpTimeoutException exception) {
-            throw new ResponseStatusException(GATEWAY_TIMEOUT, "AI генерирането отне твърде дълго. Опитай отново.");
+            throw new ApiException(GATEWAY_TIMEOUT, "AI генерирането отне твърде дълго. Опитай отново.");
         } catch (IOException exception) {
-            throw new ResponseStatusException(SERVICE_UNAVAILABLE, "AI услугата не е достъпна в момента.");
+            throw new ApiException(SERVICE_UNAVAILABLE, "AI услугата не е достъпна в момента.");
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new ResponseStatusException(SERVICE_UNAVAILABLE, "AI генерирането беше прекъснато.");
+            throw new ApiException(SERVICE_UNAVAILABLE, "AI генерирането беше прекъснато.");
         } catch (JacksonException | IllegalArgumentException exception) {
             throw invalidResponse();
         }
@@ -207,7 +208,7 @@ public class OpenAiProvider implements AiProvider {
     @Override
     public GradedAnswers gradeAnswers(GradeAnswersRequest request) {
         if (apiKey == null || apiKey.isBlank()) {
-            throw new ResponseStatusException(SERVICE_UNAVAILABLE, "Липсва OPENAI_API_KEY на сървъра. Ръчната проверка остава достъпна.");
+            throw new ApiException(SERVICE_UNAVAILABLE, "Липсва OPENAI_API_KEY на сървъра. Ръчната проверка остава достъпна.");
         }
         try {
             var ids = request.questions().stream().map(GradingQuestion::id).toList();
@@ -238,12 +239,12 @@ public class OpenAiProvider implements AiProvider {
                     .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(payload))).build();
             HttpResponse<String> response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 401 || response.statusCode() == 403)
-                throw new ResponseStatusException(SERVICE_UNAVAILABLE, "OpenAI отхвърли API ключа или достъпа до модела.");
+                throw new ApiException(SERVICE_UNAVAILABLE, "OpenAI отхвърли API ключа или достъпа до модела.");
             if (response.statusCode() == 429) {
                 boolean quota = "insufficient_quota".equals(mapper.readTree(response.body()).path("error").path("code").asString(""));
-                throw new ResponseStatusException(SERVICE_UNAVAILABLE, quota ? "Няма наличен OpenAI API кредит." : "Достигнат е лимитът на OpenAI. Изчакайте и повторете.");
+                throw new ApiException(SERVICE_UNAVAILABLE, quota ? "Няма наличен OpenAI API кредит." : "Достигнат е лимитът на OpenAI. Изчакайте и повторете.");
             }
-            if (response.statusCode() != 200) throw new ResponseStatusException(SERVICE_UNAVAILABLE, "AI проверката не е достъпна в момента.");
+            if (response.statusCode() != 200) throw new ApiException(SERVICE_UNAVAILABLE, "AI проверката не е достъпна в момента.");
             JsonNode result = mapper.readTree(response.body());
             if (!"completed".equals(result.path("status").asString())) throw invalidGrading();
             StringBuilder content = new StringBuilder();
@@ -251,7 +252,7 @@ public class OpenAiProvider implements AiProvider {
                 if (!"message".equals(output.path("type").asString())) continue;
                 for (JsonNode part : output.path("content")) {
                     if ("refusal".equals(part.path("type").asString()))
-                        throw new ResponseStatusException(BAD_GATEWAY, "OpenAI отказа проверката. Използвайте ръчна проверка.");
+                        throw new ApiException(BAD_GATEWAY, "OpenAI отказа проверката. Използвайте ръчна проверка.");
                     if ("output_text".equals(part.path("type").asString())) content.append(part.path("text").asString(""));
                 }
             }
@@ -269,19 +270,19 @@ public class OpenAiProvider implements AiProvider {
             return new GradedAnswers(draft.grades(), result.path("model").asString(model),
                     result.path("usage").path("input_tokens").asInt(0), result.path("usage").path("output_tokens").asInt(0));
         } catch (HttpTimeoutException exception) {
-            throw new ResponseStatusException(GATEWAY_TIMEOUT, "AI проверката отне твърде дълго. Опитайте отново.");
+            throw new ApiException(GATEWAY_TIMEOUT, "AI проверката отне твърде дълго. Опитайте отново.");
         } catch (IOException exception) {
-            throw new ResponseStatusException(SERVICE_UNAVAILABLE, "AI проверката не е достъпна в момента.");
+            throw new ApiException(SERVICE_UNAVAILABLE, "AI проверката не е достъпна в момента.");
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new ResponseStatusException(SERVICE_UNAVAILABLE, "AI проверката беше прекъсната.");
+            throw new ApiException(SERVICE_UNAVAILABLE, "AI проверката беше прекъсната.");
         } catch (JacksonException | IllegalArgumentException exception) {
             throw invalidGrading();
         }
     }
 
     private ResponseStatusException invalidGrading() {
-        return new ResponseStatusException(BAD_GATEWAY, "AI върна невалидна проверка. Резултатът не е публикуван.");
+        return new ApiException(BAD_GATEWAY, "AI върна невалидна проверка. Резултатът не е публикуван.");
     }
 
     private record GradingDraft(List<AnswerGrade> grades) {}
@@ -309,7 +310,7 @@ public class OpenAiProvider implements AiProvider {
     }
 
     private ResponseStatusException invalidResponse() {
-        return new ResponseStatusException(BAD_GATEWAY, "AI върна невалидни въпроси. Опитай отново.");
+        return new ApiException(BAD_GATEWAY, "AI върна невалидни въпроси. Опитай отново.");
     }
 
     private record Draft(String title, String description, List<QuizDtos.QuestionRequest> questions) {}
