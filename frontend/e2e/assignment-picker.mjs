@@ -51,7 +51,9 @@ try {
   await assign.click()
   await page.getByRole('alert').filter({ hasText: 'Тестът няма запазена версия.' }).waitFor()
   assert.equal(submitted.length, 0)
-  await page.getByRole('checkbox', { name: group.name, exact: true }).check()
+  const groupSearch = page.getByRole('combobox', { name: 'Търси групи', exact: true })
+  await groupSearch.click()
+  await page.getByRole('listbox', { name: 'Групи', exact: true }).getByRole('option', { name: group.name, exact: true }).click()
 
   let release, finished
   const gate = new Promise(resolve => { release = resolve })
@@ -92,10 +94,9 @@ try {
   const rows = await request('/api/v1/assignments', teacher)
   assert.equal(rows.some(row => row.version_id === latest.id), true)
   assert.equal(rows.some(row => row.version_id === mathVersion.id), true)
-  const groupSearch = page.getByRole('searchbox', { name: 'Търси групи', exact: true })
   assert.equal(await page.getByRole('searchbox', { name: 'Търси ученици', exact: true }).count(), 0)
   await groupSearch.fill(group.name.toUpperCase())
-  await page.getByRole('checkbox', { name: group.name, exact: true }).check()
+  assert.equal(await page.getByRole('listbox', { name: 'Групи', exact: true }).getByRole('option', { name: group.name, exact: true }).getAttribute('aria-selected'), 'true')
   await groupSearch.fill('Hidden selected group')
   let created = page.waitForResponse(response => response.url() === `${base}/api/v1/assignments` && response.request().method() === 'POST')
   await assign.click()
