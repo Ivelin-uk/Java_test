@@ -46,10 +46,11 @@ class GoogleOAuthTests {
         assertNotNull(params.getFirst("state"));assertNotNull(params.getFirst("nonce"));
         assertEquals(Role.TEACHER,session.getAttribute("examai.google.registrationRole"));
     }
-    @Test void defaultRoleIsStudentAndPrivilegedOrUnknownRolesAreRejected() throws Exception {
+    @Test void signInWithoutRoleDefersSelectionAndPrivilegedOrUnknownRolesAreRejected() throws Exception {
         var session=new MockHttpSession();
+        session.setAttribute("examai.google.registrationRole",Role.TEACHER);
         mvc.perform(get("/api/auth/google/redirect").session(session)).andExpect(status().isFound());
-        assertEquals(Role.STUDENT,session.getAttribute("examai.google.registrationRole"));
+        assertNull(session.getAttribute("examai.google.registrationRole"));
         for(String role:new String[]{"ADMIN","OWNER","invalid"})
             mvc.perform(get("/api/auth/google/redirect").param("role",role)).andExpect(status().isBadRequest());
     }

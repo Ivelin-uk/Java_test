@@ -36,7 +36,7 @@ public class GoogleOAuthConfig {
                     var session=request.getSession(false);
                     Long linked=session==null?null:(Long)session.getAttribute("examai.google.linkUser");
                     String source=session==null?null:(String)session.getAttribute("examai.google.sourceSessionHash");
-                    Role role=session==null?Role.STUDENT:(Role)session.getAttribute("examai.google.registrationRole");
+                    Role role=session==null?null:(Role)session.getAttribute("examai.google.registrationRole");
                     String target;
                     try {target=frontend+"/#google_handoff="+identity.complete((OidcUser)authentication.getPrincipal(),linked,source,role);}
                     catch(WorkspaceError error) {target=frontend+"/#google_error="+URLEncoder.encode(error.getReason(),StandardCharsets.UTF_8);}

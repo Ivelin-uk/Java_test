@@ -16,9 +16,9 @@ public class GoogleController {
     @GetMapping("/api/auth/google/config") @EndpointPolicy(mode=EndpointPolicy.Mode.PUBLIC)
     public Object config() {return Map.of("enabled",enabled,"redirect",backend+"/api/auth/google/redirect","callback",backend+"/login/oauth2/code/google");}
     @GetMapping("/api/auth/google/redirect") @EndpointPolicy(mode=EndpointPolicy.Mode.PUBLIC)
-    public void redirect(@RequestParam(required=false) String link,@RequestParam(defaultValue="STUDENT") Role role,HttpServletRequest request,HttpServletResponse response) throws IOException {
+    public void redirect(@RequestParam(required=false) String link,@RequestParam(required=false) Role role,HttpServletRequest request,HttpServletResponse response) throws IOException {
         if(!enabled) throw WorkspaceError.conflict("Google входът не е конфигуриран.");
-        if(role!=Role.STUDENT && role!=Role.TEACHER) throw WorkspaceError.validation("Изберете ученик или учител.");
+        if(role!=null && role!=Role.STUDENT && role!=Role.TEACHER) throw WorkspaceError.validation("Изберете ученик или учител.");
         var session=request.getSession();session.removeAttribute("examai.google.linkUser");session.removeAttribute("examai.google.sourceSessionHash");
         session.setAttribute("examai.google.registrationRole",role);
         if(link!=null) {var ticket=identity.consumeLink(link);session.setAttribute("examai.google.linkUser",ticket.get("user"));session.setAttribute("examai.google.sourceSessionHash",ticket.get("sessionHash"));}

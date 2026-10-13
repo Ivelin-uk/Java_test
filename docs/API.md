@@ -1,6 +1,6 @@
 # API Contract
 
-Current account workflow: registration accepts `role: STUDENT|TEACHER` (default STUDENT; ADMIN cannot be self-selected). `/api/v1` requests require a Bearer token, not an organization selector or invitation. Existing resource namespaces are resolved internally, while ownership, sharing and assignment recipients continue to govern access. `/members` and `/directory` are teacher-only lists of active registered teachers and students. Organization, invitation, settings, support-grant, organizational billing and platform-organization routes have been removed. Historical contracts below that describe those routes do not apply to the current product.
+Current account workflow: registration accepts optional `role: STUDENT|TEACHER`. Omitting it requires a one-time role choice before workspace access; ADMIN cannot be self-selected. `/api/v1` requests require a Bearer token, not an organization selector or invitation. Existing resource namespaces are resolved internally, while ownership, sharing and assignment recipients continue to govern access. `/members` and `/directory` are teacher-only lists of active registered teachers and students. Organization, invitation, settings, support-grant, organizational billing and platform-organization routes have been removed. Historical contracts below that describe those routes do not apply to the current product.
 
 The implementation uses the existing Spring MVC JSON API, not the illustrative Laravel paths in the brief. Academic operations use `/api/v1`. UTF-8 JSON field names are camelCase on command DTOs; JDBC read projections use database snake_case. Dates returned by the store are UTC ISO-8601. Domain services, not controller visibility, enforce ownership and transitions.
 
@@ -13,10 +13,11 @@ Send `Authorization: Bearer <token>` on authenticated requests. No organization 
 | POST `/api/auth/register` | `{name,email,password,role?:STUDENT|TEACHER}`; creates personal profile, confirmation notification |
 | POST `/api/auth/login` | `{email,password}`; returns `{token,user}` |
 | GET `/api/auth/me` | Current active identity |
+| POST `/api/auth/role` | `{role:STUDENT\|TEACHER}`; authenticated, one-time choice for accounts with `user.roleSelectionRequired=true`; returns updated user, 409 once already selected |
 | POST `/api/auth/logout`, `/logout-all` | Revoke current / all bearer sessions |
 | POST `/api/auth/password` | `{currentPassword,newPassword}` |
 | POST `/api/auth/recover`, `/reset` | `{email}` / `{token,password}`; single-use reset, all old sessions revoked |
-| GET `/api/auth/google/config`, `/redirect` | Provider availability / standard OIDC redirect; optional `role=STUDENT\|TEACHER` for new accounts, defaults to student; optional single-use `link` ticket |
+| GET `/api/auth/google/config`, `/redirect` | Provider availability / standard OIDC redirect; optional `role=STUDENT\|TEACHER` for new accounts, otherwise new accounts require role selection; optional single-use `link` ticket |
 | GET `/login/oauth2/code/google` | Framework callback with state/nonce/issuer validation |
 | POST `/api/auth/google/exchange` | `{token}`; short-lived one-use frontend handoff |
 | POST `/api/v1/profile/google/link` | `{password}`; authenticated reauthorization, returns redirect URL |
@@ -26,6 +27,8 @@ Send `Authorization: Bearer <token>` on authenticated requests. No organization 
 | GET `/api/v1/profile/mailbox` | Own private **local-adapter-only** test mail |
 
 Login, registration, recovery and reset are rate-limited per identity and remote IP. Google matching-email identities are not silently merged.
+
+New password registrations and first Google sign-ins without an explicit role return `user.roleSelectionRequired=true`. Until selection, bearer sessions permit only `/api/auth/me`, `/api/auth/role`, `/api/auth/logout` and `/api/auth/logout-all`; workspace access returns 403. The role choice persists across reloads and sessions. Existing accounts keep their roles and do not re-enter selection. The UI labels TEACHER as "Учител / асистент" and STUDENT as "Ученик / студент".
 
 ## Groups And Content
 

@@ -44,6 +44,14 @@ public class AuthController {
         return authService.toResponse(user);
     }
 
+    @PostMapping("/role")
+    @EndpointPolicy(mode = EndpointPolicy.Mode.PROFILE)
+    @PreAuthorize("isAuthenticated()")
+    public AuthService.UserResponse selectRole(@RequestHeader("Authorization") String authorization,
+                                               @Valid @RequestBody AuthService.SelectRoleRequest request) {
+        return authService.selectRole(authService.requireUser(authorization).getId(), request);
+    }
+
     @PostMapping("/logout")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @EndpointPolicy(mode = EndpointPolicy.Mode.PROFILE)

@@ -18,6 +18,7 @@ import java.util.Set;
 
 public class BearerTokenFilter extends OncePerRequestFilter {
     private static final Set<String> RECOVERY_PATHS = Set.of("/api/auth/me", "/api/auth/password", "/api/auth/logout", "/api/auth/logout-all");
+    private static final Set<String> ROLE_SELECTION_PATHS = Set.of("/api/auth/me", "/api/auth/role", "/api/auth/logout", "/api/auth/logout-all");
     private final AuthService auth;
     private final ObjectMapper mapper;
 
@@ -39,6 +40,10 @@ public class BearerTokenFilter extends OncePerRequestFilter {
                 return;
             }
             String path = request.getRequestURI().substring(request.getContextPath().length());
+            if (user.isRoleSelectionRequired() && !ROLE_SELECTION_PATHS.contains(path)) {
+                error(response, 403, "Първо изберете роля за профила си.");
+                return;
+            }
             if (user.isPasswordChangeRequired() && !RECOVERY_PATHS.contains(path)) {
                 error(response, 403, "Първо сменете временната си парола.");
                 return;

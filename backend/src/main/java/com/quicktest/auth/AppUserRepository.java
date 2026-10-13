@@ -11,6 +11,9 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
     boolean existsByEmailIgnoreCase(String email);
     List<AppUser> findAllByOrderByCreatedAtDesc();
 
+    @Query(value = "SELECT * FROM users WHERE id = :id FOR UPDATE", nativeQuery = true)
+    Optional<AppUser> lockById(@org.springframework.data.repository.query.Param("id") Long id);
+
     // MySQL 5.7 needs plain FOR UPDATE; Hibernate 7 emits the newer FOR UPDATE OF syntax.
     @Query(value = "SELECT * FROM users WHERE role = 'ADMIN' ORDER BY id FOR UPDATE", nativeQuery = true)
     List<AppUser> lockAdministrators();

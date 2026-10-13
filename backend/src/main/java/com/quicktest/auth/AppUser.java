@@ -31,6 +31,7 @@ public class AppUser {
     @Enumerated(EnumType.STRING)
     private Role role = Role.STUDENT;
 
+    private boolean roleSelectionRequired;
     private boolean active = true;
     private boolean passwordChangeRequired;
     private boolean subscriptionPaid;

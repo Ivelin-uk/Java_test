@@ -3,6 +3,7 @@ package com.quicktest.auth;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import com.quicktest.access.PermissionAccess;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -45,6 +46,7 @@ public class AuthService {
         user.setEmail(request.email().trim().toLowerCase(Locale.ROOT));
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setRole(request.role() == Role.TEACHER ? Role.TEACHER : Role.STUDENT);
+        user.setRoleSelectionRequired(request.role() == null);
         users.save(user);
         return issueToken(user);
     }
@@ -57,6 +59,22 @@ public class AuthService {
             throw new ResponseStatusException(UNAUTHORIZED, "Invalid credentials");
         }
         return issueToken(user);
+    }
+
+    @Transactional
+    public UserResponse selectRole(long userId, SelectRoleRequest request) {
+        if (request.role() != Role.TEACHER && request.role() != Role.STUDENT) {
+            throw new ResponseStatusException(BAD_REQUEST, "Изберете учител / асистент или ученик / студент.");
+        }
+        AppUser user = users.lockById(userId).filter(AppUser::isActive)
+                .orElseThrow(() -> new ResponseStatusException(UNAUTHORIZED, "Неактивен профил."));
+        if (!user.isRoleSelectionRequired()) {
+            throw new ResponseStatusException(CONFLICT, "Ролята за този профил вече е избрана.");
+        }
+        user.setRole(request.role());
+        user.setRoleSelectionRequired(false);
+        users.saveAndFlush(user);
+        return toResponse(user);
     }
 
     public AppUser requireUser(String authorizationHeader) {
@@ -101,7 +119,7 @@ public class AuthService {
 
     public UserResponse toResponse(AppUser user) {
         return new UserResponse(user.getId(), user.getName(), user.getEmail(), user.getRole().name(),
-                user.isActive(), user.isPasswordChangeRequired(), subscriptions.status(user),
+                user.isActive(), user.isPasswordChangeRequired(), user.isRoleSelectionRequired(), subscriptions.status(user),
                 permissions.allowedMethods(user), permissions.subscriptionMethods(user));
     }
 
@@ -125,9 +143,10 @@ public class AuthService {
         public RegisterRequest(String name,String email,String password) {this(name,email,password,Role.STUDENT);}
     }
     public record LoginRequest(@Email @NotBlank String email, @NotBlank String password) {}
+    public record SelectRoleRequest(@NotNull Role role) {}
     public record ChangePasswordRequest(@NotBlank String currentPassword, @NotBlank @Size(min = 8, max = 72) String newPassword) {}
     public record UserResponse(Long id, String name, String email, String role, boolean active,
-                               boolean passwordChangeRequired, SubscriptionService.Status subscription,
+                               boolean passwordChangeRequired, boolean roleSelectionRequired, SubscriptionService.Status subscription,
                                List<String> allowedMethods, List<String> subscriptionMethods) {}
     public record AuthResponse(String token, UserResponse user) {}
 }

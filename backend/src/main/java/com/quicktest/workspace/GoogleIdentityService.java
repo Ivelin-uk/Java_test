@@ -47,7 +47,7 @@ public class GoogleIdentityService {
             String email=oidc.getEmail().strip().toLowerCase(Locale.ROOT);
             if(users.existsByEmailIgnoreCase(email)) throw WorkspaceError.conflict("Влезте с парола и свържете Google от профила си.");
             String name=oidc.getFullName();if(name==null || name.isBlank()) name=email;
-            var profile=new AppUser();profile.setEmail(email);profile.setName(name.substring(0,Math.min(120,name.length())));profile.setRole(role);profile.setPasswordHash(passwords.encode(crypto.token()));profile.setEmailVerifiedAt(clock.instant());users.saveAndFlush(profile);identity.initialize(profile);user=profile.getId();
+            var profile=new AppUser();profile.setEmail(email);profile.setName(name.substring(0,Math.min(120,name.length())));profile.setRole(role);profile.setRoleSelectionRequired(registrationRole==null);profile.setPasswordHash(passwords.encode(crypto.token()));profile.setEmailVerifiedAt(clock.instant());users.saveAndFlush(profile);identity.initialize(profile);user=profile.getId();
         }
         if(external.isEmpty()) {long linked=db.insert("INSERT INTO external_identities(user_id,provider,subject,linked_at) VALUES(?,\'google\',?,?)",user,subject,clock.instant());audit.write(null,user,"identity.google_linked",linked,Map.of("provider","google"));}
         if(!users.findById(user).orElseThrow().isActive()) throw WorkspaceError.forbidden();

@@ -75,8 +75,8 @@ class DemoDataTests {
             assertTrue(passwordEncoder.matches("password123", user.getPasswordHash()));
             if (user.getRole() == Role.STUDENT) assertFalse(user.isSubscriptionPaid());
         }
-        assertEquals(18, flyway.info().applied().length);
-        assertEquals("18", flyway.info().current().getVersion().toString());
+        assertEquals(19, flyway.info().applied().length);
+        assertEquals("19", flyway.info().current().getVersion().toString());
         assertEquals(1L, count("demo_seed_history"));
         assertEquals(3L, count("organization_plans"));
         assertTrue(count("endpoint_permission") > 0);

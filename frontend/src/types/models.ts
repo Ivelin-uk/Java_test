@@ -5,7 +5,7 @@ export type TestStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'
 export type Role = 'ADMIN' | 'TEACHER' | 'STUDENT'
 export type Subscription = { paid: boolean; paidUntil: string | null; paidAt: string | null; active: boolean }
 export type User = {
-  id: number; name: string; email: string; role: Role; active: boolean; passwordChangeRequired: boolean
+  id: number; name: string; email: string; role: Role; active: boolean; passwordChangeRequired: boolean; roleSelectionRequired: boolean
   subscription: Subscription; allowedMethods: string[]; subscriptionMethods: string[]
 }
 export type AuthResponse = { token: string; user: User }

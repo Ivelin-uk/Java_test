@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN role_selection_required BOOLEAN NOT NULL DEFAULT FALSE;

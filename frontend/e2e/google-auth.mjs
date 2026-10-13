@@ -4,7 +4,7 @@ import { chromium } from 'playwright'
 
 const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173'
 const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
-const profile = (token, role) => ({ token, user: { id: role === 'TEACHER' ? 101 : 102, name: 'Google account', email: 'google@example.test', role, active: true, passwordChangeRequired: false } })
+const profile = (token, role) => ({ token, user: { id: role === 'TEACHER' ? 101 : 102, name: 'Google account', email: 'google@example.test', role, active: true, passwordChangeRequired: false, roleSelectionRequired: false } })
 const teacher = profile('google-teacher-fixture', 'TEACHER'), student = profile('google-student-fixture', 'STUDENT')
 const local = { ...teacher, token: 'local-fixture' }
 const errors = [], exchanges = [], redirects = []
@@ -49,15 +49,12 @@ try {
   await login.click()
   await page.waitForURL(`${base}/api/auth/google/redirect`)
   assert.equal(redirects.at(-1).search, '')
-  for (const role of ['STUDENT', 'TEACHER']) {
-    await page.goto(frontend)
-    await page.getByRole('button', { name: 'Регистрация', exact: true }).click()
-    await page.getByRole('combobox', { name: 'Роля', exact: true }).selectOption(role)
-    for (const name of ['Име', 'Фамилия', 'Имейл', 'Парола']) await page.getByLabel(name, { exact: true }).fill('')
-    await page.getByRole('button', { name: 'Регистрация с Google', exact: true }).click()
-    await page.waitForURL(`${base}/api/auth/google/redirect?role=${role}`)
-    assert.equal(redirects.at(-1).search, `?role=${role}`)
-  }
+  await page.goto(frontend)
+  await page.getByRole('button', { name: 'Регистрация', exact: true }).click()
+  for (const name of ['Име', 'Фамилия', 'Имейл', 'Парола']) await page.getByLabel(name, { exact: true }).fill('')
+  await page.getByRole('button', { name: 'Регистрация с Google', exact: true }).click()
+  await page.waitForURL(`${base}/api/auth/google/redirect`)
+  assert.equal(redirects.at(-1).search, '')
   await page.goto(frontend)
   await page.getByRole('button', { name: 'Регистрация', exact: true }).click()
   for (const { theme, width, height } of [{ theme: 'light', width: 1440, height: 1000 }, { theme: 'dark', width: 1440, height: 1000 }, { theme: 'dark', width: 390, height: 844 }, { theme: 'light', width: 320, height: 844 }]) {
@@ -115,6 +112,8 @@ try {
   await page.getByRole('alert').getByText('Изтекла или използвана идентификация.', { exact: true }).waitFor()
   assert.equal(new URL(page.url()).hash, '')
   assert.equal(exchanges.filter(value => value.token === 'expired-fixture').length, 1)
+  await page.getByLabel('Имейл', { exact: true }).fill(local.user.email)
+  await page.getByLabel('Парола', { exact: true }).fill('password123')
   await page.getByRole('button', { name: 'Влез', exact: true }).click()
   await page.getByRole('button', { name: 'Тестове', exact: true }).waitFor()
   assert.equal(await page.getByRole('alert').count(), 0)
@@ -126,7 +125,7 @@ try {
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('quicktest.auth')).token), teacher.token)
   assert.equal(exchanges.filter(value => value.token === 'teacher-fixture').length, 2)
   assert.deepEqual(errors, [])
-  console.log('Passed: Google login/register redirects, both roles, no local form requirement, single-use handoff under StrictMode, persisted sessions, profile linking, error/retry, disabled provider, official image and desktop/mobile themes. API fixtures only; no Google account contacted.')
+  console.log('Passed: Google login/register redirects without default role, no local form requirement, single-use handoff under StrictMode, persisted sessions, profile linking, error/retry, disabled provider, official image and desktop/mobile themes. API fixtures only; no Google account contacted.')
 } catch (error) {
   if (page && !page.isClosed()) await page.screenshot({ path: new URL('google-auth-failure.png', artifacts).pathname, fullPage: true })
   throw error

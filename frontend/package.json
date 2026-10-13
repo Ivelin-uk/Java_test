@@ -17,6 +17,7 @@
     "test:assignments": "node e2e/assignment-picker.mjs",
     "test:codes": "node e2e/assignment-codes.mjs",
     "test:google": "node e2e/google-auth.mjs",
+    "test:roles": "node e2e/role-selection.mjs",
     "test:recipients": "node e2e/assignment-recipients.mjs",
     "test:group-recipients": "node e2e/group-recipient-access.mjs",
     "test:durations": "node e2e/durations.mjs",
