@@ -63,24 +63,33 @@ public class AdminService {
     @Transactional
     public AuthService.UserResponse update(AppUser actor, Long id, UserEdit request) {
         checkSubscription(request);
-        // Serialize administrator changes so concurrent requests cannot remove the last active administrator.
-        List<AppUser> administrators = users.lockAdministrators();
-        AppUser user = requireUser(id);
-        if (user.getRole() == Role.ADMIN && user.isActive() && (!request.active() || request.role() != Role.ADMIN)
-                && administrators.stream().filter(AppUser::isActive).count() <= 1) {
-            throw new ApiException(CONFLICT, "Трябва да остане поне един активен администратор.");
-        }
+        AppUser user = lockForUpdate(id, request.role(), request.active());
         String email = normalizeEmail(request.email());
         users.findByEmailIgnoreCase(email).filter(other -> !other.getId().equals(id)).ifPresent(other -> {
             throw new ApiException(CONFLICT, "Имейлът вече се използва.");
         });
-        boolean revoke = !user.getEmail().equals(email) || user.getRole() != request.role() || user.isActive() != request.active();
+        boolean revoke = !user.getEmail().equals(email) || user.getRole() != request.role() || user.isActive() != request.active()
+                || user.isRoleSelectionRequired();
         String previous = "Преди: " + user.getRole() + ", " + user.getEmail() + ", active=" + user.isActive();
         if (!user.getEmail().equals(email)) user.setEmailVerifiedAt(null);
         apply(user, request);
         if (revoke) tokens.deleteByUserId(id);
         audit(actor, user, "USER_UPDATED", previous + "; след: " + user.getRole() + ", " + user.getEmail()
                 + ", active=" + user.isActive() + "; платен=" + user.isSubscriptionPaid() + "; до=" + user.getSubscriptionPaidUntil());
+        return auth.toResponse(user);
+    }
+
+    @Transactional
+    public AuthService.UserResponse changeRole(AppUser actor, Long id, RoleEdit request) {
+        AppUser user = lockForUpdate(id, request.role(), true);
+        Role previous = user.getRole();
+        if (previous == request.role() && !user.isRoleSelectionRequired()) return auth.toResponse(user);
+        user.setRole(request.role());
+        user.setRoleSelectionRequired(false);
+        users.saveAndFlush(user);
+        tokens.deleteByUserId(id);
+        audit(actor, user, "USER_ROLE_CHANGED", "Роля: " + previous + " -> " + user.getRole()
+                + "; активните сесии са прекратени.");
         return auth.toResponse(user);
     }
 
@@ -141,6 +150,7 @@ public class AdminService {
         user.setName(request.name().trim());
         user.setEmail(normalizeEmail(request.email()));
         user.setRole(request.role());
+        user.setRoleSelectionRequired(false);
         user.setActive(request.active());
         if (request.subscriptionPaid() && (!user.isSubscriptionPaid() || !Objects.equals(user.getSubscriptionPaidUntil(), request.subscriptionPaidUntil())))
             user.setSubscriptionPaidAt(Instant.now());
@@ -156,6 +166,18 @@ public class AdminService {
 
     private AppUser requireUser(Long id) {
         return users.findById(id).orElseThrow(() -> new ApiException(NOT_FOUND, "Потребителят не съществува."));
+    }
+
+    private AppUser lockForUpdate(Long id, Role role, boolean active) {
+        // All role/status edits lock administrators first, then the target, in the same order.
+        List<AppUser> administrators = users.lockAdministrators();
+        AppUser user = users.lockById(id)
+                .orElseThrow(() -> new ApiException(NOT_FOUND, "Потребителят не съществува."));
+        if (user.getRole() == Role.ADMIN && user.isActive() && (!active || role != Role.ADMIN)
+                && administrators.stream().filter(AppUser::isActive).count() <= 1) {
+            throw new ApiException(CONFLICT, "Трябва да остане поне един активен администратор.");
+        }
+        return user;
     }
 
     private String normalizeEmail(String email) { return email.trim().toLowerCase(Locale.ROOT); }
@@ -177,6 +199,7 @@ public class AdminService {
 
     public record UserEdit(@NotBlank @Size(max = 120) String name, @Email @NotBlank @Size(max = 190) String email,
                            @NotNull Role role, boolean active, boolean subscriptionPaid, LocalDate subscriptionPaidUntil) {}
+    public record RoleEdit(@NotNull Role role) {}
     public record PasswordResponse(AuthService.UserResponse user, String temporaryPassword) {}
     public record PermissionChange(@NotBlank String key, @NotNull Role role, boolean allowed, boolean subscriptionRequired) {}
     public record PermissionEdit(@NotEmpty @Size(max = 200) List<@Valid PermissionChange> changes) {}

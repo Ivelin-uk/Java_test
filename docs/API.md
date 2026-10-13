@@ -119,6 +119,8 @@ The chat feature and its HTTP/WebSocket endpoints have been removed. Existing ch
 
 Global-admin `/api/admin` manages accounts, roles, permissions and audit. Organization administration routes have been removed.
 
+`PUT /api/admin/users/{id}/role` accepts `{role: "ADMIN"|"TEACHER"|"STUDENT"}` and returns the updated user. Only platform administrators can call it. A role change resolves any pending first-login role selection, revokes all target-user sessions and records `USER_ROLE_CHANGED` in the admin audit log. Other account fields, subscriptions and academic records are unchanged. Repeating an already settled role is a no-op. The last active administrator cannot be demoted (409). Invalid/missing roles return 400; unknown users return 404. The general user-edit route applies the same last-administrator protection and resolves pending role selection.
+
 ## Errors And Idempotency
 
 Domain errors use RFC-style ProblemDetail JSON `{type,title,status,detail,code}`. Codes: `validation` (400), `forbidden` (403), `not_found` (404), `conflict` (409), `expired` (410), `rate_limit` (429). Authentication failures are 401/403. Exceptions never expose stack traces in API responses. JSON/bean validation failures use Spring ProblemDetail.

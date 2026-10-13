@@ -541,6 +541,11 @@ progress {
 .checkbox-label input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--link); flex-shrink: 0; }
 .admin-access { display: inline-flex; align-items: center; gap: 6px; color: var(--success); white-space: nowrap; }
 .row-actions { display: flex; gap: 6px; }
+.role-cell { display: flex; align-items: center; gap: 12px; }
+.role-cell > span { flex: 1; }
+.role-cell > button { flex-shrink: 0; }
+.role-change-account { display: grid; gap: 4px; overflow-wrap: anywhere; }
+.role-change-account > span { color: var(--muted); font-size: 13px; }
 .status-badge { display: inline-block; padding: 3px 7px; border-radius: 4px; font-size: 12px; background: var(--success-bg); }
 .status-badge.inactive { color: var(--danger); background: var(--danger-bg); }
 .empty-cell { text-align: center; color: var(--muted); padding: 28px !important; }

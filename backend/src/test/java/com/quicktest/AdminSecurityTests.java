@@ -1,6 +1,7 @@
 package com.quicktest;
 
 import com.quicktest.admin.AdminService;
+import com.quicktest.admin.AdminAuditRepository;
 import com.quicktest.auth.*;
 import com.quicktest.tests.*;
 import org.junit.jupiter.api.Test;
@@ -32,9 +33,11 @@ class AdminSecurityTests {
     @Autowired ObjectMapper mapper;
     @Autowired AppUserRepository users;
     @Autowired AuthTokenRepository tokens;
+    @Autowired AuthService auth;
     @Autowired PasswordEncoder encoder;
     @Autowired QuizTestRepository tests;
     @Autowired AttemptRepository attempts;
+    @Autowired AdminAuditRepository audits;
 
     @Test
     void registrationCannotChoosePrivilegedRoleOrSubscription() throws Exception {
@@ -56,12 +59,14 @@ class AdminSecurityTests {
             call(get("/api/admin/users"), actor.token, null, 403);
             call(post("/api/admin/users"), actor.token, edit(actor.user), 403);
             call(put("/api/admin/users/" + actor.user.getId()), actor.token, edit(actor.user), 403);
+            call(put("/api/admin/users/" + actor.user.getId() + "/role"), actor.token, new AdminService.RoleEdit(Role.ADMIN), 403);
             call(post("/api/admin/users/" + actor.user.getId() + "/reset-password"), actor.token, null, 403);
             call(get("/api/admin/permissions"), actor.token, null, 403);
             call(put("/api/admin/permissions"), actor.token, permission("QuizController.list", Role.STUDENT, true, false), 403);
             call(get("/api/admin/audit"), actor.token, null, 403);
         }
         call(get("/api/admin/users"), null, null, 401);
+        call(put("/api/admin/users/" + teacher.user.getId() + "/role"), null, new AdminService.RoleEdit(Role.ADMIN), 401);
         call(get("/api/public/tests/unknown"), null, null, 401);
     }
 
@@ -87,7 +92,7 @@ class AdminSecurityTests {
     void fixedAndUnknownPermissionsCannotBeDelegatedAndBatchesAreAtomic() throws Exception {
         Session admin = session(Role.ADMIN);
         Session teacher = session(Role.TEACHER);
-        for (String key : List.of("AdminController.users", "AuthController.me", "AuthController.login", "Missing.method"))
+        for (String key : List.of("AdminController.users", "AdminController.changeRole", "AuthController.me", "AuthController.login", "Missing.method"))
             call(put("/api/admin/permissions"), admin.token, permission(key, Role.STUDENT, true, false), 400);
         call(put("/api/admin/permissions"), admin.token, permission("QuizController.list", Role.ADMIN, false, true), 400);
         var change = new AdminService.PermissionChange("QuizController.list", Role.TEACHER, false, false);
@@ -189,6 +194,147 @@ class AdminSecurityTests {
         Session second = session(Role.ADMIN);
         call(put("/api/admin/users/" + admin.user.getId()), second.token, withActive(admin.user, false), 200);
         call(get("/api/admin/users"), admin.token, null, 401);
+    }
+
+    @Test
+    void roleChangesRevokeEveryTargetSessionAndApplyNewPermissions() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session target = session(Role.STUDENT);
+        String first = target.token;
+        for (Role role : List.of(Role.TEACHER, Role.ADMIN, Role.STUDENT)) {
+            String second = call(post("/api/auth/login"), null,
+                    new AuthService.LoginRequest(target.user.getEmail(), "password123"), 200).path("token").asText();
+            JsonNode changed = call(put("/api/admin/users/" + target.user.getId() + "/role"), admin.token,
+                    new AdminService.RoleEdit(role), 200);
+            assertEquals(role.name(), changed.path("role").asText());
+            assertFalse(changed.path("roleSelectionRequired").asBoolean());
+            call(get("/api/auth/me"), first, null, 401);
+            call(get("/api/auth/me"), second, null, 401);
+            call(get("/api/admin/users"), admin.token, null, 200);
+            JsonNode login = call(post("/api/auth/login"), null,
+                    new AuthService.LoginRequest(target.user.getEmail(), "password123"), 200);
+            assertEquals(role.name(), login.path("user").path("role").asText());
+            first = login.path("token").asText();
+            call(get("/api/admin/users"), first, null, role == Role.ADMIN ? 200 : 403);
+            call(get("/api/tests"), first, null, role == Role.STUDENT ? 403 : 200);
+        }
+        JsonNode log = call(get("/api/admin/audit"), admin.token, null, 200);
+        assertEquals(3, log.size());
+        for (JsonNode entry : log) {
+            assertEquals("USER_ROLE_CHANGED", entry.path("action").asText());
+            assertEquals(admin.user.getEmail(), entry.path("actorEmail").asText());
+            assertEquals(target.user.getEmail(), entry.path("targetEmail").asText());
+            assertTrue(entry.path("details").asText().contains(" -> "));
+        }
+    }
+
+    @Test
+    void roleOnlyChangePreservesAccountSubscriptionAndAcademicRecords() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session teacher = session(Role.TEACHER);
+        JsonNode created = call(post("/api/tests"), teacher.token, quiz(), 200);
+        teacher.user.setSubscriptionPaid(true);
+        teacher.user.setSubscriptionPaidUntil(LocalDate.now().plusDays(30));
+        teacher.user.setSubscriptionPaidAt(java.time.Instant.now());
+        teacher.user.setEmailVerifiedAt(java.time.Instant.now());
+        users.saveAndFlush(teacher.user);
+        String hash = teacher.user.getPasswordHash();
+        var paidAt = teacher.user.getSubscriptionPaidAt();
+        var verifiedAt = teacher.user.getEmailVerifiedAt();
+        JsonNode changed = call(put("/api/admin/users/" + teacher.user.getId() + "/role"), admin.token,
+                Map.of("role", "STUDENT", "name", "Ignored", "email", "ignored@example.test", "active", false, "subscriptionPaid", false), 200);
+        assertEquals(teacher.user.getName(), changed.path("name").asText());
+        assertEquals(teacher.user.getEmail(), changed.path("email").asText());
+        assertTrue(changed.path("active").asBoolean());
+        assertTrue(changed.path("subscription").path("paid").asBoolean());
+        assertEquals(hash, teacher.user.getPasswordHash());
+        assertEquals(paidAt, teacher.user.getSubscriptionPaidAt());
+        assertEquals(verifiedAt, teacher.user.getEmailVerifiedAt());
+        assertEquals(teacher.user.getId(), tests.findById(created.path("id").asLong()).orElseThrow().getOwner().getId());
+        call(put("/api/admin/users/" + teacher.user.getId() + "/role"), admin.token, new AdminService.RoleEdit(Role.TEACHER), 200);
+        String login = call(post("/api/auth/login"), null,
+                new AuthService.LoginRequest(teacher.user.getEmail(), "password123"), 200).path("token").asText();
+        call(get("/api/tests/" + created.path("id").asLong()), login, null, 200);
+    }
+
+    @Test
+    void roleChangeProtectsLastActiveAdminButAllowsSelfDemotionWhenAnotherExists() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session inactive = session(Role.ADMIN);
+        inactive.user.setActive(false);
+        users.saveAndFlush(inactive.user);
+        for (Role role : List.of(Role.TEACHER, Role.STUDENT)) {
+            JsonNode problem = call(put("/api/admin/users/" + admin.user.getId() + "/role"), admin.token,
+                    new AdminService.RoleEdit(role), 409);
+            assertEquals("conflict", problem.path("code").asText());
+        }
+        assertEquals(Role.ADMIN, admin.user.getRole());
+        assertEquals(0, audits.count());
+        call(get("/api/admin/users"), admin.token, null, 200);
+        Session second = session(Role.ADMIN);
+        call(put("/api/admin/users/" + admin.user.getId() + "/role"), admin.token, new AdminService.RoleEdit(Role.TEACHER), 200);
+        call(get("/api/admin/users"), admin.token, null, 401);
+        call(get("/api/admin/users"), second.token, null, 200);
+    }
+
+    @Test
+    void invalidOrMissingRoleAndUnknownTargetCannotChangeAccounts() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session student = session(Role.STUDENT);
+        String path = "/api/admin/users/" + student.user.getId() + "/role";
+        for (Map<String, Object> invalid : List.of(Map.<String, Object>of(), Map.<String, Object>of("role", "OWNER"))) {
+            JsonNode problem = call(put(path), admin.token, invalid, 400);
+            assertEquals("validation", problem.path("code").asText());
+        }
+        call(put(path), admin.token, mapper.createObjectNode().putNull("role"), 400);
+        call(put("/api/admin/users/9223372036854775807/role"), admin.token, new AdminService.RoleEdit(Role.ADMIN), 404);
+        assertEquals(Role.STUDENT, student.user.getRole());
+        assertEquals(0, audits.count());
+        call(get("/api/auth/me"), student.token, null, 200);
+    }
+
+    @Test
+    void sameRoleIsIdempotentWithoutRevokingSettledSessions() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session student = session(Role.STUDENT);
+        call(put("/api/admin/users/" + student.user.getId() + "/role"), admin.token, new AdminService.RoleEdit(Role.STUDENT), 200);
+        assertEquals(0, audits.count());
+        call(get("/api/auth/me"), student.token, null, 200);
+    }
+
+    @Test
+    void administratorAssignedRoleCompletesOnboardingForPasswordAndGoogleSessions() throws Exception {
+        Session admin = session(Role.ADMIN);
+        for (boolean google : List.of(false, true)) {
+            Session pending = session(Role.STUDENT);
+            pending.user.setRoleSelectionRequired(true);
+            users.saveAndFlush(pending.user);
+            String token = google ? auth.externalLogin(pending.user.getId()).token() : pending.token;
+            Role role = google ? Role.TEACHER : Role.STUDENT;
+            call(put("/api/admin/users/" + pending.user.getId() + "/role"), admin.token, new AdminService.RoleEdit(role), 200);
+            call(get("/api/auth/me"), token, null, 401);
+            JsonNode login = call(post("/api/auth/login"), null,
+                    new AuthService.LoginRequest(pending.user.getEmail(), "password123"), 200);
+            assertFalse(login.path("user").path("roleSelectionRequired").asBoolean());
+            call(post("/api/auth/role"), login.path("token").asText(), new AuthService.SelectRoleRequest(Role.STUDENT), 409);
+            assertEquals(role, pending.user.getRole());
+        }
+    }
+
+    @Test
+    void generalAdminEditAlsoResolvesPendingRoleSelectionAndDoesNotReactivateAccounts() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session target = session(Role.STUDENT);
+        target.user.setRoleSelectionRequired(true);
+        users.saveAndFlush(target.user);
+        call(put("/api/admin/users/" + target.user.getId()), admin.token, edit(target.user), 200);
+        assertFalse(target.user.isRoleSelectionRequired());
+        call(get("/api/auth/me"), target.token, null, 401);
+        target.user.setActive(false);
+        users.saveAndFlush(target.user);
+        JsonNode changed = call(put("/api/admin/users/" + target.user.getId() + "/role"), admin.token, new AdminService.RoleEdit(Role.TEACHER), 200);
+        assertFalse(changed.path("active").asBoolean());
+        call(post("/api/auth/login"), null, new AuthService.LoginRequest(target.user.getEmail(), "password123"), 401);
     }
 
     @Test

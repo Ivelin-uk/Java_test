@@ -32,6 +32,12 @@ public class AdminController {
         return admin.update(auth.requireUser(authorization), id, request);
     }
 
+    @PutMapping("/users/{id}/role")
+    public AuthService.UserResponse changeRole(@RequestHeader("Authorization") String authorization, @PathVariable Long id,
+                                               @Valid @RequestBody AdminService.RoleEdit request) {
+        return admin.changeRole(auth.requireUser(authorization), id, request);
+    }
+
     @PostMapping("/users/{id}/reset-password")
     public AdminService.PasswordResponse resetPassword(@RequestHeader("Authorization") String authorization, @PathVariable Long id) {
         return admin.resetPassword(auth.requireUser(authorization), id);

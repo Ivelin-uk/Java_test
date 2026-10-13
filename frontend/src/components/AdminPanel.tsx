@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { Users, ShieldCheck, History, UserPlus, Pencil, KeyRound, UserCheck, UserX, RefreshCw, Save, X, Copy, Check, Search } from 'lucide-react'
+import { Users, ShieldCheck, History, UserPlus, UserRoundCog, Pencil, KeyRound, UserCheck, UserX, RefreshCw, Save, X, Copy, Check, Search } from 'lucide-react'
 import { api } from '../api/client'
 import { formatDate, roleLabels, subscriptionLabel } from '../api/access'
 import type { AuditEntry, AuthResponse, PasswordResponse, PermissionChange, PermissionRow, Role, User, UserEdit } from '../types/models'
 
 const modes = { ADMIN: 'Само администратор', PUBLIC: 'Публичен вход', PROFILE: 'Собствен профил', MANAGED: '' }
-const actions: Record<string, string> = { USER_CREATED: 'Нов потребител', USER_UPDATED: 'Промяна на профил', PASSWORD_RESET: 'Нова временна парола', PERMISSION_UPDATED: 'Промяна на права' }
+const actions: Record<string, string> = { USER_CREATED: 'Нов потребител', USER_UPDATED: 'Промяна на профил', USER_ROLE_CHANGED: 'Смяна на роля', PASSWORD_RESET: 'Нова временна парола', PERMISSION_UPDATED: 'Промяна на права' }
 const emptyUser: UserEdit = { name: '', email: '', role: 'STUDENT', active: true, subscriptionPaid: false, subscriptionPaidUntil: null }
 function userEdit(user: User): UserEdit {
   return { name: user.name, email: user.email, role: user.role, active: user.active, subscriptionPaid: user.subscription.paid, subscriptionPaidUntil: user.subscription.paidUntil }
@@ -26,6 +26,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [editing, setEditing] = useState<{ id: number | null; value: UserEdit } | null>(null)
+  const [roleChange, setRoleChange] = useState<{ user: User; role: Role } | null>(null)
   const [confirming, setConfirming] = useState<{ user: User; action: 'reset' | 'toggle' } | null>(null)
   const [credentials, setCredentials] = useState<PasswordResponse | null>(null)
   const [copied, setCopied] = useState(false)
@@ -69,6 +70,18 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
       setConfirming(null); await refresh(); await onProfileRefresh()
     })
   }
+  async function saveRole(event: FormEvent) {
+    event.preventDefault()
+    if (!roleChange) return
+    await perform(async () => {
+      const updated = await api.changeUserRole(token, roleChange.user.id, roleChange.role)
+      setUsers(current => current.map(user => user.id === updated.id ? updated : user))
+      setRoleChange(null)
+      setMessage(`Ролята на ${updated.name} е сменена на „${roleLabels[updated.role]}“.`)
+      if (updated.id === auth.user.id) await onProfileRefresh()
+      else await refresh()
+    })
+  }
   function changePermission(row: PermissionRow, role: 'TEACHER' | 'STUDENT', property: 'allowed' | 'subscriptionRequired', value: boolean) {
     const column = role === 'TEACHER' ? 'teacher' : 'student'
     const grant = { ...row[column], [property]: value }
@@ -90,7 +103,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
     </div>
     {loading && <p role="status">Зареждане...</p>}
     {message && <p className="good" role="status">{message}</p>}
-    {error && !editing && !confirming && <p className="error action-error" role="alert">{error}</p>}
+    {error && !editing && !confirming && !roleChange && <p className="error action-error" role="alert">{error}</p>}
 
     {tab === 'users' && <>
       <div className="filter-bar">
@@ -101,7 +114,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
       <div className="table-scroll"><table className="data-table users-table"><thead><tr><th>Потребител</th><th>Роля</th><th>Статус</th><th>Абонамент / до</th><th>Действия</th></tr></thead><tbody>
         {filteredUsers.map(user => <tr key={user.id}>
           <td><strong>{user.name}{user.id === auth.user.id && <small className="inline-muted"> (Вие)</small>}</strong><small>{user.email}</small>{user.passwordChangeRequired && <small className="warning-text">Временна парола</small>}</td>
-          <td>{roleLabels[user.role]}</td>
+          <td><div className="role-cell"><span>{roleLabels[user.role]}</span><button className="icon-button" title="Смени роля" aria-label={`Смени ролята на ${user.email}`} disabled={busy} onClick={() => { setError(''); setRoleChange({ user, role: user.role }) }}><UserRoundCog size={16} /></button></div></td>
           <td><span className={`status-badge ${user.active ? 'good' : 'inactive'}`}>{user.active ? 'Активен' : 'Неактивен'}</span></td>
           <td><span className={user.role === 'STUDENT' || user.subscription.active ? 'good' : ''}>{subscriptionLabel(user)}</span>{user.role !== 'STUDENT' && <small>{formatDate(user.subscription.paidUntil)}</small>}</td>
           <td><div className="row-actions">
@@ -141,6 +154,18 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
       {!loading && !audit.length && <tr><td colSpan={4} className="empty-cell">Няма записани промени.</td></tr>}
     </tbody></table></div>}
 
+    {roleChange && <AdminDialog title="Смяна на роля" busy={busy} onClose={() => { setRoleChange(null); setError('') }}>
+      <form className="user-form" onSubmit={saveRole}>
+        <p className="role-change-account"><strong>{roleChange.user.name}</strong><span>{roleChange.user.email}</span><span>Текуща роля: {roleLabels[roleChange.user.role]}</span></p>
+        <label>Нова роля<select data-initial-focus aria-label="Нова роля" disabled={busy} value={roleChange.role} onChange={event => setRoleChange({ ...roleChange, role: event.target.value as Role })}>
+          {Object.entries(roleLabels).map(([value, label]) => <option key={value} value={value}>{value === 'TEACHER' ? 'Учител / асистент' : label}</option>)}
+        </select></label>
+        <p className="muted">{roleChange.user.id === auth.user.id ? 'Променяте собствената си роля и ще бъдете изведени от профила.' : 'При промяна активните сесии на потребителя ще бъдат прекратени.'}</p>
+        {error && <p className="error" role="alert">{error}</p>}
+        <div className="dialog-actions"><button type="button" disabled={busy} onClick={() => { setRoleChange(null); setError('') }}>Отказ</button><button type="submit" className="primary command-button" disabled={busy || roleChange.role === roleChange.user.role && !roleChange.user.roleSelectionRequired}><Save size={17} /> {busy ? 'Запазване...' : 'Запази'}</button></div>
+      </form>
+    </AdminDialog>}
+
     {editing && <AdminDialog title={editing.id === null ? 'Нов потребител' : 'Редакция на профил'} busy={busy} onClose={() => { setEditing(null); setError('') }}>
       <form className="user-form" onSubmit={saveUser}>
         <label>Име<input required maxLength={120} value={editing.value.name} onChange={event => setEditing({ ...editing, value: { ...editing.value, name: event.target.value } })} /></label>
@@ -174,7 +199,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
 
 function AdminDialog({ title, children, busy, onClose }: { title: string; children: ReactNode; busy: boolean; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null)
-  useEffect(() => { const dialog = ref.current; dialog?.showModal(); return () => dialog?.close() }, [])
+  useEffect(() => { const dialog = ref.current; dialog?.showModal(); dialog?.querySelector<HTMLElement>('[data-initial-focus]')?.focus(); return () => dialog?.close() }, [])
   return <dialog ref={ref} className="delete-dialog admin-dialog" aria-label={title} onCancel={event => { event.preventDefault(); if (!busy) onClose() }}>
     <div className="dialog-heading"><h2>{title}</h2><button className="icon-button" title="Затвори" aria-label="Затвори прозореца" disabled={busy} onClick={onClose}><X size={18} /></button></div>
     {children}
