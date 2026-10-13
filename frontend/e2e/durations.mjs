@@ -40,7 +40,10 @@ try {
         return respond(assessment)
       }
       if (method === 'POST' && path === `/api/v1/tests/${assessment.id}/publish`) return respond(assessment)
-      if (method === 'POST' && path === `/api/v1/assignments/${assignment.id}/code/rotate`) return respond({ code: 'ABCDEFGH' })
+      if (method === 'POST' && path === `/api/v1/assignments/${assignment.id}/code/rotate`) {
+        assignment.access_code = 'ABCDEFGH'
+        return respond({ code: assignment.access_code })
+      }
       if (method === 'POST' && path === `/api/v1/assignments/${assignment.id}/attempts`) {
         const body = request.postDataJSON()
         if (body.code !== 'ABCDEFGH') return route.fulfill({ status: 400, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Невалиден или отменен код.' }) })
@@ -92,9 +95,10 @@ try {
   await page.getByRole('button', { name: 'Възлагания', exact: true }).click()
   await page.getByRole('combobox', { name: 'Тест', exact: true }).click()
   await page.getByRole('listbox', { name: 'Тестове за възлагане', exact: true }).getByText('8 мин 10 сек', { exact: false }).waitFor()
-  await page.getByRole('button', { name: 'Нов код', exact: true }).click()
-  await page.locator('.ws-code-details').getByText(`${assignment.title} · Възлагане №${assignment.id}`, { exact: true }).waitFor()
-  assert.equal(await page.locator('.ws-code output').innerText(), 'ABCDEFGH')
+  const assignmentTable = page.getByRole('table', { name: 'Възлагания', exact: true })
+  await assignmentTable.getByRole('button', { name: 'Генерирай код', exact: true }).click()
+  await assignmentTable.getByText('ABCDEFGH', { exact: true }).waitFor()
+  assert.equal(await assignmentTable.locator('output').innerText(), 'ABCDEFGH')
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   await page.screenshot({ path: new URL('access-code-320.png', artifacts).pathname, fullPage: true })
   await page.context().close()

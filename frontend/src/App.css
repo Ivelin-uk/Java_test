@@ -377,6 +377,24 @@ button:disabled {
   gap: 12px;
 }
 
+.google-auth-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 40px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  background: #fff;
+  color: #1f1f1f;
+  border-color: #747775;
+}
+
+.google-auth-button img {
+  flex: 0 0 20px;
+}
+
 .segmented {
   display: grid;
   grid-template-columns: 1fr 1fr;

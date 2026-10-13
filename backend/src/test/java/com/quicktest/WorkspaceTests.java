@@ -452,6 +452,50 @@ class WorkspaceTests {
         assertEquals(2,number(row,"recipients"));
         assertTrue(organizations.groups(teaching).stream().noneMatch(value->number(value,"id")==group));
     }
+    @Test void assignmentCodesPersistThroughRotationAndRevocation() {
+        assertEquals(code,assignments.list(teaching).getFirst().get("access_code"));
+        String rotated=string(assignments.rotate(teaching,assignment),"code");
+        assertNotEquals(code,rotated);
+        assertEquals(rotated,assignments.list(teaching).getFirst().get("access_code"));
+        assertEquals(assignments.codeHash(org,assignment,rotated),db.one("SELECT code_hash FROM exam_assignments WHERE id=?",assignment).get("code_hash"));
+        assertThrows(WorkspaceError.class,()->start(startRequest()));
+        assignments.revoke(teaching,assignment);
+        assertNull(assignments.list(teaching).getFirst().get("access_code"));
+        var revoked=db.one("SELECT access_code,code_hash FROM exam_assignments WHERE id=?",assignment);
+        assertNull(revoked.get("access_code"));assertNull(revoked.get("code_hash"));
+        code=rotated;
+        assertThrows(WorkspaceError.class,()->start(startRequest()));
+        code=string(assignments.rotate(teaching,assignment),"code");
+        assertEquals("in_progress",string(start(startRequest()),"status"));
+    }
+    @Test void legacyAssignmentCodesStayValidUntilExplicitlyRegenerated() {
+        db.update("UPDATE exam_assignments SET access_code=NULL WHERE id=?",assignment);
+        assertNull(assignments.list(teaching).getFirst().get("access_code"));
+        assertEquals(assignments.codeHash(org,assignment,code),db.one("SELECT code_hash FROM exam_assignments WHERE id=?",assignment).get("code_hash"));
+        assertEquals("in_progress",string(start(startRequest()),"status"));
+        String rotated=string(assignments.rotate(teaching,assignment),"code");
+        assertEquals(rotated,assignments.list(teaching).getFirst().get("access_code"));
+    }
+    @Test void assignmentCodesAreOnlyVisibleToAuthorizedTeachers() throws Exception {
+        var colleague=user(Role.TEACHER);
+        db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,colleague.getId(),"[\"TEACHER\"]",now);
+        var scope=new OrgAccess.Scope(org,colleague.getId(),Set.of("TEACHER"),true);
+        assertTrue(assignments.list(scope).isEmpty());
+        assertThrows(WorkspaceError.class,()->assignments.rotate(scope,assignment));
+        assignments.shareTeacher(teaching,assignment,colleague.getId(),true);
+        assertEquals(code,assignments.list(scope).getFirst().get("access_code"));
+        assignments.shareTeacher(teaching,assignment,colleague.getId(),false);
+        assertTrue(assignments.list(scope).isEmpty());
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        for(int request=0;request<2;request++) mvc.perform(get("/api/v1/assignments").header("Authorization",bearer)).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].access_code").value(code)).andExpect(jsonPath("$[*].code_hash").isEmpty());
+        mvc.perform(get("/api/v1/assignments").header("Authorization",authorization)).andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].access_code").isEmpty()).andExpect(jsonPath("$[*].code_hash").isEmpty());
+        mvc.perform(get("/api/v1/assignments/"+assignment+"/preflight").header("Authorization",authorization)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.access_code").doesNotExist());
+        mvc.perform(post("/api/v1/assignments/"+assignment+"/code/rotate").header("Authorization",authorization)).andExpect(status().isForbidden());
+        assertFalse(db.json(controls.export(teaching)).contains("access_code"));
+    }
     @Test void assignmentAudienceIsOnlyVisibleToAuthorizedTeachers() throws Exception {
         long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Private audience group","","Java")),"id");
         organizations.addStudent(teaching,group,student);

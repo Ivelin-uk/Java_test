@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, RotateCw, Ban, Activity, Copy, Mail, UserPlus, Trash2, Users, UserRound, Search } from 'lucide-react'
+import { Plus, RotateCw, Ban, Activity, Copy, Mail, KeyRound, UserPlus, Trash2, Users, UserRound, Search } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
 import type { Assessment, Assignment, Group, Member, Version } from './types'
@@ -42,7 +42,6 @@ export function AssignmentsPanel({ api, userId }: { api: WorkspaceApi; userId: n
   const [shuffleQ, setShuffleQ] = useState(false)
   const [shuffleA, setShuffleA] = useState(false)
   const [afterDeadline, setAfterDeadline] = useState(true)
-  const [code, setCode] = useState(''), [codeAssignment, setCodeAssignment] = useState<number | null>(null)
   const [monitor, setMonitor] = useState<number | null>(null)
   const [revokingCode, setRevokingCode] = useState<Assignment | null>(null)
   const [deletingAssignment, setDeletingAssignment] = useState<Assignment | null>(null)
@@ -61,8 +60,7 @@ export function AssignmentsPanel({ api, userId }: { api: WorkspaceApi; userId: n
     if (!groupIds.length) return invalid('Изберете поне една група.')
     setFormError(null)
     await action.run(async () => {
-      const value = await api.post<{ id: number; code: string }>('/assignments', { versionId: version, groupIds, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(), maxAttempts: attempts, shuffleQuestions: shuffleQ, shuffleOptions: shuffleA, answersAfterDeadline: afterDeadline })
-      setCode(value.code); setCodeAssignment(value.id)
+      await api.post('/assignments', { versionId: version, groupIds, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(), maxAttempts: attempts, shuffleQuestions: shuffleQ, shuffleOptions: shuffleA, answersAfterDeadline: afterDeadline })
       await assignments.reload()
     }, 'Възлагането е създадено.')
   }
@@ -74,19 +72,33 @@ export function AssignmentsPanel({ api, userId }: { api: WorkspaceApi; userId: n
       <div className="ws-actions"><label className="ws-check"><input type="checkbox" checked={shuffleQ} onChange={e => setShuffleQ(e.target.checked)} /> Разбъркай въпросите</label><label className="ws-check"><input type="checkbox" checked={shuffleA} onChange={e => setShuffleA(e.target.checked)} /> Разбъркай опциите</label><label className="ws-check"><input type="checkbox" checked={afterDeadline} onChange={e => setAfterDeadline(e.target.checked)} /> Верни отговори след срока</label></div><button className="primary command-button" disabled={action.busy || loadingVersion || tests.loading || groups.loading}><Plus size={17} /> Възложи</button>
       </fieldset>
     </form>
-    {code && <div className="ws-code"><div className="ws-code-details"><strong>Код за достъп</strong><span>{assignments.data.find(item => item.id === codeAssignment)?.title} · Възлагане №{codeAssignment}</span></div><output>{code}</output><button className="icon-button" title="Копирай кода" disabled={action.busy} onClick={() => void action.run(() => navigator.clipboard.writeText(code), 'Кодът е копиран.')}><Copy size={18} /></button>{codeAssignment && <><button disabled={action.busy} onClick={() => void action.run(() => api.post(`/assignments/${codeAssignment}/code/send`, { code, channel: 'email' }), 'Известията са добавени в опашката.')}><Mail size={17} /> Изпрати по имейл</button></>}</div>}
-    <div className="ws-table-wrap"><table className="ws-table" aria-label="Възлагания"><thead><tr><th>Тест</th><th>Начало</th><th>Краен срок</th><th>Възложено на</th><th>Получатели</th><th>Действия</th></tr></thead><tbody>{assignments.data.map(a => <tr key={a.id}><td>{a.title}</td><td>{date(a.starts_at)}</td><td>{date(a.ends_at)}</td><td><AssignmentAudience assignment={a} /></td><td>{a.recipients}</td><td><div className="ws-actions ws-assignment-actions"><button className="icon-button" title="Наблюдение" onClick={() => setMonitor(a.id)}><Activity size={17} /></button><button className="icon-button" title="Нов код" disabled={action.busy} onClick={() => void action.run(async () => { const value = await api.post<{ code: string }>(`/assignments/${a.id}/code/rotate`); setCode(value.code); setCodeAssignment(a.id) })}><RotateCw size={17} /></button><button className="icon-button danger" title="Отмени кода" disabled={action.busy} onClick={() => setRevokingCode(a)}><Ban size={17} /></button>{a.teacher_id === userId && <button className="icon-button danger" title="Изтрий възлагането" aria-label="Изтрий възлагането" disabled={action.busy} onClick={() => setDeletingAssignment(a)}><Trash2 size={17} /></button>}</div></td></tr>)}</tbody></table></div>{!assignments.data.length && <Empty />}{monitor && <Monitoring key={monitor} api={api} assignment={monitor} endsAt={assignments.data.find(item => item.id === monitor)?.ends_at ?? ''} groupAssignment={assignments.data.some(item => item.id === monitor && !!item.recipient_groups?.length)} recipientsChanged={assignments.reload} />}
+    <div className="ws-table-wrap"><table className="ws-table" aria-label="Възлагания">
+      <thead><tr><th>Тест</th><th>Начало</th><th>Краен срок</th><th>Възложено на</th><th>Получатели</th><th>Код за достъп</th><th>Действия</th></tr></thead>
+      <tbody>{assignments.data.map(a => <tr key={a.id}>
+        <td>{a.title}</td><td>{date(a.starts_at)}</td><td>{date(a.ends_at)}</td><td><AssignmentAudience assignment={a} /></td><td>{a.recipients}</td>
+        <td><div className="ws-assignment-code">
+          <output aria-label={`Код за възлагане №${a.id}`}>{a.access_code || '-'}</output>
+          <button className="icon-button" title={a.access_code ? 'Генерирай нов код' : 'Генерирай код'} aria-label={a.access_code ? 'Генерирай нов код' : 'Генерирай код'} disabled={action.busy} onClick={() => void action.run(async () => {
+            const value = await api.post<{ code: string }>(`/assignments/${a.id}/code/rotate`)
+            assignments.setData(items => items.map(item => item.id === a.id ? { ...item, access_code: value.code } : item))
+            await assignments.reload()
+          }, 'Кодът е генериран.')}><KeyRound size={17} /></button>
+          <button className="icon-button" title="Копирай кода" aria-label="Копирай кода" disabled={action.busy || !a.access_code} onClick={() => void action.run(() => navigator.clipboard.writeText(a.access_code!), 'Кодът е копиран.')}><Copy size={17} /></button>
+          <button className="icon-button" title="Изпрати кода по имейл" aria-label="Изпрати кода по имейл" disabled={action.busy || !a.access_code} onClick={() => void action.run(() => api.post(`/assignments/${a.id}/code/send`, { code: a.access_code, channel: 'email' }), 'Известията са добавени в опашката.')}><Mail size={17} /></button>
+        </div></td>
+        <td><div className="ws-actions ws-assignment-actions"><button className="icon-button" title="Наблюдение" onClick={() => setMonitor(a.id)}><Activity size={17} /></button><button className="icon-button danger" title="Отмени кода" disabled={action.busy} onClick={() => setRevokingCode(a)}><Ban size={17} /></button>{a.teacher_id === userId && <button className="icon-button danger" title="Изтрий възлагането" aria-label="Изтрий възлагането" disabled={action.busy} onClick={() => setDeletingAssignment(a)}><Trash2 size={17} /></button>}</div></td>
+      </tr>)}</tbody>
+    </table></div>{!assignments.data.length && <Empty />}{monitor && <Monitoring key={monitor} api={api} assignment={monitor} endsAt={assignments.data.find(item => item.id === monitor)?.ends_at ?? ''} groupAssignment={assignments.data.some(item => item.id === monitor && !!item.recipient_groups?.length)} recipientsChanged={assignments.reload} />}
     {deletingAssignment && <DeleteConfirmationDialog title="Изтриване на възлагане" confirmLabel="Изтрий възлагането" description={<>Да изтрием ли възлагането на <strong>{deletingAssignment.title}</strong>? То ще бъде премахнато и за учениците, заедно с всички свързани опити и резултати. Активните опити ще бъдат прекратени. Самият тест остава в библиотеката. Действието е необратимо.</>} onCancel={() => setDeletingAssignment(null)} onConfirm={async () => {
       const id = deletingAssignment.id
       await api.remove(`/assignments/${id}`)
       assignments.setData(items => items.filter(item => item.id !== id))
-      if (codeAssignment === id) { setCode(''); setCodeAssignment(null) }
       if (monitor === id) setMonitor(null)
       await action.run(assignments.reload, 'Възлагането е изтрито.')
     }} />}
     {revokingCode && <DeleteConfirmationDialog title="Отмяна на код за достъп" confirmLabel="Отмени кода" confirmIcon={Ban} description={<>Да отменим ли кода за <strong>{revokingCode.title}</strong>? Учениците няма да могат да започват нови опити с него.</>} onCancel={() => setRevokingCode(null)} onConfirm={async () => {
       await api.remove(`/assignments/${revokingCode.id}/code`)
-      if (codeAssignment === revokingCode.id) { setCode(''); setCodeAssignment(null) }
+      assignments.setData(items => items.map(item => item.id === revokingCode.id ? { ...item, access_code: null } : item))
       await assignments.reload()
     }} />}
   </section>

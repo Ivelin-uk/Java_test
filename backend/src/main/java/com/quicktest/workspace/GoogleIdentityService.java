@@ -28,7 +28,9 @@ public class GoogleIdentityService {
         return Map.of("user",number(challenge,"user_id"),"sessionHash",string(challenge,"auth_session_hash"));
     }
     @Transactional
-    public String complete(OidcUser oidc,Long linkUser,String sourceSessionHash) {
+    public String complete(OidcUser oidc,Long linkUser,String sourceSessionHash,Role registrationRole) {
+        Role role=registrationRole==null?Role.STUDENT:registrationRole;
+        if(role!=Role.STUDENT && role!=Role.TEACHER) throw WorkspaceError.validation("Изберете ученик или учител.");
         String subject=oidc.getSubject();
         if(subject==null || subject.isBlank() || subject.length()>190 || oidc.getIdToken().getIssuer()==null || !oidc.getIdToken().getIssuer().toString().equals("https://accounts.google.com")) throw WorkspaceError.forbidden();
         var external=db.optional("SELECT user_id FROM external_identities WHERE provider='google' AND subject=? FOR UPDATE",subject);
@@ -41,10 +43,11 @@ public class GoogleIdentityService {
             user=profile.getId();
         } else if(external.isPresent()) user=number(external.get(),"user_id");
         else {
-            if(!Boolean.TRUE.equals(oidc.getEmailVerified()) || oidc.getEmail()==null || oidc.getEmail().length()>190) throw WorkspaceError.forbidden();
+            if(!Boolean.TRUE.equals(oidc.getEmailVerified()) || oidc.getEmail()==null || oidc.getEmail().isBlank() || oidc.getEmail().length()>190) throw WorkspaceError.forbidden();
             String email=oidc.getEmail().strip().toLowerCase(Locale.ROOT);
             if(users.existsByEmailIgnoreCase(email)) throw WorkspaceError.conflict("Влезте с парола и свържете Google от профила си.");
-            var profile=new AppUser();profile.setEmail(email);profile.setName(Objects.toString(oidc.getFullName(),"Google user").substring(0,Math.min(120,Objects.toString(oidc.getFullName(),"Google user").length())));profile.setPasswordHash(passwords.encode(crypto.token()));profile.setEmailVerifiedAt(clock.instant());users.saveAndFlush(profile);identity.initialize(profile);user=profile.getId();
+            String name=oidc.getFullName();if(name==null || name.isBlank()) name=email;
+            var profile=new AppUser();profile.setEmail(email);profile.setName(name.substring(0,Math.min(120,name.length())));profile.setRole(role);profile.setPasswordHash(passwords.encode(crypto.token()));profile.setEmailVerifiedAt(clock.instant());users.saveAndFlush(profile);identity.initialize(profile);user=profile.getId();
         }
         if(external.isEmpty()) {long linked=db.insert("INSERT INTO external_identities(user_id,provider,subject,linked_at) VALUES(?,\'google\',?,?)",user,subject,clock.instant());audit.write(null,user,"identity.google_linked",linked,Map.of("provider","google"));}
         if(!users.findById(user).orElseThrow().isActive()) throw WorkspaceError.forbidden();

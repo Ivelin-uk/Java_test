@@ -8,7 +8,7 @@ const auth = { token: 'deletion-confirmation-fixture', user: { id: 101, name: 'C
 const question = text => ({ type: 'SINGLE_CHOICE', text, difficulty: 'MEDIUM', points: 1, timeSeconds: 60, options: [{ text: 'First option', correct: true }, { text: 'Second option', correct: false }, { text: 'Third option', correct: false }], acceptedAnswers: [], caseInsensitive: true, collapseWhitespace: true, criteria: '', explanation: '' })
 const definition = { title: 'Confirmation test', description: '', subject: 'Java', level: '12', instructions: '', language: 'bg', gradingScale: 'bulgarian', passThreshold: 50, questions: [question('First question'), question('Second question')] }
 const test = { id: 201, title: definition.title, owner_id: auth.user.id, status: 'published', shared: false, definition_json: JSON.stringify(definition), updated_at: new Date().toISOString(), question_count: 2, total_time_seconds: 120 }
-const assignment = { id: 301, teacher_id: auth.user.id, title: definition.title, starts_at: new Date().toISOString(), ends_at: new Date(Date.now() + 3600000).toISOString(), recipients: 1, max_attempts: 1 }
+const assignment = { id: 301, teacher_id: auth.user.id, title: definition.title, starts_at: new Date().toISOString(), ends_at: new Date(Date.now() + 3600000).toISOString(), recipients: 1, max_attempts: 1, access_code: 'ORIGINAL' }
 const colleague = { teacher_id: 102, name: 'Shared Teacher' }
 const student = { id: 103, name: 'Confirmation Student', email: 'confirmation-student@example.test' }
 const attempt = { id: 501, assignment_id: assignment.id, title: definition.title, student_name: student.name, attempt_number: 1, status: 'pending_review', submitted_at: new Date().toISOString() }
@@ -52,10 +52,11 @@ try {
       if (Object.hasOwn(data, path)) return respond(data[path])
     } else {
       mutations.push({ method, path, body: request.postDataJSON() })
-      if (method === 'DELETE' && path === `/api/v1/assignments/${assignment.id}/code`) codeActive = false
+      if (method === 'DELETE' && path === `/api/v1/assignments/${assignment.id}/code`) { codeActive = false; assignment.access_code = null }
       else if (method === 'POST' && path === `/api/v1/assignments/${assignment.id}/code/rotate`) {
         codeActive = true
-        return respond({ code: 'DELETE2345' })
+        assignment.access_code = 'DEL23456'
+        return respond({ code: assignment.access_code })
       }
       else if (method === 'DELETE' && path === `/api/v1/assignments/${assignment.id}`) {
         if (rejectDeletion) return route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Временно недостъпен сървър. Опитайте отново.' }) })
@@ -161,15 +162,15 @@ try {
   assignment.teacher_id = auth.user.id
   await page.reload()
   await page.getByRole('button', { name: 'Възлагания', exact: true }).click()
-  await page.getByRole('button', { name: 'Нов код', exact: true }).click()
-  await page.locator('.ws-code output').getByText('DELETE2345', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Генерирай код', exact: true }).click()
+  await page.locator('.ws-assignment-code output').getByText('DEL23456', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Наблюдение', exact: true }).click()
   await page.locator('.ws-monitor').waitFor()
   const remove = page.getByRole('button', { name: 'Изтрий възлагането', exact: true })
   const unchanged = async () => {
     assert.equal(assignmentVisible, true)
     assert.equal(await page.locator('.ws-section > .ws-table-wrap tbody tr').count(), 1)
-    assert.equal(await page.locator('.ws-code output').textContent(), 'DELETE2345')
+    assert.equal(await page.locator('.ws-assignment-code output').textContent(), 'DEL23456')
     assert.equal(await page.locator('.ws-monitor').count(), 1)
   }
   const removeDialog = await cancellation(remove, 'Изтриване на възлагане', unchanged)
@@ -200,7 +201,7 @@ try {
   await removeDialog.waitFor({ state: 'detached' })
   assert.equal(assignmentVisible, false)
   assert.equal(await page.locator('.ws-section > .ws-table-wrap tbody tr').count(), 0)
-  assert.equal(await page.locator('.ws-code').count(), 0)
+  assert.equal(await page.locator('.ws-assignment-code').count(), 0)
   assert.equal(await page.locator('.ws-monitor').count(), 0)
   await page.getByRole('button', { name: 'Тестове', exact: true }).click()
   await page.getByRole('button', { name: test.title, exact: true }).waitFor()

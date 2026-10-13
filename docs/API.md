@@ -16,7 +16,7 @@ Send `Authorization: Bearer <token>` on authenticated requests. No organization 
 | POST `/api/auth/logout`, `/logout-all` | Revoke current / all bearer sessions |
 | POST `/api/auth/password` | `{currentPassword,newPassword}` |
 | POST `/api/auth/recover`, `/reset` | `{email}` / `{token,password}`; single-use reset, all old sessions revoked |
-| GET `/api/auth/google/config`, `/redirect` | Provider availability / standard OIDC redirect |
+| GET `/api/auth/google/config`, `/redirect` | Provider availability / standard OIDC redirect; optional `role=STUDENT\|TEACHER` for new accounts, defaults to student; optional single-use `link` ticket |
 | GET `/login/oauth2/code/google` | Framework callback with state/nonce/issuer validation |
 | POST `/api/auth/google/exchange` | `{token}`; short-lived one-use frontend handoff |
 | POST `/api/v1/profile/google/link` | `{password}`; authenticated reauthorization, returns redirect URL |
@@ -63,14 +63,14 @@ Assessment definition: `{title,description,subject,level,instructions,language,g
 | POST `/ai/test-generations` | `{requestKey,topic,subject,level,language,questionCount,difficulty,sourceText,questionTypes?,difficultyCounts?}`; returns persisted job |
 | GET `/ai/test-generations/{id}` | Own job: queued/running/completed/failed, structured result or safe error |
 | POST `/ai/test-generations/{id}/retry` | Failed job only, max 3 processing attempts; reserves quota again |
-| GET/POST `/assignments` | Own teacher/recipient projections / `{versionId,groupIds,startsAt,endsAt,maxAttempts,shuffleQuestions,shuffleOptions,answersAfterDeadline}`. New assignments require nonempty groups with active students; individual or mixed requests are rejected with 400. Teacher lists include `recipient_groups:[{id,name}]`, historical `individual_recipients:[{id,name}]`, and the active `recipients` count. Group names remain even when all recipients are removed. Student lists omit removed assignments and do not expose audience details. |
+| GET/POST `/assignments` | Own teacher/recipient projections / `{versionId,groupIds,startsAt,endsAt,maxAttempts,shuffleQuestions,shuffleOptions,answersAfterDeadline}`. New assignments require nonempty groups with active students; individual or mixed requests are rejected with 400. Teacher lists include `recipient_groups:[{id,name}]`, historical `individual_recipients:[{id,name}]`, the active `recipients` count, and `access_code` (null for revoked or legacy hash-only codes). Codes remain visible after reload to the owner and explicitly shared teachers. Group names remain even when all recipients are removed. Student lists omit removed assignments and do not expose audience details or access codes. |
 | DELETE `/assignments/{id}` | Assignment owner only. Permanently removes recipients, shared-teacher access, code-delivery records, active/completed attempts, answer/event snapshots, result revisions and their notifications. The source assessment and published version remain. Removed resources return 404. A result notification currently being delivered returns 409; retry after delivery completes. |
 | GET `/assignments/{id}/members` | Authorized teacher only; active current members of the assignment's source groups, deduplicated, as `[{student_id,name,email}]`. Includes later group members but never unrelated directory students. Deleted groups contribute no eligible members. |
 | POST `/assignments/{id}/recipients` | `{userId}`; assign/reassign one active member of a source group. Restore access and raise that student's attempt limit to at least `usedAttempts + 1` when exhausted; preserve history, results, accommodations and assignment/code. Repeated requests with no intervening attempt do not add further attempts. An unfinished attempt returns 409; nonmembers return 403; an expired window returns 410. New group members receive a group-source snapshot, not an individual assignment. |
 | DELETE `/assignments/{id}/recipients/{student}` | Authorized teacher only; remove this student's access, hide the assignment from their list, and void only unfinished attempts. Keep recipient/group snapshots, answers, completed attempts and published results. Repeated removals have no extra effect. The group membership itself is unchanged. |
 | GET `/assignments/{id}/preflight` | Recipient-only instructions/count/time/window, no scoring keys |
-| POST `/assignments/{id}/code/rotate` | New random code returned once; old code invalidated |
-| DELETE `/assignments/{id}/code` | Revoke code |
+| POST `/assignments/{id}/code/rotate` | New random code returned and saved for the teacher list; old code invalidated |
+| DELETE `/assignments/{id}/code` | Revoke code and clear its display value |
 | POST `/assignments/{id}/code/send` | `{code,channel:email}`; current code must match hash; once per generation/recipient/channel |
 | GET `/assignments/{id}/monitoring` | Authorized teacher sees recipients, attempt states and accommodations |
 | GET `/assignments/{id}/teachers` | Explicit shared assignment teachers |

@@ -35,10 +35,10 @@ try {
       if (failNext) { failNext = false; return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Temporary assignment failure.' }) }) }
       await postGate
       const id = 601 + assignments.length
-      assignments.push({ id, teacher_id: auth.user.id, title: test.title, starts_at: body.startsAt, ends_at: body.endsAt, recipients: 2, max_attempts: body.maxAttempts,
+      assignments.push({ id, teacher_id: auth.user.id, title: test.title, starts_at: body.startsAt, ends_at: body.endsAt, recipients: 2, max_attempts: body.maxAttempts, access_code: 'TEST2345',
         recipient_groups: groups.filter(group => body.groupIds.includes(group.id)).map(({ id, name }) => ({ id, name })), individual_recipients: [],
       })
-      return respond({ id, code: 'TEST-CODE' })
+      return respond({ id, code: 'TEST2345' })
     }
     errors.push(`Unexpected API: ${method} ${path}`)
     return route.fulfill({ status: 404 })
@@ -97,9 +97,11 @@ try {
   releasePost()
   await page.getByText('Възлагането е създадено.', { exact: true }).waitFor()
   await rows.first().getByText(`Група: ${groups[0].name}`, { exact: true }).waitFor()
+  await rows.first().getByText('TEST2345', { exact: true }).waitFor()
   await search.fill('АЛГЕБРА'); await picker.getByRole('checkbox', { name: groups[1].name, exact: true }).check()
   await assign.click()
   await rows.nth(1).getByText(`Групи: ${groups[0].name}, ${groups[1].name}`, { exact: true }).waitFor()
+  await rows.nth(1).getByText('TEST2345', { exact: true }).waitFor()
   assert.deepEqual(mutations.at(-1).groupIds, [groups[0].id, groups[1].id])
   await picker.getByRole('button', { name: 'Изчисти търсенето: Групи', exact: true }).click()
   assert.equal(await search.evaluate(element => element === document.activeElement), true)

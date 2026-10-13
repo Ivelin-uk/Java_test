@@ -27,7 +27,7 @@ public class AssignmentService {
         return db.rows("SELECT a.id,a.starts_at,a.ends_at,r.max_attempts,r.canceled,r.fullscreen_exempt,r.time_multiplier,v.title FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id JOIN assignment_recipients r ON r.organization_id=a.organization_id AND r.assignment_id=a.id WHERE (a.organization_id=? OR ?) AND r.student_id=? AND r.canceled=FALSE ORDER BY a.ends_at DESC",scope.organizationId(),scope.platform(),scope.userId());
     }
     private List<Map<String,Object>> teacherList(OrgAccess.Scope scope) {
-        var assignments=db.rows("SELECT a.id,a.version_id,a.teacher_id,a.starts_at,a.ends_at,a.max_attempts,v.title,(SELECT COUNT(*) FROM assignment_recipients r WHERE r.organization_id=a.organization_id AND r.assignment_id=a.id AND r.canceled=FALSE) recipients FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE (a.organization_id=? OR ?) AND (a.teacher_id=? OR EXISTS (SELECT 1 FROM assignment_teachers t WHERE t.organization_id=a.organization_id AND t.assignment_id=a.id AND t.teacher_id=?)) ORDER BY a.id DESC",scope.organizationId(),scope.platform(),scope.userId(),scope.userId());
+        var assignments=db.rows("SELECT a.id,a.version_id,a.teacher_id,a.starts_at,a.ends_at,a.max_attempts,a.access_code,v.title,(SELECT COUNT(*) FROM assignment_recipients r WHERE r.organization_id=a.organization_id AND r.assignment_id=a.id AND r.canceled=FALSE) recipients FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE (a.organization_id=? OR ?) AND (a.teacher_id=? OR EXISTS (SELECT 1 FROM assignment_teachers t WHERE t.organization_id=a.organization_id AND t.assignment_id=a.id AND t.teacher_id=?)) ORDER BY a.id DESC",scope.organizationId(),scope.platform(),scope.userId(),scope.userId());
         if(assignments.isEmpty()) return assignments;
         var ids=assignments.stream().map(a->number(a,"id")).toList();
         String placeholders=String.join(",",Collections.nCopies(ids.size(),"?"));
@@ -75,7 +75,7 @@ public class AssignmentService {
         if(recipients.isEmpty()) throw WorkspaceError.validation("Изберете поне един получател.");
         long id=db.insert("INSERT INTO exam_assignments(organization_id,version_id,teacher_id,starts_at,ends_at,max_attempts,shuffle_questions,shuffle_options,answers_after_deadline,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",scope.organizationId(),request.versionId(),scope.userId(),request.startsAt(),request.endsAt(),request.maxAttempts(),request.shuffleQuestions(),request.shuffleOptions(),request.answersAfterDeadline(),clock.instant());
         for(var recipient:recipients.entrySet()) db.update("INSERT INTO assignment_recipients(organization_id,assignment_id,student_id,source_groups_json,individually_assigned,max_attempts) VALUES(?,?,?,?,FALSE,?)",scope.organizationId(),id,recipient.getKey(),db.json(recipient.getValue()),request.maxAttempts());
-        String code=crypto.code();db.update("UPDATE exam_assignments SET code_hash=? WHERE id=? AND organization_id=?",codeHash(scope.organizationId(),id,code),id,scope.organizationId());
+        String code=crypto.code();db.update("UPDATE exam_assignments SET code_hash=?,access_code=? WHERE id=? AND organization_id=?",codeHash(scope.organizationId(),id,code),code,id,scope.organizationId());
         audit.write(scope.organizationId(),scope.userId(),"assignment.created",id,Map.of("recipients",recipients.size(),"version",request.versionId()));
         return Map.of("id",id,"code",code,"recipients",recipients.size());
     }
@@ -83,13 +83,13 @@ public class AssignmentService {
     @Transactional
     public Map<String,Object> rotate(OrgAccess.Scope scope,long id) {
         teacherAccess(scope,id,true);String code=crypto.code();
-        db.update("UPDATE exam_assignments SET code_hash=?,code_generation=code_generation+1 WHERE organization_id=? AND id=?",codeHash(scope.organizationId(),id,code),scope.organizationId(),id);
+        db.update("UPDATE exam_assignments SET code_hash=?,access_code=?,code_generation=code_generation+1 WHERE organization_id=? AND id=?",codeHash(scope.organizationId(),id,code),code,scope.organizationId(),id);
         audit.write(scope.organizationId(),scope.userId(),"assignment.code_rotated",id,Map.of());
         return Map.of("code",code);
     }
     @Transactional
     public void revoke(OrgAccess.Scope scope,long id) {
-        teacherAccess(scope,id,true);db.update("UPDATE exam_assignments SET code_hash=NULL WHERE organization_id=? AND id=?",scope.organizationId(),id);
+        teacherAccess(scope,id,true);db.update("UPDATE exam_assignments SET code_hash=NULL,access_code=NULL WHERE organization_id=? AND id=?",scope.organizationId(),id);
         audit.write(scope.organizationId(),scope.userId(),"assignment.code_revoked",id,Map.of());
     }
     @Transactional

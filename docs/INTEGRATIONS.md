@@ -2,7 +2,7 @@
 
 ## Safety Defaults
 
-No live Stripe keys are accepted. Demo seeds never send external student mail. The SMTP adapter permits only explicitly configured recipient domains; the defaults are `example.test`, `quicktest.local`, `examai.local`. Provider credentials are server-only environment variables, never `VITE_*` values. Local fixtures and fake AI are not evidence of external-provider verification.
+No live Stripe keys are accepted. Demo seeds never send external student mail. The SMTP adapter permits only explicitly configured recipient domains; the defaults are `example.test`, `quicktest.local`, `examai.local`. Provider credentials stay in server environment variables or ignored local configuration, never `VITE_*` values. Local fixtures and fake AI are not evidence of external-provider verification.
 
 ## Google OIDC
 
@@ -17,6 +17,10 @@ FRONTEND_URL=http://localhost:5173
 ```
 
 Authorized redirect URI: `http://localhost:8080/login/oauth2/code/google` (Compose: port `8082`). Frontend origin: port `5173` (Compose `5174`). The application uses Spring Security's standard OIDC authorization-code flow, session-bound state and nonce. OAuth state cookies are HttpOnly, SameSite=Lax; set `SECURE_COOKIES=true` with HTTPS. The ordinary API still requires Bearer authentication.
+
+For local development, run `bash scripts/configure-google.sh` after creating the Web application OAuth client. It prompts for Client ID and a hidden Client Secret, validates them, and atomically saves `.local/google.properties` with mode `600`. The backend imports the ignored file from either working directory; environment variables take precedence. Restart the backend after setup. A Gmail App Password is for SMTP only, not Google sign-in. The registration button uses the official [Google G asset and localized button text](https://developers.google.com/identity/branding-guidelines).
+
+Both login and registration offer Google. Registration passes `role=STUDENT` or `role=TEACHER` to `/api/auth/google/redirect`; the server validates and retains it in the OAuth session. New accounts use Google's verified email/name and the selected role, defaulting to student when no role is supplied. Existing identities keep their current role, including when linked from a local profile. Public Google registration cannot create an administrator. Local name/password fields are not submitted to Google. A single frontend handler exchanges the one-use handoff, including under React StrictMode, and removes it from the address bar before the exchange.
 
 Google identity is keyed by `(provider, subject)`. Matching a local email never merges an account. Linking starts from an authenticated profile, requires the local password again, a short-lived single-use link ticket bound to the original session, and Google authentication. A short-lived handoff in the URL fragment is exchanged once for an application session; Google tokens are not stored. Account deactivation and session revocation remain effective at callback time. A linked Google user can establish a local password through verified-email recovery.
 
@@ -54,6 +58,10 @@ Use actual IDs from your own demo database. Fixture ordering/signature-unit test
 
 ## SMTP And Mail Catcher
 
+For Gmail / Google Workspace, enable [2-Step Verification and create an App Password](https://support.google.com/accounts/answer/185833), then run `bash scripts/configure-gmail.sh` from the repository root. It prompts for the sender, hidden App Password and allowed recipient domains, writes `.local/mail.properties` atomically with mode `600`, and preserves the separate AI configuration. The backend imports this ignored file from either the repository or backend directory; environment variables take precedence. The setup uses [smtp.gmail.com on port 587 with STARTTLS](https://support.google.com/a/answer/176600), requires TLS, verifies the server identity and checks SMTP authentication at startup. Restart after configuration. `SMTP_TEST_CONNECTION=false` disables the startup connection check when explicitly needed.
+
+Use real, verified recipient addresses. `@quicktest.local` demo addresses cannot receive internet email. The generated email uses `FRONTEND_URL`; recipients on other devices need an address that resolves to this application from their network. Existing `sent`/`uncertain` records are not replayed when switching adapters. Local unit/integration tests disable local credential imports and real SMTP connections; a real Gmail delivery still needs the account credentials and an actual recipient.
+
 `MAIL_ADAPTER=local` uses an authenticated application mailbox and never connects to SMTP. For a real local SMTP test, run the Compose Mailpit service and use:
 
 ```dotenv
@@ -70,7 +78,7 @@ Compose already addresses Mailpit by its internal service name. Its web UI is ex
 
 Result revisions and unique outbox records commit together. The worker claims committed entries, sends outside its database transaction and saves the receipt. Verified pre-delivery failures receive controlled retries; timeout/unknown outcome becomes `uncertain`, never a blind automatic resend. Manual retry is limited to `failed`. A provider callback for delivered/bounced is not implemented, so the app does not claim those statuses without evidence. A mail failure never rolls back the grade.
 
-Verification, recovery and invitation links are single-use and expiring. Invites and access codes are hashed in their authoritative access tables; delivery payloads necessarily contain mail secrets and must be treated as private data, including backups. Do not enable local mailbox mode in production.
+Verification, recovery and invitation links are single-use and expiring. Invites and access-code checks use hashes. Assignments also store the current access code for display to authorized teachers; revocation clears both values. Display codes and delivery payloads must be treated as private data, including backups. Do not enable local mailbox mode in production.
 
 ## Workers And AI
 

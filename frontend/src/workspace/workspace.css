@@ -68,7 +68,11 @@
 .ws-attempt-status svg { flex-shrink: 0; }
 .ws-attempt-pending .ws-attempt-status { color: var(--warning); }
 .ws-attempt-finalized .ws-attempt-status { color: var(--success); }
-.ws-table-wrap > .ws-table[aria-label="Възлагания"] { min-width: 1040px; }
+.ws-table-wrap > .ws-table[aria-label="Възлагания"] { min-width: 1240px; }
+.ws-table[aria-label="Възлагания"] th:nth-child(6) { white-space: nowrap; }
+.ws-assignment-code { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ws-assignment-code output { width: 8ch; flex: 0 0 8ch; font: 700 15px ui-monospace, monospace; color: var(--success); }
+.ws-assignment-code .icon-button { width: 32px; height: 32px; min-height: 32px; flex: 0 0 32px; padding: 0; }
 .ws-assignment-audience { display: grid; gap: 6px; min-width: 180px; max-width: 320px; }
 .ws-assignment-audience > span { display: flex; align-items: flex-start; gap: 6px; }
 .ws-assignment-audience > span > span { min-width: 0; }
@@ -145,10 +149,6 @@
 .ws-recipient-option > span { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
 .ws-recipient-option small { color: var(--muted); font-size: 12px; }
 .ws-assignment-form > .ws-editor > .primary { justify-self: start; }
-.ws-code { display: flex; align-items: center; gap: 18px; padding: 18px; background: var(--success-bg); border: 1px solid var(--border); }
-.ws-code output { font-family: ui-monospace, monospace; font-size: 25px; font-weight: 700; }
-.ws-code-details { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
-.ws-code-details span { font-size: 13px; color: var(--muted); }
 .ws-summary { align-self: center; color: var(--muted); font-size: 13px; }
 .ws-monitor, .ws-publication { display: grid; gap: 18px; padding-top: 24px; border-top: 1px solid var(--border); }
 .ws-publication-dialog[open] { display: grid; gap: 16px; overflow-y: auto; }
@@ -204,7 +204,6 @@
  .ws-editor > .ws-question { padding: 16px; }
  .ws-test-settings { padding: 16px; }
  .ws-question-head select { max-width: 210px; }
- .ws-code { flex-wrap: wrap; }
  .exam-screen { padding: 16px; }
  .exam-header strong { flex-basis: 100%; }
  .exam-timer { flex-basis: 180px; font-size: 22px; }

@@ -39,12 +39,47 @@ class IntegrationAdapterTests {
     }
     @Test void googleMatchingEmailDoesNotMergeAndExplicitLinkRequiresReauthentication() {
         var user=user();String subject=UUID.randomUUID().toString();var oidc=oidc(subject,user.getEmail());
-        assertThrows(WorkspaceError.class,()->google.complete(oidc,null,null));assertEquals(0,db.count("SELECT COUNT(*) FROM external_identities WHERE subject=?",subject));
+        assertThrows(WorkspaceError.class,()->google.complete(oidc,null,null,Role.STUDENT));assertEquals(0,db.count("SELECT COUNT(*) FROM external_identities WHERE subject=?",subject));
         String authorization="Bearer "+auth.login(new AuthService.LoginRequest(user.getEmail(),"password123")).token();
         assertThrows(WorkspaceError.class,()->google.linkingTicket(user,"wrong",authorization));
         String ticket=google.linkingTicket(user,"password123",authorization);var linked=google.consumeLink(ticket);assertThrows(WorkspaceError.class,()->google.consumeLink(ticket));
-        String handoff=google.complete(oidc,number(linked,"user"),string(linked,"sessionHash"));var response=google.exchange(handoff);assertEquals(user.getId(),response.user().id());assertThrows(WorkspaceError.class,()->google.exchange(handoff));
-        var attacker=user();String attackerAuth="Bearer "+auth.login(new AuthService.LoginRequest(attacker.getEmail(),"password123")).token();var attackerTicket=google.consumeLink(google.linkingTicket(attacker,"password123",attackerAuth));assertThrows(WorkspaceError.class,()->google.complete(oidc,attacker.getId(),string(attackerTicket,"sessionHash")));
+        String handoff=google.complete(oidc,number(linked,"user"),string(linked,"sessionHash"),Role.TEACHER);var response=google.exchange(handoff);assertEquals(user.getId(),response.user().id());assertEquals("STUDENT",response.user().role());assertThrows(WorkspaceError.class,()->google.exchange(handoff));
+        var attacker=user();String attackerAuth="Bearer "+auth.login(new AuthService.LoginRequest(attacker.getEmail(),"password123")).token();var attackerTicket=google.consumeLink(google.linkingTicket(attacker,"password123",attackerAuth));assertThrows(WorkspaceError.class,()->google.complete(oidc,attacker.getId(),string(attackerTicket,"sessionHash"),Role.STUDENT));
+    }
+    @Test void googleRegistrationCreatesVerifiedProfilesWithSelectedRoleAndNoDuplicateOnLogin() {
+        for(Role role:List.of(Role.STUDENT,Role.TEACHER)) {
+            String subject=UUID.randomUUID().toString(),email="Google-"+UUID.randomUUID()+"@example.test";
+            var principal=oidc(subject,email);
+            var first=google.exchange(google.complete(principal,null,null,role));
+            assertEquals(role.name(),first.user().role());assertEquals(email.toLowerCase(Locale.ROOT),first.user().email());
+            var profile=users.findById(first.user().id()).orElseThrow();assertNotNull(profile.getEmailVerifiedAt());
+            assertNotNull(db.one("SELECT verified_at FROM notification_addresses WHERE user_id=?",profile.getId()).get("verified_at"));
+            var second=google.exchange(google.complete(principal,null,null,role==Role.STUDENT?Role.TEACHER:Role.STUDENT));
+            assertEquals(first.user().id(),second.user().id());assertEquals(role.name(),second.user().role());
+            assertEquals(1,db.count("SELECT COUNT(*) FROM external_identities WHERE subject=?",subject));
+        }
+    }
+    @Test void googleRegistrationRejectsUnverifiedEmailInvalidIssuerAndAdminRole() {
+        String subject=UUID.randomUUID().toString(),email=UUID.randomUUID()+"@example.test";
+        Instant now=Instant.now();
+        for(var claims:List.of(
+                Map.<String,Object>of("iss","https://accounts.google.com","sub",subject,"email",email,"email_verified",false),
+                Map.<String,Object>of("iss","https://invalid.example.test","sub",subject,"email",email,"email_verified",true),
+                Map.<String,Object>of("iss","https://accounts.google.com","sub",subject,"email"," ","email_verified",true))) {
+            var principal=new DefaultOidcUser(List.of(),new OidcIdToken("framework-fixture",now,now.plusSeconds(120),claims));
+            assertThrows(WorkspaceError.class,()->google.complete(principal,null,null,Role.STUDENT));
+        }
+        assertThrows(WorkspaceError.class,()->google.complete(oidc(subject,email),null,null,Role.ADMIN));
+        assertFalse(users.existsByEmailIgnoreCase(email));assertEquals(0,db.count("SELECT COUNT(*) FROM external_identities WHERE subject=?",subject));
+    }
+    @Test void googleLoginAndHandoffExchangeRespectAccountDeactivation() {
+        var principal=oidc(UUID.randomUUID().toString(),UUID.randomUUID()+"@example.test");
+        String handoff=google.complete(principal,null,null,null);
+        long user=number(db.one("SELECT user_id FROM external_identities WHERE subject=?",principal.getSubject()),"user_id");
+        assertEquals(Role.STUDENT,users.findById(user).orElseThrow().getRole());
+        db.update("UPDATE users SET active=false WHERE id=?",user);
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,()->google.exchange(handoff));
+        assertThrows(WorkspaceError.class,()->google.complete(principal,null,null,Role.TEACHER));
     }
     @Test void stripeSignaturesAreCheckedAgainstUnmodifiedBody() throws Exception {
         String secret="whsec_local_signature_fixture",timestamp=Long.toString(Instant.now().getEpochSecond());
