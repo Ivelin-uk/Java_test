@@ -1,30 +1,54 @@
-import { useMemo, useState } from 'react'
-import { BookOpen, ClipboardList, GraduationCap, LayoutDashboard, LogOut, Shield, UserRound, Users } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowUpRight, BookOpen, ClipboardList, GraduationCap, LayoutDashboard, LogOut, Shield, UserRound, Users } from 'lucide-react'
 import type { AuthResponse } from '../types/models'
 import { roleLabels } from '../api/access'
 import { AdminPanel } from '../components/AdminPanel'
 import { ProfilePanel } from '../components/ProfilePanel'
 import { workspaceClient, useRemote } from './api'
 import type { WorkspaceApi } from './api'
-import type { Assignment, Attempt, Result } from './types'
+import type { Assignment, Attempt, Group, Result } from './types'
 import { date } from './types'
 import { AssessmentEditor } from './AssessmentEditor'
 import { GroupsPanel } from './GroupsPanel'
 import { AssignmentsPanel } from './AssignmentsPanel'
+import { AssignmentParticipantsPage } from './AssignmentParticipantsPage'
 import { GradingPanel } from './GradingPanel'
 import { LearnerPanel } from './StudentPanel'
 import { ExamScreen } from './ExamScreen'
-import { WorkspaceProfile } from './AccountPanels'
+import { NotificationEmailVerification, WorkspaceProfile } from './AccountPanels'
 import { Empty, Feedback, SectionHead } from './ui'
 import './workspace.css'
 import { ThemeToggle } from '../components/ThemeToggle'
 
 type View = 'dashboard' | 'groups' | 'tests' | 'assignments' | 'grading' | 'learner' | 'profile' | 'admin'
 
+function workspaceLocation(fallback: View): { view: View; participants: number | null } {
+  const path = window.location.pathname
+  const match = path.match(/^\/assignments\/([1-9][0-9]{0,14})\/participants$/)
+  if (match) return { view: 'assignments', participants: Number(match[1]) }
+  if (path === '/assignments') return { view: 'assignments', participants: null }
+  if (path.startsWith('/results/')) return { view: 'learner', participants: null }
+  if (path.startsWith('/verify-email')) return { view: 'profile', participants: null }
+  const view = history.state?.examaiView
+  return { view: ['dashboard', 'groups', 'tests', 'assignments', 'grading', 'learner', 'profile', 'admin'].includes(view) ? view : fallback, participants: null }
+}
+
 export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: AuthResponse; logout: () => Promise<void>; onAuth: (auth: AuthResponse) => void; refreshProfile: () => Promise<void> }) {
   const api = useMemo(() => workspaceClient(auth.token), [auth.token])
   const teacher = auth.user.role === 'TEACHER', student = auth.user.role === 'STUDENT', admin = auth.user.role === 'ADMIN'
-  const [view, setView] = useState<View>(() => window.location.pathname.startsWith('/results/') ? 'learner' : window.location.pathname.startsWith('/verify-email') ? 'profile' : admin ? 'admin' : 'dashboard')
+  const [screen, setScreen] = useState(() => workspaceLocation(admin ? 'admin' : 'dashboard'))
+  const view = screen.view
+  useEffect(() => {
+    const changed = () => setScreen(workspaceLocation(admin ? 'admin' : 'dashboard'))
+    window.addEventListener('popstate', changed)
+    return () => window.removeEventListener('popstate', changed)
+  }, [admin])
+  function navigate(next: View, participants: number | null = null) {
+    const path = next === 'assignments' ? participants === null ? '/assignments' : `/assignments/${participants}/participants` : '/'
+    if (window.location.pathname !== path || view !== next) history.pushState({ examaiView: next }, '', path)
+    setScreen({ view: next, participants })
+    window.scrollTo({ top: 0 })
+  }
   const [exam, setExam] = useState<{ assignment: number; attempt?: number } | null>(null)
   const available: { key: View; name: string; icon: typeof Users }[] = [
     ...(!admin ? [{ key: 'dashboard' as View, name: 'Табло', icon: LayoutDashboard }, { key: 'groups' as View, name: 'Групи', icon: Users }] : []),
@@ -35,25 +59,50 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
   ]
   const actualView = available.some(item => item.key === view) ? view : 'profile'
   if (auth.user.passwordChangeRequired) return <main className="app-shell"><h1>Смяна на временната парола</h1><ProfilePanel auth={auth} onAuth={onAuth} /></main>
-  if (exam) return <ExamScreen key={exam.assignment} api={api} user={auth.user.id} assignment={exam.assignment} resume={exam.attempt} back={() => { setExam(null); setView('learner') }} />
+  if (exam) return <ExamScreen key={exam.assignment} api={api} user={auth.user.id} assignment={exam.assignment} resume={exam.attempt} back={() => { setExam(null); navigate('learner') }} />
   return <main className="ws-shell">
     <header className="ws-topbar"><a className="ws-brand" href="/">ExamAI</a><div className="ws-account"><strong>{auth.user.name}</strong><span>{roleLabels[auth.user.role]}</span></div><ThemeToggle /><button className="icon-button" title="Изход" aria-label="Изход" onClick={() => void logout()}><LogOut size={18} /></button></header>
-    <nav className="ws-nav" aria-label="Основна навигация">{available.map(({ key, name, icon: Icon }) => <button key={key} className={actualView === key ? 'active' : ''} onClick={() => setView(key)}><Icon size={17} />{name}</button>)}</nav>
+    <nav className="ws-nav" aria-label="Основна навигация">{available.map(({ key, name, icon: Icon }) => <button key={key} className={actualView === key ? 'active' : ''} onClick={() => navigate(key)}><Icon size={17} />{name}</button>)}</nav>
     <div className="ws-body">
-      {actualView === 'dashboard' && <Dashboard api={api} teacher={teacher} />}
+      {actualView === 'dashboard' && <Dashboard api={api} teacher={teacher} navigate={navigate} />}
       {actualView === 'groups' && <GroupsPanel api={api} teacher={teacher} />}
       {actualView === 'tests' && <AssessmentEditor api={api} userId={auth.user.id} />}
-      {actualView === 'assignments' && <AssignmentsPanel api={api} userId={auth.user.id} />}
+      {actualView === 'assignments' && (screen.participants === null
+        ? <AssignmentsPanel api={api} userId={auth.user.id} openParticipants={id => navigate('assignments', id)} />
+        : <AssignmentParticipantsPage key={screen.participants} api={api} id={screen.participants} back={() => navigate('assignments')} />)}
       {actualView === 'grading' && <GradingPanel api={api} />}
       {actualView === 'learner' && <LearnerPanel api={api} begin={(assignment, attempt) => setExam({ assignment, attempt })} />}
-      {actualView === 'profile' && <WorkspaceProfile api={api} auth={auth} onAuth={onAuth} />}
+      {actualView === 'profile' && (window.location.pathname.startsWith('/verify-email')
+        ? <NotificationEmailVerification api={api} back={() => navigate('profile')} />
+        : <WorkspaceProfile api={api} auth={auth} onAuth={onAuth} />)}
       {actualView === 'admin' && <AdminPanel auth={auth} onProfileRefresh={refreshProfile} />}
     </div>
   </main>
 }
 
-function Dashboard({ api, teacher }: { api: WorkspaceApi; teacher: boolean }) {
+function Dashboard({ api, teacher, navigate }: { api: WorkspaceApi; teacher: boolean; navigate: (view: View) => void }) {
+  const groups = useRemote<Group[]>(api, '/groups', [])
   const assignments = useRemote<Assignment[]>(api, '/assignments', [])
   const records = useRemote<(Attempt | Result)[]>(api, teacher ? '/grading' : '/results', [])
-  return <section className="ws-section"><SectionHead title="Моето табло" /><Feedback error={assignments.error || records.error} busy={assignments.loading} /><div className="ws-metrics"><div><span>Възложени тестове</span><strong>{assignments.data.length}</strong></div><div><span>{teacher ? 'Чакащи проверки' : 'Публикувани резултати'}</span><strong>{teacher ? records.data.filter(item => 'status' in item && item.status === 'pending_review').length : records.data.length}</strong></div></div><h3>Възлагания</h3><div className="ws-table-wrap"><table className="ws-table"><thead><tr><th>Тест</th><th>Начало</th><th>Краен срок</th></tr></thead><tbody>{assignments.data.slice(0, 8).map(item => <tr key={item.id}><td>{item.title}</td><td>{date(item.starts_at)}</td><td>{date(item.ends_at)}</td></tr>)}</tbody></table></div>{!assignments.data.length && !assignments.loading && <Empty />}</section>
+  return <section className="ws-section">
+    <SectionHead title="Моето табло" />
+    <Feedback error={groups.error || assignments.error || records.error} busy={groups.loading || assignments.loading || records.loading} />
+    <div className="ws-metrics" role="group" aria-label="Статистика">
+      <button type="button" title="Към групите" aria-busy={groups.loading} onClick={() => navigate('groups')}>
+        <span>Групи<ArrowUpRight size={17} aria-hidden="true" /></span>
+        <strong>{groups.loading || groups.error ? '-' : groups.data.length}</strong>
+      </button>
+      <button type="button" title={teacher ? 'Към възлаганията' : 'Към моите тестове'} aria-busy={assignments.loading} onClick={() => navigate(teacher ? 'assignments' : 'learner')}>
+        <span>Възложени тестове<ArrowUpRight size={17} aria-hidden="true" /></span>
+        <strong>{assignments.loading || assignments.error ? '-' : assignments.data.length}</strong>
+      </button>
+      <button type="button" title={teacher ? 'Към проверките' : 'Към резултатите'} aria-busy={records.loading} onClick={() => navigate(teacher ? 'grading' : 'learner')}>
+        <span>{teacher ? 'Чакащи проверки' : 'Публикувани резултати'}<ArrowUpRight size={17} aria-hidden="true" /></span>
+        <strong>{records.loading || records.error ? '-' : teacher ? records.data.filter(item => 'status' in item && item.status === 'pending_review').length : records.data.length}</strong>
+      </button>
+    </div>
+    <h3>Възлагания</h3>
+    <div className="ws-table-wrap"><table className="ws-table"><thead><tr><th>Тест</th><th>Начало</th><th>Краен срок</th></tr></thead><tbody>{assignments.data.slice(0, 8).map(item => <tr key={item.id}><td>{item.title}</td><td>{date(item.starts_at)}</td><td>{date(item.ends_at)}</td></tr>)}</tbody></table></div>
+    {!assignments.data.length && !assignments.loading && <Empty />}
+  </section>
 }

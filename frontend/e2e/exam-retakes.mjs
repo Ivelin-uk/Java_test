@@ -48,7 +48,7 @@ try {
       const reject = (status, detail) => route.fulfill({ status, contentType: 'application/problem+json', body: JSON.stringify({ detail }) })
       if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'Access-Control-Allow-Origin': new URL(frontend).origin, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' } })
       if (method === 'GET') {
-        const data = { '/api/auth/me': auth.user, '/api/v1/assignments': [assignment], '/api/v1/attempts': attempts.map(a => ({ ...a, session: undefined })), '/api/v1/results': results(), [`/api/v1/assignments/${assignment.id}/preflight`]: { ...assignment, total_seconds: 180, question_count: 1, instructions: '', fullscreen_exempt: !scenario.strict } }
+        const data = { '/api/auth/me': auth.user, '/api/v1/groups': [], '/api/v1/assignments': [assignment], '/api/v1/attempts': attempts.map(a => ({ ...a, session: undefined })), '/api/v1/results': results(), [`/api/v1/assignments/${assignment.id}/preflight`]: { ...assignment, total_seconds: 180, question_count: 1, instructions: '', fullscreen_exempt: !scenario.strict } }
         if (Object.hasOwn(data, path)) return respond(data[path])
       }
       if (method === 'POST' && path === `/api/v1/assignments/${assignment.id}/attempts`) {

@@ -29,7 +29,7 @@ try {
       const respond = data => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) })
       if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'Access-Control-Allow-Origin': new URL(frontend).origin, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' } })
       if (request.method() === 'GET') {
-        const data = { '/api/auth/me': auth.user, '/api/v1/assignments': assignments, '/api/v1/attempts': empty ? [] : attempts, '/api/v1/results': empty ? [] : results }
+        const data = { '/api/auth/me': auth.user, '/api/v1/groups': [], '/api/v1/assignments': assignments, '/api/v1/attempts': empty ? [] : attempts, '/api/v1/results': empty ? [] : results }
         if (Object.hasOwn(data, path)) return respond(data[path])
         const match = path.match(/^\/api\/v1\/results\/(\d+)$/)
         if (match) {

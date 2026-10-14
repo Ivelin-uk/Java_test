@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { Plus, RotateCw, Ban, Activity, Copy, Mail, KeyRound, UserPlus, Trash2, Users, UserRound, Search } from 'lucide-react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { Plus, RotateCw, RotateCcw, Ban, Copy, Mail, KeyRound, UserPlus, Trash2, Users, UserRound, Search } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
 import type { Assessment, Assignment, Group, Member, Version } from './types'
@@ -10,18 +10,26 @@ import { RecipientPicker } from './RecipientPicker'
 import { DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
 
 const localTime = (value: Date) => new Date(value.getTime() - value.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
-export function AssignmentsPanel({ api, userId }: { api: WorkspaceApi; userId: number }) {
+const minuteBound = (value: string, offset: number) => {
+  // Calendar limits compare local wall-clock values, not timezone offsets.
+  const time = new Date(value ? `${value}Z` : '').getTime()
+  return Number.isFinite(time) ? new Date(time + offset * 60000).toISOString().slice(0, 16) : undefined
+}
+export function AssignmentsPanel({ api, userId, openParticipants }: { api: WorkspaceApi; userId: number; openParticipants: (assignment: number) => void }) {
   const assignments = useRemote<Assignment[]>(api, '/assignments', [])
   const tests = useRemote<Assessment[]>(api, '/tests', [])
   const groups = useRemote<Group[]>(api, '/groups', [])
   const action = useAction()
   const section = useRef<HTMLElement>(null)
-  const [formError, setFormError] = useState<{ message: string; field?: 'test' } | null>(null)
+  const [formError, setFormError] = useState<{ message: string; field?: 'test' | 'period' } | null>(null)
+  const periodErrorId = useId()
   useEffect(() => {
     if (action.error || formError) section.current?.querySelector('[role="alert"]')?.scrollIntoView({ block: 'nearest' })
     if (formError?.field === 'test') section.current?.querySelector<HTMLInputElement>('[role="combobox"]')?.focus()
+    if (formError?.field === 'period') section.current?.querySelector<HTMLInputElement>('input[name="endsAt"]')?.focus()
   }, [action.error, formError])
   const [test, setTest] = useState<Assessment | null>(null)
+  const [pickerKey, setPickerKey] = useState(0)
   const [resolved, setResolved] = useState<{ testId: number; versionId: number | null; error: string } | null>(null)
   const version = test && resolved?.testId === test.id ? resolved.versionId : null
   const loadingVersion = !!test && resolved?.testId !== test.id
@@ -38,23 +46,39 @@ export function AssignmentsPanel({ api, userId }: { api: WorkspaceApi; userId: n
   const [groupIds, setGroupIds] = useState<number[]>([])
   const [start, setStart] = useState(() => localTime(new Date()))
   const [end, setEnd] = useState(() => localTime(new Date(Date.now() + 3600000)))
+  const periodError = start && end && new Date(start).getTime() >= new Date(end).getTime() ? 'Крайният срок трябва да е след началото.' : ''
   const [attempts, setAttempts] = useState(1)
   const [shuffleQ, setShuffleQ] = useState(false)
   const [shuffleA, setShuffleA] = useState(false)
   const [afterDeadline, setAfterDeadline] = useState(true)
-  const [monitor, setMonitor] = useState<number | null>(null)
   const [revokingCode, setRevokingCode] = useState<Assignment | null>(null)
   const [deletingAssignment, setDeletingAssignment] = useState<Assignment | null>(null)
   const toggle = (ids: number[], value: number) => ids.includes(value) ? ids.filter(id => id !== value) : [...ids, value]
+  function resetForm() {
+    if (action.busy) return
+    const now = Date.now()
+    setTest(null)
+    setResolved(null)
+    setGroupIds([])
+    setStart(localTime(new Date(now)))
+    setEnd(localTime(new Date(now + 3600000)))
+    setAttempts(1)
+    setShuffleQ(false)
+    setShuffleA(false)
+    setAfterDeadline(true)
+    setFormError(null)
+    action.clearFeedback()
+    setPickerKey(key => key + 1)
+  }
   async function assign() {
     if (action.busy || loadingVersion || tests.loading || groups.loading) return
-    const invalid = (message: string, field?: 'test') => setFormError({ message, field })
+    const invalid = (message: string, field?: 'test' | 'period') => setFormError({ message, field })
     if (!test) return invalid('Изберете тест за възлагане.', 'test')
     if (!version) return invalid(resolved?.error || 'Тестът няма запазена версия.', 'test')
     const startsAt = new Date(start), endsAt = new Date(end)
     if (!Number.isFinite(startsAt.getTime())) return invalid('Попълнете началната дата и час.')
     if (!Number.isFinite(endsAt.getTime())) return invalid('Попълнете крайната дата и час.')
-    if (startsAt >= endsAt) return invalid('Крайният срок трябва да е след началото.')
+    if (startsAt >= endsAt) return invalid('Крайният срок трябва да е след началото.', 'period')
     if (endsAt.getTime() <= Date.now()) return invalid('Крайният срок трябва да е в бъдещето.')
     if (!Number.isInteger(attempts) || attempts < 1 || attempts > 20) return invalid('Броят опити трябва да е цяло число от 1 до 20.')
     if (!groupIds.length) return invalid('Изберете поне една група.')
@@ -64,18 +88,20 @@ export function AssignmentsPanel({ api, userId }: { api: WorkspaceApi; userId: n
       await assignments.reload()
     }, 'Възлагането е създадено.')
   }
-  return <section ref={section} className="ws-section"><SectionHead title="Възлагания" /><Feedback error={formError?.message || assignments.error || tests.error || groups.error || action.error || (test && resolved?.testId === test.id ? resolved.error : '')} message={action.message} busy={action.busy || loadingVersion} />
-    <form className="ws-assignment-form" aria-label="Възлагане на тест" noValidate onChange={() => setFormError(null)} onSubmit={e => { e.preventDefault(); void assign() }}>
+  return <section ref={section} className="ws-section"><SectionHead title="Възлагания" /><Feedback error={(formError?.field === 'period' ? '' : formError?.message) || assignments.error || tests.error || groups.error || action.error || (test && resolved?.testId === test.id ? resolved.error : '')} message={action.message} busy={action.busy || loadingVersion} />
+    <form className="ws-assignment-form" aria-label="Възлагане на тест" noValidate onChange={() => setFormError(null)} onSubmit={e => { e.preventDefault(); void assign() }} onReset={e => { e.preventDefault(); resetForm() }}>
       <fieldset className="ws-editor" disabled={action.busy}>
-      <div className="ws-form-grid"><TestPicker tests={tests.data.filter(t => t.status !== 'archived')} selected={test} select={value => { setTest(value ? { ...value } : null); setResolved(null); setFormError(null) }} disabled={action.busy || tests.loading} invalid={formError?.field === 'test'} /><label>Начало<input type="datetime-local" required value={start} onChange={e => setStart(e.target.value)} /></label><label>Краен срок<input type="datetime-local" required value={end} onChange={e => setEnd(e.target.value)} /></label><label>Опити<input type="number" min={1} max={20} value={attempts} onChange={e => setAttempts(Number(e.target.value))} /></label></div>
-        <RecipientPicker title="Групи" searchLabel="Търси групи" placeholder="Име или дисциплина" emptyMessage="Няма налични групи." options={groups.data.map(group => ({ id: group.id, name: group.name, detail: group.subject }))} selected={groupIds} toggle={id => { setGroupIds(ids => toggle(ids, id)); setFormError(null) }} disabled={action.busy} loading={groups.loading} />
-      <div className="ws-actions"><label className="ws-check"><input type="checkbox" checked={shuffleQ} onChange={e => setShuffleQ(e.target.checked)} /> Разбъркай въпросите</label><label className="ws-check"><input type="checkbox" checked={shuffleA} onChange={e => setShuffleA(e.target.checked)} /> Разбъркай опциите</label><label className="ws-check"><input type="checkbox" checked={afterDeadline} onChange={e => setAfterDeadline(e.target.checked)} /> Верни отговори след срока</label></div><button className="primary command-button" disabled={action.busy || loadingVersion || tests.loading || groups.loading}><Plus size={17} /> Възложи</button>
+      <div className="ws-form-grid"><TestPicker key={pickerKey} tests={tests.data.filter(t => t.status !== 'archived')} selected={test} select={value => { setTest(value ? { ...value } : null); setResolved(null); setFormError(null) }} disabled={action.busy || tests.loading} invalid={formError?.field === 'test'} /><label>Начало<input type="datetime-local" name="startsAt" required max={minuteBound(end, -1)} step={60} aria-invalid={!!periodError} aria-describedby={periodError ? periodErrorId : undefined} value={start} onChange={e => setStart(e.target.value)} /></label><label>Краен срок<input type="datetime-local" name="endsAt" required min={minuteBound(start, 1)} step={60} aria-invalid={!!periodError} aria-describedby={periodError ? periodErrorId : undefined} value={end} onChange={e => setEnd(e.target.value)} /></label><label>Опити<input type="number" min={1} max={20} value={attempts} onChange={e => setAttempts(Number(e.target.value))} /></label></div>
+      {periodError && <p id={periodErrorId} className="error" role="alert">{periodError}</p>}
+        <RecipientPicker key={pickerKey} title="Групи" searchLabel="Търси групи" placeholder="Име или дисциплина" emptyMessage="Няма налични групи." options={groups.data.map(group => ({ id: group.id, name: group.name, detail: group.subject }))} selected={groupIds} toggle={id => { setGroupIds(ids => toggle(ids, id)); setFormError(null) }} disabled={action.busy} loading={groups.loading} />
+      <div className="ws-actions"><label className="ws-check"><input type="checkbox" checked={shuffleQ} onChange={e => setShuffleQ(e.target.checked)} /> Разбъркай въпросите</label><label className="ws-check"><input type="checkbox" checked={shuffleA} onChange={e => setShuffleA(e.target.checked)} /> Разбъркай опциите</label><label className="ws-check"><input type="checkbox" checked={afterDeadline} onChange={e => setAfterDeadline(e.target.checked)} /> Верни отговори след срока</label></div>
+      <div className="ws-actions ws-assignment-form-actions"><button type="submit" className="primary command-button" disabled={action.busy || loadingVersion || tests.loading || groups.loading}><Plus size={17} /> Възложи</button><button type="reset" className="icon-button" title="Нулирай формата" aria-label="Нулирай формата" disabled={action.busy}><RotateCcw size={17} /></button></div>
       </fieldset>
     </form>
     <div className="ws-table-wrap"><table className="ws-table" aria-label="Възлагания">
       <thead><tr><th>Тест</th><th>Начало</th><th>Краен срок</th><th>Възложено на</th><th>Получатели</th><th>Код за достъп</th><th>Действия</th></tr></thead>
       <tbody>{assignments.data.map(a => <tr key={a.id}>
-        <td>{a.title}</td><td>{date(a.starts_at)}</td><td>{date(a.ends_at)}</td><td><AssignmentAudience assignment={a} /></td><td>{a.recipients}</td>
+        <td>{a.title}</td><td>{date(a.starts_at)}</td><td>{date(a.ends_at)}</td><td><AssignmentAudience assignment={a} /></td><td><button type="button" className="ws-text-button" title={`Участници във възлагане №${a.id}`} aria-label={`Участници във възлагане №${a.id}`} onClick={() => openParticipants(a.id)}>{a.recipients}</button></td>
         <td><div className="ws-assignment-code">
           <output aria-label={`Код за възлагане №${a.id}`}>{a.access_code || '-'}</output>
           <button className="icon-button" title={a.access_code ? 'Генерирай нов код' : 'Генерирай код'} aria-label={a.access_code ? 'Генерирай нов код' : 'Генерирай код'} disabled={action.busy} onClick={() => void action.run(async () => {
@@ -86,14 +112,13 @@ export function AssignmentsPanel({ api, userId }: { api: WorkspaceApi; userId: n
           <button className="icon-button" title="Копирай кода" aria-label="Копирай кода" disabled={action.busy || !a.access_code} onClick={() => void action.run(() => navigator.clipboard.writeText(a.access_code!), 'Кодът е копиран.')}><Copy size={17} /></button>
           <button className="icon-button" title="Изпрати кода по имейл" aria-label="Изпрати кода по имейл" disabled={action.busy || !a.access_code} onClick={() => void action.run(() => api.post(`/assignments/${a.id}/code/send`, { code: a.access_code, channel: 'email' }), 'Известията са добавени в опашката.')}><Mail size={17} /></button>
         </div></td>
-        <td><div className="ws-actions ws-assignment-actions"><button className="icon-button" title="Наблюдение" onClick={() => setMonitor(a.id)}><Activity size={17} /></button><button className="icon-button danger" title="Отмени кода" disabled={action.busy} onClick={() => setRevokingCode(a)}><Ban size={17} /></button>{a.teacher_id === userId && <button className="icon-button danger" title="Изтрий възлагането" aria-label="Изтрий възлагането" disabled={action.busy} onClick={() => setDeletingAssignment(a)}><Trash2 size={17} /></button>}</div></td>
+        <td><div className="ws-actions ws-assignment-actions"><button className="icon-button" title="Участници и наблюдение" aria-label="Участници и наблюдение" onClick={() => openParticipants(a.id)}><Users size={17} /></button><button className="icon-button danger" title="Отмени кода" disabled={action.busy} onClick={() => setRevokingCode(a)}><Ban size={17} /></button>{a.teacher_id === userId && <button className="icon-button danger" title="Изтрий възлагането" aria-label="Изтрий възлагането" disabled={action.busy} onClick={() => setDeletingAssignment(a)}><Trash2 size={17} /></button>}</div></td>
       </tr>)}</tbody>
-    </table></div>{!assignments.data.length && <Empty />}{monitor && <Monitoring key={monitor} api={api} assignment={monitor} endsAt={assignments.data.find(item => item.id === monitor)?.ends_at ?? ''} groupAssignment={assignments.data.some(item => item.id === monitor && !!item.recipient_groups?.length)} recipientsChanged={assignments.reload} />}
+    </table></div>{!assignments.data.length && <Empty />}
     {deletingAssignment && <DeleteConfirmationDialog title="Изтриване на възлагане" confirmLabel="Изтрий възлагането" description={<>Да изтрием ли възлагането на <strong>{deletingAssignment.title}</strong>? То ще бъде премахнато и за учениците, заедно с всички свързани опити и резултати. Активните опити ще бъдат прекратени. Самият тест остава в библиотеката. Действието е необратимо.</>} onCancel={() => setDeletingAssignment(null)} onConfirm={async () => {
       const id = deletingAssignment.id
       await api.remove(`/assignments/${id}`)
       assignments.setData(items => items.filter(item => item.id !== id))
-      if (monitor === id) setMonitor(null)
       await action.run(assignments.reload, 'Възлагането е изтрито.')
     }} />}
     {revokingCode && <DeleteConfirmationDialog title="Отмяна на код за достъп" confirmLabel="Отмени кода" confirmIcon={Ban} description={<>Да отменим ли кода за <strong>{revokingCode.title}</strong>? Учениците няма да могат да започват нови опити с него.</>} onCancel={() => setRevokingCode(null)} onConfirm={async () => {
@@ -113,7 +138,7 @@ function AssignmentAudience({ assignment }: { assignment: Assignment }) {
 }
 interface MonitorRow { student_id: number; name: string; email?: string; canceled: boolean; assigned?: boolean; attempt_id: number | null; attempt_number: number | null; status: string | null; max_attempts: number; fullscreen_exempt: boolean; time_multiplier: number; accommodation_reason: string | null }
 interface AssignmentMember { student_id: number; name: string; email: string }
-function Monitoring({ api, assignment, endsAt, groupAssignment, recipientsChanged }: { api: WorkspaceApi; assignment: number; endsAt: string; groupAssignment: boolean; recipientsChanged: () => Promise<unknown> }) {
+export function AssignmentParticipants({ api, assignment, endsAt, groupAssignment, recipientsChanged }: { api: WorkspaceApi; assignment: number; endsAt: string; groupAssignment: boolean; recipientsChanged: () => Promise<unknown> }) {
   const list = useRemote<MonitorRow[]>(api, `/assignments/${assignment}/monitoring`, [])
   const members = useRemote<AssignmentMember[]>(api, `/assignments/${assignment}/members`, [])
   const action = useAction()
@@ -141,7 +166,7 @@ function Monitoring({ api, assignment, endsAt, groupAssignment, recipientsChange
     return !expired && members.data.some(member => member.student_id === row.student_id) && !attempts.some(attempt => attempt.status === 'in_progress') && (!row.assigned || row.canceled || attempts.length >= row.max_attempts)
   }
   return <section className="ws-monitor">
-    <SectionHead title={`Наблюдение #${assignment}`}><button className="icon-button" title="Обнови" disabled={action.busy} onClick={() => void action.run(refresh)}><RotateCw size={17} /></button></SectionHead>
+    <SectionHead title="Участници"><button className="icon-button" title="Обнови" disabled={action.busy} onClick={() => void action.run(refresh)}><RotateCw size={17} /></button></SectionHead>
     <Feedback error={action.error || list.error || members.error || shared.error || directory.error} message={action.message} busy={action.busy || list.loading || members.loading} />
     <div className="ws-actions">{shared.data.map(teacher => <span key={teacher.teacher_id}>{teacher.name}<button className="icon-button danger" title="Отнеми достъпа до възлагането" disabled={action.busy} onClick={() => setRevokingTeacher(teacher)}><Ban size={15} /></button></span>)}</div>
     <form className="ws-inline-form" onSubmit={event => { event.preventDefault(); void action.run(async () => { await api.put(`/assignments/${assignment}/teachers/${coTeacher}`, { shared: true }); await shared.reload() }) }}>

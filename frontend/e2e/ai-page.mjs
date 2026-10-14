@@ -25,7 +25,7 @@ try {
     if (method === 'GET') {
       if (path === '/api/auth/me') return respond(auth.user)
       if (path === '/api/v1/tests') return respond(stored ? [stored] : [])
-      if (path === '/api/v1/assignments' || path === '/api/v1/grading') return respond([])
+      if (['/api/v1/groups', '/api/v1/assignments', '/api/v1/grading'].includes(path)) return respond([])
       if (path === '/api/v1/ai/test-generations/301') {
         pollCount++
         if (pollCount === 1) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Temporary connection failure.' }) })

@@ -34,7 +34,7 @@ try {
       }
       if (path === '/api/auth/me') return respond(request.headers().authorization === `Bearer ${student.token}` ? student.user : teacher.user)
       if (path === '/api/auth/login') return respond(local)
-      if (['/api/v1/assignments', '/api/v1/grading', '/api/v1/results'].includes(path)) return respond([])
+      if (['/api/v1/groups', '/api/v1/assignments', '/api/v1/grading', '/api/v1/results'].includes(path)) return respond([])
       errors.push(`Unexpected API: ${method} ${path}`)
       return respond({}, 404)
     })

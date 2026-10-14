@@ -36,7 +36,7 @@ try {
       const unavailable = () => route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Временно прекъсната връзка.' }) })
       if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'Access-Control-Allow-Origin': new URL(frontend).origin, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' } })
       if (method === 'GET') {
-        const data = { '/api/auth/me': auth.user, '/api/v1/assignments': [assignment], '/api/v1/results': [], '/api/v1/attempts': [], [`/api/v1/assignments/${assignment.id}/preflight`]: { ...assignment, total_seconds: 540, question_count: 3, instructions: '', fullscreen_exempt: !scenario.strict } }
+        const data = { '/api/auth/me': auth.user, '/api/v1/groups': [], '/api/v1/assignments': [assignment], '/api/v1/results': [], '/api/v1/attempts': [], [`/api/v1/assignments/${assignment.id}/preflight`]: { ...assignment, total_seconds: 540, question_count: 3, instructions: '', fullscreen_exempt: !scenario.strict } }
         if (Object.hasOwn(data, path)) return respond(data[path])
         if (path === '/api/v1/attempts/401/state') return respond(state())
       }

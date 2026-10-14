@@ -126,13 +126,14 @@ try {
 
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.getByRole('button', { name: 'Възлагания', exact: true }).click()
-  await page.getByRole('button', { name: 'Наблюдение', exact: true }).click()
+  await page.getByRole('button', { name: 'Участници и наблюдение', exact: true }).click()
   const accessDialog = await cancellation(page.getByRole('button', { name: 'Отнеми достъпа до възлагането', exact: true }), 'Отнемане на достъп', async () => assert.equal(shared.length, 1))
   await page.getByRole('button', { name: 'Отнеми достъпа до възлагането', exact: true }).click()
   await accessDialog.getByRole('button', { name: 'Отнеми достъпа', exact: true }).click()
   await accessDialog.waitFor({ state: 'detached' })
   assert.equal(shared.length, 0)
   assert.deepEqual(mutations.at(-1), { method: 'PUT', path: `/api/v1/assignments/${assignment.id}/teachers/${colleague.teacher_id}`, body: { shared: false } })
+  await page.getByRole('button', { name: 'Към възлаганията', exact: true }).click()
 
   const codeDialog = await cancellation(page.getByRole('button', { name: 'Отмени кода', exact: true }), 'Отмяна на код за достъп', async () => assert.equal(codeActive, true))
   await page.getByRole('button', { name: 'Отмени кода', exact: true }).click()
@@ -164,14 +165,15 @@ try {
   await page.getByRole('button', { name: 'Възлагания', exact: true }).click()
   await page.getByRole('button', { name: 'Генерирай код', exact: true }).click()
   await page.locator('.ws-assignment-code output').getByText('DEL23456', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Наблюдение', exact: true }).click()
+  await page.getByRole('button', { name: 'Участници и наблюдение', exact: true }).click()
   await page.locator('.ws-monitor').waitFor()
+  await page.getByRole('button', { name: 'Към възлаганията', exact: true }).click()
   const remove = page.getByRole('button', { name: 'Изтрий възлагането', exact: true })
   const unchanged = async () => {
     assert.equal(assignmentVisible, true)
     assert.equal(await page.locator('.ws-section > .ws-table-wrap tbody tr').count(), 1)
     assert.equal(await page.locator('.ws-assignment-code output').textContent(), 'DEL23456')
-    assert.equal(await page.locator('.ws-monitor').count(), 1)
+    assert.equal(await page.locator('.ws-monitor').count(), 0)
   }
   const removeDialog = await cancellation(remove, 'Изтриване на възлагане', unchanged)
   for (const { theme, width, height } of [{ theme: 'light', width: 1440, height: 1000 }, { theme: 'dark', width: 1440, height: 1000 }, { theme: 'dark', width: 390, height: 844 }, { theme: 'light', width: 320, height: 740 }]) {

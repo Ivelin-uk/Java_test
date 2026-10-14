@@ -35,7 +35,7 @@ try {
         auth.user.roleSelectionRequired = false
         return respond(auth.user)
       }
-      if (['/api/v1/assignments', '/api/v1/grading', '/api/v1/results'].includes(path)) {
+      if (['/api/v1/groups', '/api/v1/assignments', '/api/v1/grading', '/api/v1/results'].includes(path)) {
         if (auth.user.roleSelectionRequired) errors.push('Workspace requested before role selection')
         return respond([])
       }

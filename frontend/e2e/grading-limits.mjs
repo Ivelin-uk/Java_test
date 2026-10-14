@@ -26,7 +26,7 @@ try {
       const reject = (status, detail) => route.fulfill({ status, contentType: 'application/problem+json', body: JSON.stringify({ detail }) })
       if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'Access-Control-Allow-Origin': new URL(frontend).origin, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' } })
       if (method === 'GET') {
-        const data = { '/api/auth/me': auth.user, '/api/v1/assignments': [], '/api/v1/grading': [attempt], '/api/v1/attempts/501/review': { attempt, student, questions, revisions, events: [] } }
+        const data = { '/api/auth/me': auth.user, '/api/v1/groups': [], '/api/v1/assignments': [], '/api/v1/grading': [attempt], '/api/v1/attempts/501/review': { attempt, student, questions, revisions, events: [] } }
         if (Object.hasOwn(data, path)) return respond(data[path])
       }
       if (method === 'PATCH' && path === '/api/v1/attempts/501/grading') {

@@ -24,7 +24,7 @@ try {
       const reject = (status, detail) => route.fulfill({ status, contentType: 'application/problem+json', body: JSON.stringify({ detail }) })
       if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'Access-Control-Allow-Origin': new URL(frontend).origin, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' } })
       if (method === 'GET' && path === '/api/auth/me') return respond(auth.user)
-      if (method === 'GET' && path === '/api/v1/assignments') return respond([])
+      if (method === 'GET' && ['/api/v1/groups', '/api/v1/assignments'].includes(path)) return respond([])
       if (method === 'GET' && path === '/api/v1/grading') {
         if (queueError) return reject(503, 'Временно недостъпна таблица.')
         for (const [id, job] of jobs) {

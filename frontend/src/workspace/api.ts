@@ -41,6 +41,7 @@ export function useAction() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  function clearFeedback() { if (!busy) { setError(''); setMessage('') } }
   async function run<T>(work: () => Promise<T>, success = '') {
     if (busy) return
     setBusy(true); setError(''); setMessage('')
@@ -48,5 +49,5 @@ export function useAction() {
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Неуспешно действие.') }
     finally { setBusy(false) }
   }
-  return { busy, error, message, run }
+  return { busy, error, message, run, clearFeedback }
 }
