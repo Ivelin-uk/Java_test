@@ -10,7 +10,7 @@ await mkdir(artifacts, { recursive: true })
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined), headless: true })
 const errors = []
 try {
-  for (const viewport of [{ width: 1440, height: 1000, theme: 'dark' }, { width: 390, height: 844, theme: 'light' }]) {
+  for (const viewport of [{ width: 1440, height: 1000, theme: 'dark' }, { width: 390, height: 844, theme: 'light' }, { width: 320, height: 844, theme: 'dark' }]) {
     const context = await browser.newContext({ viewport, colorScheme: viewport.theme })
     await context.addInitScript(auth => localStorage.setItem('quicktest.auth', JSON.stringify(auth)), auth)
     const page = await context.newPage()
@@ -68,6 +68,9 @@ try {
       const manual = page.locator('.ws-question').first(), second = page.locator('.ws-question').nth(1)
       const points = manual.getByLabel('Финални точки', { exact: true }), save = manual.getByRole('button', { name: 'Запази проверката', exact: true })
       assert.equal(await points.getAttribute('min'), '0'); assert.equal(await points.getAttribute('max'), '2.5')
+      assert.equal(await manual.locator('.ws-grading-maximum').textContent(), '/ 2.5')
+      assert.equal(await second.locator('.ws-grading-maximum').textContent(), '/ 5')
+      assert.equal(await points.getAttribute('aria-describedby'), await manual.locator('.ws-grading-maximum').getAttribute('id'))
       await points.fill('22'); assert.equal(await points.inputValue(), '2.5')
       await points.fill('-1'); assert.equal(await points.inputValue(), '0')
       await points.fill(''); assert.equal(await save.isDisabled(), true)
@@ -90,6 +93,12 @@ try {
       await second.getByRole('button', { name: 'Запази проверката', exact: true }).click()
       await page.getByText('Чака проверка · 7.2345 / 8.5 точки · 0 непроверени отговора', { exact: true }).waitFor()
       assert.equal(await confirm.isEnabled(), true)
+      assert.equal(await manual.locator('.ws-grading-maximum').textContent(), '/ 2.5')
+      assert.equal(await page.locator('.ws-grading-points').evaluateAll(groups => groups.every(group => {
+        const bounds = group.getBoundingClientRect(), input = group.querySelector('input').getBoundingClientRect(), maximum = group.querySelector('.ws-grading-maximum').getBoundingClientRect()
+        return bounds.left >= 0 && bounds.right <= innerWidth && input.right < maximum.left && maximum.right <= bounds.right && maximum.top >= input.top && maximum.bottom <= input.bottom
+      })), true)
+      await manual.locator('form').screenshot({ path: new URL(`grading-points-${viewport.width}.png`, artifacts).pathname })
       await page.screenshot({ path: new URL(`grading-limits-${viewport.width}.png`, artifacts).pathname, fullPage: true })
       await confirm.click()
       const dialog = page.getByRole('dialog', { name: 'Публикуване на резултат', exact: true })
@@ -141,5 +150,5 @@ try {
     } finally { releasePublication(); await context.close() }
   }
   assert.deepEqual(errors, [])
-  console.log('Passed: confirm-only publication, per-question point caps, zero/decimal/max values, empty and precision validation, saved grades, publication cancellation/retry, derived results, correction reasons and history, desktop/mobile. API fixtures only.')
+  console.log('Passed: inline maximum beside grading inputs, accessible denominator and responsive layout at 1440/390/320px, point caps, zero/decimal/max values, empty and precision validation, saved grades, publication cancellation/retry, derived results and corrections. API fixtures only.')
 } finally { await browser.close() }

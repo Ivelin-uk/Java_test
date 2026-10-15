@@ -52,6 +52,8 @@ try {
     await waitCount('Към групите', '2')
     await waitCount(assignmentTitle, '1')
     await waitCount(recordTitle, '1')
+    assert.equal(await page.getByRole('heading', { name: 'Възлагания', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('table').count(), 0)
     assert.equal(await statistics().getByRole('button').count(), 3)
     assert.equal(await statistics().getByTitle(recordTitle).getAttribute('aria-busy'), 'false')
     await statistics().getByTitle('Към групите').focus()
@@ -105,6 +107,8 @@ try {
   const empty = await fixture('TEACHER', { empty: true }); page = empty.page
   await page.goto(frontend)
   for (const title of ['Към групите', 'Към възлаганията', 'Към проверките']) await waitCount(title, '0')
+  assert.equal(await page.getByRole('table').count(), 0)
+  assert.equal(await page.locator('.ws-empty').count(), 0)
   await statistics().getByTitle('Към групите').click()
   await page.getByRole('heading', { name: 'Групи', exact: true }).waitFor()
   await dashboard(); await statistics().getByTitle('Към възлаганията').click()
@@ -112,7 +116,7 @@ try {
   await dashboard(); await statistics().getByTitle('Към проверките').click()
   await page.getByText('Няма опити за проверка.', { exact: true }).waitFor()
   assert.deepEqual(errors, [])
-  console.log('Passed: group count, teacher/student metric destinations, keyboard, back/forward/reload, zero counts, loading/error/recovery, desktop/mobile and both themes. API fixtures only.')
+  console.log('Passed: compact dashboard without assignment table or empty-list placeholder, preserved teacher/student metric destinations, keyboard, back/forward/reload, zero counts, loading/error/recovery, desktop/mobile and both themes. API fixtures only.')
 } catch (error) {
   if (page && !page.isClosed()) await page.screenshot({ path: new URL('dashboard-navigation-failure.png', artifacts).pathname, fullPage: true })
   throw error

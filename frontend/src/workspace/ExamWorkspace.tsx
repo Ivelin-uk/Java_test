@@ -7,7 +7,6 @@ import { ProfilePanel } from '../components/ProfilePanel'
 import { workspaceClient, useRemote } from './api'
 import type { WorkspaceApi } from './api'
 import type { Assignment, Attempt, Group, Result } from './types'
-import { date } from './types'
 import { AssessmentEditor } from './AssessmentEditor'
 import { GroupsPanel } from './GroupsPanel'
 import { AssignmentsPanel } from './AssignmentsPanel'
@@ -16,7 +15,7 @@ import { GradingPanel } from './GradingPanel'
 import { LearnerPanel } from './StudentPanel'
 import { ExamScreen } from './ExamScreen'
 import { NotificationEmailVerification, WorkspaceProfile } from './AccountPanels'
-import { Empty, Feedback, SectionHead } from './ui'
+import { Feedback, SectionHead } from './ui'
 import './workspace.css'
 import { ThemeToggle } from '../components/ThemeToggle'
 
@@ -101,8 +100,5 @@ function Dashboard({ api, teacher, navigate }: { api: WorkspaceApi; teacher: boo
         <strong>{records.loading || records.error ? '-' : teacher ? records.data.filter(item => 'status' in item && item.status === 'pending_review').length : records.data.length}</strong>
       </button>
     </div>
-    <h3>Възлагания</h3>
-    <div className="ws-table-wrap"><table className="ws-table"><thead><tr><th>Тест</th><th>Начало</th><th>Краен срок</th></tr></thead><tbody>{assignments.data.slice(0, 8).map(item => <tr key={item.id}><td>{item.title}</td><td>{date(item.starts_at)}</td><td>{date(item.ends_at)}</td></tr>)}</tbody></table></div>
-    {!assignments.data.length && !assignments.loading && <Empty />}
   </section>
 }

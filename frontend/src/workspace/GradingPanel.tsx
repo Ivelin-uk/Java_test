@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Save, Check, Ban, Sparkles, PencilLine, RefreshCw, LoaderCircle, CircleCheck, Clock3 } from 'lucide-react'
+import { ArrowLeft, Save, Check, Ban, Sparkles, PencilLine, RefreshCw, LoaderCircle, CircleCheck, CircleX, CircleAlert, Circle, Clock3 } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
 import type { Attempt, ExamAnswer, Question, Review, ReviewQuestion } from './types'
@@ -81,7 +81,7 @@ function ReviewPanel({ api, id, back }: { api: WorkspaceApi; id: number; back: (
   const pending = value.questions.filter(q => !q.reviewed || q.final_points === null).length
   const correction = value.attempt.status === 'finalized'
   return <section className="ws-section"><SectionHead title={`Опит #${id} · ${value.student.name}`}><button className="icon-button danger" title="Анулирай опита с причина" disabled={action.busy || value.attempt.status === 'voided'} onClick={() => setVoiding(true)}><Ban size={17} /></button><button className="icon-button" title="Към проверките" onClick={back}><ArrowLeft size={18} /></button></SectionHead><Feedback error={action.error || review.error} message={action.message} busy={action.busy} /><p>{label(value.attempt.status)} · {points} / {max} точки · {pending} непроверени отговора</p>
-    {value.questions.map(q => <QuestionReview key={`${q.id}-${q.final_points}-${q.reviewed}`} api={api} attempt={id} question={q} refresh={review.reload} />)}
+    {value.questions.map((q, index) => <QuestionReview key={`${q.id}-${q.final_points}-${q.reviewed}`} api={api} attempt={id} number={index + 1} question={q} refresh={review.reload} />)}
     <section className="ws-publication"><h3>{correction ? 'Нова резултатна ревизия' : 'Окончателен резултат'}</h3><button className="primary command-button" disabled={pending > 0 || action.busy || value.attempt.status === 'voided'} onClick={() => setConfirm(true)}><Check size={17} /> Потвърди</button></section>
     <h3>История на резултатите</h3>{!value.revisions.length ? <Empty>Резултатът още не е публикуван.</Empty> : <table className="ws-table"><thead><tr><th>Ревизия</th><th>Точки</th><th>Оценка</th><th>Изход</th><th>Автор / дата</th><th>Причина</th></tr></thead><tbody>{value.revisions.map(r => <tr key={r.id}><td>{r.revision_number}</td><td>{r.points}/{r.maximum_points}</td><td>{r.grade}</td><td>{label(r.outcome)}</td><td>#{r.author_id} · {date(r.published_at ?? null)}</td><td>{r.reason || '-'}</td></tr>)}</tbody></table>}
     <details><summary>Журнал на изпитните събития ({value.events.length})</summary><table className="ws-table"><thead><tr><th>Събитие</th><th>Въпрос</th><th>Сървърно време</th></tr></thead><tbody>{value.events.map((e, i) => <tr key={i}><td>{e.event_type}</td><td>{e.question_id ?? '-'}</td><td>{date(e.received_at)}</td></tr>)}</tbody></table></details>
@@ -96,7 +96,7 @@ function VoidAttemptDialog({ api, id, student, close, saved }: { api: WorkspaceA
     await saved()
   }}><label>Причина за анулиране<textarea required value={reason} onChange={event => setReason(event.target.value)} /></label></DeleteConfirmationDialog>
 }
-function QuestionReview({ api, attempt, question: row, refresh }: { api: WorkspaceApi; attempt: number; question: ReviewQuestion; refresh: () => Promise<unknown> }) {
+function QuestionReview({ api, attempt, number, question: row, refresh }: { api: WorkspaceApi; attempt: number; number: number; question: ReviewQuestion; refresh: () => Promise<unknown> }) {
   const snapshot = JSON.parse(row.definition_json) as { question: Question; options: { id: string; text: string; correct: boolean }[] }
   const submitted = row.answer_json ? JSON.parse(row.answer_json) as ExamAnswer : null
   const draft = row.draft_json ? JSON.parse(row.draft_json) as ExamAnswer : null
@@ -106,7 +106,33 @@ function QuestionReview({ api, attempt, question: row, refresh }: { api: Workspa
   const [reason, setReason] = useState(row.override_reason ?? '')
   const maximum = Number(row.maximum_points)
   const validPoints = points.trim() !== '' && Number.isFinite(Number(points)) && Number(points) >= 0 && Number(points) <= maximum
-  return <article className="ws-question"><h3>{snapshot.question.text}</h3><WorkspaceImage api={api} id={snapshot.question.imageId} /><p>{label(row.status)} · {row.maximum_points} максимални точки · Автоматични: {row.automatic_points ?? 'ръчна проверка'}</p><div className="ws-review-choices">{snapshot.options.map(o => <div key={o.id} className={o.correct ? 'good' : ''}>{submitted?.optionIds.includes(o.id) ? 'Избран · ' : ''}{o.text}{o.correct ? ' · верен' : ''}</div>)}</div>{submitted?.text && <pre className="ws-student-text">{submitted.text}</pre>}{!submitted && <p>Няма окончателен отговор.</p>}{draft && <details><summary>Запазена чернова</summary><pre className="ws-student-text">{draft.text || snapshot.options.filter(o => draft.optionIds.includes(o.id)).map(o => o.text).join('\n')}</pre></details>}<p>Критерии: {snapshot.question.criteria || snapshot.question.acceptedAnswers.join(', ') || '-'}</p><p>Отворен: {date(row.opened_at)} · Срок: {date(row.deadline_at)} · Затворен: {date(row.closed_at)}</p>
-    <form className="ws-form-grid" onSubmit={e => { e.preventDefault(); if (!validPoints || !e.currentTarget.reportValidity()) return; void action.run(async () => { await api.call(`/attempts/${attempt}/grading`, 'PATCH', { questionId: row.id, points: Number(points), comment, reason }); await refresh() }, 'Проверката е запазена.') }}><label>Финални точки<input type="number" required min={0} max={maximum} step="0.0001" value={points} onChange={e => { const value = e.target.value; setPoints(value === '' ? '' : Number(value) > maximum ? String(maximum) : Number(value) < 0 ? '0' : value) }} /></label><label>Коментар<input value={comment} onChange={e => setComment(e.target.value)} /></label><label>Причина за корекция<input value={reason} onChange={e => setReason(e.target.value)} /></label><button className="command-button" disabled={action.busy || !validPoints}><Save size={17} /> Запази проверката</button></form><Feedback error={action.error} message={action.message} />
+  const hasAnswer = !!submitted && (submitted.optionIds.length > 0 || !!submitted.text.trim())
+  const choice = snapshot.options.length > 0
+  const automatic = row.automatic_points != null && (choice || snapshot.question.type === 'SHORT_ANSWER')
+  const awarded = automatic ? row.automatic_points : row.reviewed ? row.final_points ?? null : null
+  const result = !hasAnswer ? 'unanswered' : awarded === null ? 'manual' : Number(awarded) >= maximum ? 'correct' : Number(awarded) > 0 ? 'partial' : 'wrong'
+  const resultText = { unanswered: 'Без отговор', manual: 'За ръчна проверка', correct: automatic ? 'Верен отговор' : 'Пълни точки', partial: 'Частични точки', wrong: automatic ? 'Грешен отговор' : 'Без точки' }[result]
+  const ResultIcon = result === 'correct' ? CircleCheck : result === 'wrong' ? CircleX : result === 'partial' ? CircleAlert : result === 'manual' ? Clock3 : Circle
+  return <article className="ws-question ws-review-question" aria-labelledby={`review-question-${row.id}`}>
+    <header className="ws-review-head"><strong id={`review-question-${row.id}`}>Въпрос {number}</strong><span className={`ws-review-verdict ws-review-${result}`} data-result={result}><ResultIcon size={17} aria-hidden="true" />{resultText}</span><span className="ws-review-points">{row.final_points ?? '-'} / {row.maximum_points} точки</span></header>
+    <h3>{snapshot.question.text}</h3><WorkspaceImage api={api} id={snapshot.question.imageId} /><p className="ws-muted">{label(row.status)} · Автоматични точки: {row.automatic_points ?? 'ръчна проверка'}</p>
+    <div className="ws-review-answer"><h4>Отговор на ученика</h4>
+      {choice && <ul className="ws-review-choices" aria-label={`Отговори към въпрос ${number}`}>{snapshot.options.map(o => {
+        const selected = submitted?.optionIds.includes(o.id) ?? false
+        const state = selected ? o.correct ? 'selected-correct' : 'selected-wrong' : o.correct ? hasAnswer ? 'missed' : 'correct-option' : 'neutral'
+        const Icon = state === 'selected-correct' ? CircleCheck : state === 'selected-wrong' ? CircleX : state === 'missed' ? CircleAlert : o.correct ? Check : Circle
+        const marker = { 'selected-correct': 'Избран от ученика · верен', 'selected-wrong': 'Избран от ученика · грешен', missed: 'Пропуснат верен отговор', 'correct-option': 'Верен отговор', neutral: '' }[state]
+        return <li key={o.id} className={`ws-review-choice ws-review-choice-${state}`} data-selected={selected} data-result={state}><Icon size={20} aria-hidden="true" /><div><span className="ws-review-choice-text">{o.text}</span>{marker && <span className="ws-review-choice-marker">{marker}</span>}</div></li>
+      })}</ul>}
+      {submitted?.text && <pre className={`ws-student-text ws-review-text-answer ws-review-${result}`}>{submitted.text}</pre>}
+      {!hasAnswer && <p className="ws-review-no-answer">{submitted ? 'Предаден е празен отговор.' : 'Няма окончателен отговор.'}</p>}
+    </div>
+    {draft && <details className="ws-review-details"><summary>Запазена чернова</summary><pre className="ws-student-text">{draft.text || snapshot.options.filter(o => draft.optionIds.includes(o.id)).map(o => o.text).join('\n') || 'Празна чернова'}</pre></details>}
+    {(snapshot.question.criteria || snapshot.question.acceptedAnswers.length > 0) && <p className="ws-review-criteria"><strong>Критерии:</strong> {snapshot.question.criteria || snapshot.question.acceptedAnswers.join(', ')}</p>}
+    <details className="ws-review-details"><summary>Време на отговора</summary><p>Отворен: {date(row.opened_at)} · Срок: {date(row.deadline_at)} · Затворен: {date(row.closed_at)}</p></details>
+    <form className="ws-form-grid" onSubmit={e => { e.preventDefault(); if (!validPoints || !e.currentTarget.reportValidity()) return; void action.run(async () => { await api.call(`/attempts/${attempt}/grading`, 'PATCH', { questionId: row.id, points: Number(points), comment, reason }); await refresh() }, 'Проверката е запазена.') }}>
+      <label>Финални точки<span className="ws-grading-points"><input aria-label="Финални точки" aria-describedby={`grading-maximum-${row.id}`} type="number" required min={0} max={maximum} step="0.0001" value={points} onChange={e => { const value = e.target.value; setPoints(value === '' ? '' : Number(value) > maximum ? String(maximum) : Number(value) < 0 ? '0' : value) }} /><span id={`grading-maximum-${row.id}`} className="ws-grading-maximum">/ {maximum}</span></span></label>
+      <label>Коментар<input value={comment} onChange={e => setComment(e.target.value)} /></label><label>Причина за корекция<input value={reason} onChange={e => setReason(e.target.value)} /></label><button className="command-button" disabled={action.busy || !validPoints}><Save size={17} /> Запази проверката</button>
+    </form><Feedback error={action.error} message={action.message} />
   </article>
 }
