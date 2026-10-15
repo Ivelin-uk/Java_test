@@ -46,6 +46,15 @@ class OpenAiProviderTests {
             exchange.getResponseBody().write(bytes);
             exchange.close();
         });
+        server.createContext("/images/generations", exchange -> {
+            authorization = exchange.getRequestHeaders().getFirst("Authorization");
+            received = mapper.readTree(exchange.getRequestBody().readAllBytes());
+            byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(responseStatus, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
         server.start();
     }
 
@@ -74,6 +83,55 @@ class OpenAiProviderTests {
         assertEquals(2, received.path("text").path("format").path("schema").path("properties").path("questions").path("maxItems").asInt());
         assertTrue(received.path("input").get(1).path("content").asString().contains("Mathematics grade 3"));
         assertTrue(received.path("input").get(1).path("content").asString().contains("Bulgarian"));
+    }
+
+    @Test
+    void visualQuestionsHaveOrderedImagePromptsAndAStrictSchema() {
+        var draft = draft();
+        draft.set("imagePrompts", mapper.valueToTree(List.of("Triangle ABC with the stated dimensions, without a solution.")));
+        responseBody = response(draft);
+        var generated = provider().generateTest(new AiProvider.GenerateTestRequest("Geometry", "", "bg", 2, "EASY", null, null, 1));
+        assertEquals(1, generated.imagePrompts().size());
+        assertTrue(generated.imagePrompts().getFirst().contains("Triangle ABC"));
+        var schema = received.path("text").path("format").path("schema");
+        assertEquals(1, schema.path("properties").path("imagePrompts").path("minItems").asInt());
+        assertEquals(1, schema.path("properties").path("imagePrompts").path("maxItems").asInt());
+        assertTrue(schema.path("required").toString().contains("imagePrompts"));
+        assertTrue(received.path("input").get(0).path("content").asString().contains("Do not put answers"));
+        draft.set("imagePrompts", mapper.valueToTree(List.of())); responseBody = response(draft);
+        assertThrows(ResponseStatusException.class, () -> provider().generateTest(new AiProvider.GenerateTestRequest("Geometry", "", "bg", 2, "EASY", null, null, 1)));
+    }
+
+    @Test
+    void imageGenerationUsesTheConfiguredModelAndReadsBase64WithoutRemoteUrlFetching() {
+        var image = new com.quicktest.ai.MockAiProvider().generateImage(new AiProvider.GenerateImageRequest("Triangle", "bg"));
+        responseBody = mapper.writeValueAsString(Map.of("data", List.of(Map.of("b64_json", image.base64())), "usage", Map.of("input_tokens", 11, "output_tokens", 22)));
+        var generated = provider().generateImage(new AiProvider.GenerateImageRequest("Human skeleton, markers A and B", "bg"));
+        assertEquals(image.base64(), generated.base64());
+        assertEquals("test-image-model", generated.model());
+        assertEquals(11, generated.inputTokens()); assertEquals(22, generated.outputTokens());
+        assertEquals("Bearer test-key", authorization);
+        assertEquals("test-image-model", received.path("model").asString());
+        assertEquals("1024x1024", received.path("size").asString());
+        assertEquals("jpeg", received.path("output_format").asString());
+        assertEquals(1, received.path("n").asInt());
+        assertTrue(received.path("prompt").asString().contains("Human skeleton"));
+        assertTrue(received.path("prompt").asString().contains("Do not add solutions"));
+        responseBody = "{\"data\":[{\"url\":\"http://127.0.0.1/private\"}]}";
+        assertEquals(HttpStatus.BAD_GATEWAY, assertThrows(ResponseStatusException.class, () -> provider().generateImage(new AiProvider.GenerateImageRequest("Triangle", "bg"))).getStatusCode());
+    }
+
+    @Test
+    void imageErrorsAreActionableAndDoNotExposeUpstreamContent() {
+        responseBody = "{\"secret\":\"upstream-secret-sentinel\"}";
+        for (int code : List.of(400, 401, 403, 404, 429, 500)) {
+            responseStatus = code;
+            var error = assertThrows(ResponseStatusException.class, () -> provider().generateImage(new AiProvider.GenerateImageRequest("Triangle", "bg")));
+            assertEquals(code == 400 ? HttpStatus.BAD_GATEWAY : HttpStatus.SERVICE_UNAVAILABLE, error.getStatusCode());
+            assertFalse(error.getReason().contains("upstream-secret-sentinel"));
+        }
+        var withoutKey = new OpenAiProvider(mapper, validators.getValidator(), "http://127.0.0.1:" + server.getAddress().getPort(), "text", "image", "", 2);
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, assertThrows(ResponseStatusException.class, () -> withoutKey.generateImage(new AiProvider.GenerateImageRequest("Triangle", "bg"))).getStatusCode());
     }
 
     @Test
@@ -161,7 +219,7 @@ class OpenAiProviderTests {
     @Test
     void missingKeyDoesNotSendARequest() {
         OpenAiProvider provider = new OpenAiProvider(mapper, validators.getValidator(),
-                "http://127.0.0.1:" + server.getAddress().getPort(), "gpt-4.1-mini", "", 2);
+                "http://127.0.0.1:" + server.getAddress().getPort(), "gpt-4.1-mini", "test-image-model", "", 2);
         var error = assertThrows(ResponseStatusException.class, () -> provider.generateTest(request()));
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, error.getStatusCode());
         assertTrue(error.getReason().contains("OPENAI_API_KEY"));
@@ -261,7 +319,7 @@ class OpenAiProviderTests {
 
     private OpenAiProvider provider() {
         return new OpenAiProvider(mapper, validators.getValidator(),
-                "http://127.0.0.1:" + server.getAddress().getPort(), "gpt-4.1-mini", "test-key", 2);
+                "http://127.0.0.1:" + server.getAddress().getPort(), "gpt-4.1-mini", "test-image-model", "test-key", 2);
     }
 
     private AiProvider.GenerateTestRequest request() {

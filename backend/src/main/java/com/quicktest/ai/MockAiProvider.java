@@ -68,6 +68,25 @@ public class MockAiProvider implements AiProvider {
                 true,
                 questions
         );
-        return new GeneratedTest(test, "mock-ai-provider", 250 + count * 20, 500 + count * 80);
+        var prompts = questions.stream().limit(request.imageCount()).map(q -> "Educational diagram for " + request.topic() + ": " + q.question()).toList();
+        return new GeneratedTest(test, "mock-ai-provider", 250 + count * 20, 500 + count * 80, prompts);
+    }
+
+    @Override
+    public GeneratedImage generateImage(GenerateImageRequest request) {
+        var image = new java.awt.image.BufferedImage(640, 400, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        var graphics = image.createGraphics();
+        try {
+            graphics.setColor(java.awt.Color.WHITE); graphics.fillRect(0, 0, 640, 400);
+            graphics.setColor(new java.awt.Color(35, 131, 107)); graphics.setStroke(new java.awt.BasicStroke(5));
+            graphics.drawPolygon(new int[]{130, 510, 320}, new int[]{310, 310, 70}, 3);
+            graphics.setFont(new java.awt.Font("SansSerif", java.awt.Font.BOLD, 24));
+            graphics.drawString("A", 105, 340); graphics.drawString("B", 515, 340); graphics.drawString("C", 315, 55);
+        } finally { graphics.dispose(); }
+        try {
+            var output = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(image, "png", output);
+            return new GeneratedImage(java.util.Base64.getEncoder().encodeToString(output.toByteArray()), "mock-image-provider", 10, 20);
+        } catch (java.io.IOException error) { throw new IllegalStateException("Cannot create mock image", error); }
     }
 }

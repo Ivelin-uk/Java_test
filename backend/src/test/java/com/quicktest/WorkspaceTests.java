@@ -393,18 +393,176 @@ class WorkspaceTests {
     }
     @Test void failedAiReleasesReservationRetryCountsOnlyOnceAndNeverPublishes() {
         var request=new WorkspaceAiService.Generate("ai-failure-test","Java","","","bg",1,"EASY","");long id=number(ai.enqueue(teaching,request),"id");
-        var failed=new WorkspaceAiService(aiRepository,workspaceJson,r->{throw new IllegalStateException("invalid JSON or timeout");},organizations,assessments,transactions,clock,true);for(int n=0;n<20 && string(ai.get(teaching,id),"status").equals("queued");n++) failed.process();
+        var failed=new WorkspaceAiService(aiRepository,workspaceJson,r->{throw new IllegalStateException("invalid JSON or timeout");},organizations,assessments,transactions,clock,images,true);for(int n=0;n<20 && string(ai.get(teaching,id),"status").equals("queued");n++) failed.process();
         assertEquals("failed",string(ai.get(teaching,id),"status"));assertEquals(0,number(organizations.subscription(org),"ai_reserved"));assertEquals(0,number(organizations.subscription(org),"ai_used"));
-        ai.retry(teaching,id);var worker=new WorkspaceAiService(aiRepository,workspaceJson,new com.quicktest.ai.MockAiProvider(),organizations,assessments,transactions,clock,true);long versions=db.count("SELECT COUNT(*) FROM assessment_versions WHERE organization_id=?",org);worker.process();worker.process();
+        ai.retry(teaching,id);var worker=new WorkspaceAiService(aiRepository,workspaceJson,new com.quicktest.ai.MockAiProvider(),organizations,assessments,transactions,clock,images,true);long versions=db.count("SELECT COUNT(*) FROM assessment_versions WHERE organization_id=?",org);worker.process();worker.process();
         assertEquals("completed",string(ai.get(teaching,id),"status"));assertEquals(1,number(organizations.subscription(org),"ai_used"));assertEquals(0,number(organizations.subscription(org),"ai_reserved"));assertEquals(versions,db.count("SELECT COUNT(*) FROM assessment_versions WHERE organization_id=?",org));
     }
     @Test void aiFailureRetainsActionableProviderMessage() {
         long id=number(ai.enqueue(teaching,new WorkspaceAiService.Generate("ai-offline-test","Java","","","bg",1,"EASY","")),"id");
-        var worker=new WorkspaceAiService(aiRepository,workspaceJson,r->{throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Моделът за AI генериране не е зареден.");},organizations,assessments,transactions,clock,true);
+        var worker=new WorkspaceAiService(aiRepository,workspaceJson,r->{throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Моделът за AI генериране не е зареден.");},organizations,assessments,transactions,clock,images,true);
         for(int n=0;n<20 && string(ai.get(teaching,id),"status").equals("queued");n++) worker.process();
         assertEquals("failed",string(ai.get(teaching,id),"status"));
         assertEquals("Моделът за AI генериране не е зареден.",string(ai.get(teaching,id),"error_message"));
         assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
+    }
+    @Test void aiImagesAreSavedWithTheDraftAndRemainPrivateDuringTheExam() {
+        var request=new WorkspaceAiService.Generate("ai-images-private","Triangle ABC","Mathematics","","bg",3,"EASY",null,List.of("SINGLE_CHOICE"),Map.of("EASY",3),"Clear diagrams",2);
+        long id=number(ai.enqueue(teaching,request),"id");
+        var worker=new WorkspaceAiService(aiRepository,workspaceJson,new com.quicktest.ai.MockAiProvider(),organizations,assessments,transactions,clock,images,true);
+        for(int n=0;n<20 && string(ai.get(teaching,id),"status").equals("queued");n++) worker.process();
+        assertEquals("completed",string(ai.get(teaching,id),"status"));
+        var result=workspaceJson.object(ai.get(teaching,id).get("result_json"));
+        var definition=workspaceJson.parse(workspaceJson.write(result.get("definition")),AssessmentService.Definition.class);
+        long first=definition.questions().getFirst().imageId(),second=definition.questions().get(1).imageId();
+        assertNotEquals(first,second);assertNull(definition.questions().get(2).imageId());
+        assertEquals(2,db.count("SELECT COUNT(*) FROM private_images WHERE organization_id=? AND owner_id=?",org,teacher));
+        assertEquals("image/png",images.download(teaching,first,null,session(startRequest())).mime());
+        assertThrows(WorkspaceError.class,()->images.download(new OrgAccess.Scope(other,teacher,Set.of("TEACHER")),first,null,session(startRequest())));
+        assertThrows(WorkspaceError.class,()->images.download(learning,first,null,session(startRequest())));
+        long test=number(assessments.save(teaching,null,definition),"id");long illustratedVersion=number(assessments.publish(teaching,test),"id");
+        var a=assignments.create(teaching,new AssignmentService.AssignmentRequest(illustratedVersion,List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true));assignment=number(a,"id");code=string(a,"code");
+        var r=startRequest();var state=start(r);long attempt=number(state,"id");
+        assertEquals(first,number(question(state),"imageId"));
+        assertEquals("image/png",images.download(learning,first,attempt,session(r)).mime());
+        assertThrows(WorkspaceError.class,()->images.download(learning,second,attempt,session(r)));
+        assertEquals(id,number(ai.enqueue(teaching,request),"id"));worker.process();
+        assertEquals(2,db.count("SELECT COUNT(*) FROM private_images WHERE organization_id=?",org));
+        assertEquals(1,number(organizations.subscription(org),"ai_used"));assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
+    }
+    @Test void aiImageValidationRollsBackEveryImageAndRetryDoesNotLeaveOrphans() {
+        var request=new WorkspaceAiService.Generate("ai-images-atomic","Atomic illustrations","Biology","","bg",2,"EASY",null,null,null,null,2);
+        long id=number(ai.enqueue(teaching,request),"id");
+        var broken=new com.quicktest.ai.MockAiProvider() {
+            int calls;
+            @Override public GeneratedImage generateImage(GenerateImageRequest input) {
+                if(++calls==2) return new GeneratedImage(Base64.getEncoder().encodeToString("<svg/>".getBytes()),"invalid",0,0);
+                return super.generateImage(input);
+            }
+        };
+        var failed=new WorkspaceAiService(aiRepository,workspaceJson,broken,organizations,assessments,transactions,clock,images,true);
+        for(int n=0;n<20 && string(ai.get(teaching,id),"status").equals("queued");n++) failed.process();
+        assertEquals("failed",string(ai.get(teaching,id),"status"));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM private_images WHERE organization_id=?",org));
+        assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
+        ai.retry(teaching,id);
+        var worker=new WorkspaceAiService(aiRepository,workspaceJson,new com.quicktest.ai.MockAiProvider(),organizations,assessments,transactions,clock,images,true);
+        for(int n=0;n<20 && string(ai.get(teaching,id),"status").equals("queued");n++) worker.process();
+        assertEquals("completed",string(ai.get(teaching,id),"status"));
+        assertEquals(2,db.count("SELECT COUNT(*) FROM private_images WHERE organization_id=?",org));
+        assertEquals(1,number(organizations.subscription(org),"ai_used"));
+    }
+    @Test void aiImageCountIsValidatedAndPartOfTheIdempotencyContract() throws Exception {
+        for(int count:List.of(-1,3)) {
+            var invalid=new WorkspaceAiService.Generate("ai-images-invalid-"+count,"Biology","","","bg",2,"EASY",null,null,null,null,count);
+            assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->ai.enqueue(teaching,invalid)).getStatusCode());
+        }
+        assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
+        var request=new WorkspaceAiService.Generate("ai-images-count","Biology","","","bg",2,"EASY",null,null,null,null,1);
+        ai.enqueue(teaching,request);
+        var different=new WorkspaceAiService.Generate(request.requestKey(),request.topic(),"","","bg",2,"EASY",null,null,null,null,2);
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->ai.enqueue(teaching,different)).getStatusCode());
+        mvc.perform(post("/api/v1/ai/test-generations").header("Authorization",authorization).header("X-Organization-Id",org).contentType("application/json").content(workspaceJson.write(request))).andExpect(status().isForbidden());
+        assertEquals(1,number(organizations.subscription(org),"ai_reserved"));
+    }
+    @Test void staleImageGenerationCannotPersistImagesOrChargeARetriedJob() {
+        var request=new WorkspaceAiService.Generate("ai-images-lease","Lease images","","","bg",1,"EASY",null,null,null,null,1);
+        long id=number(ai.enqueue(teaching,request),"id");
+        var mock=new com.quicktest.ai.MockAiProvider();
+        var stale=new com.quicktest.ai.MockAiProvider() {
+            @Override public GeneratedImage generateImage(GenerateImageRequest input) {
+                when(clock.instant()).thenReturn(now.plusSeconds(601));
+                new WorkspaceAiService(aiRepository,workspaceJson,mock,organizations,assessments,transactions,clock,images,true).process();
+                ai.retry(teaching,id);
+                return super.generateImage(input);
+            }
+        };
+        var old=new WorkspaceAiService(aiRepository,workspaceJson,stale,organizations,assessments,transactions,clock,images,true);
+        for(int n=0;n<20 && number(ai.get(teaching,id),"attempts")==0;n++) old.process();
+        assertEquals("queued",string(ai.get(teaching,id),"status"));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM private_images WHERE organization_id=?",org));
+        assertEquals(0,number(organizations.subscription(org),"ai_used"));
+        var worker=new WorkspaceAiService(aiRepository,workspaceJson,mock,organizations,assessments,transactions,clock,images,true);
+        for(int n=0;n<20 && string(ai.get(teaching,id),"status").equals("queued");n++) worker.process();
+        assertEquals("completed",string(ai.get(teaching,id),"status"));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM private_images WHERE organization_id=?",org));
+        assertEquals(1,number(organizations.subscription(org),"ai_used"));
+    }
+    @Test void aiAdditionalInformationIsPersistedAndReusedByTheWorkerOnRetry() {
+        String information="Практически задачи за boolean.\nБез наследяване и с примери с \"true\".";
+        var request=new WorkspaceAiService.Generate("ai-extra-retry","Boolean context","Java","","bg",1,"EASY","Reference material",List.of("SINGLE_CHOICE"),Map.of("EASY",1),information);
+        long id=number(ai.enqueue(teaching,request),"id");
+        assertEquals(request,workspaceJson.parse(ai.get(teaching,id).get("request_json"),WorkspaceAiService.Generate.class));
+        var captured=new ArrayList<com.quicktest.ai.AiProvider.GenerateTestRequest>();
+        var mock=new com.quicktest.ai.MockAiProvider();
+        var worker=new WorkspaceAiService(aiRepository,workspaceJson,r->{
+            if(r.topic().equals(request.topic())) {
+                captured.add(r);
+                if(captured.size()==1) throw new IllegalStateException("Simulated generation failure");
+            }
+            return mock.generateTest(r);
+        },organizations,assessments,transactions,clock,images,true);
+        for(int n=0;n<20 && string(ai.get(teaching,id),"status").equals("queued");n++) worker.process();
+        assertEquals("failed",string(ai.get(teaching,id),"status"));
+        ai.retry(teaching,id);
+        for(int n=0;n<20 && string(ai.get(teaching,id),"status").equals("queued");n++) worker.process();
+        assertEquals("completed",string(ai.get(teaching,id),"status"));
+        assertEquals(2,captured.size());
+        assertEquals(captured.getFirst(),captured.getLast());
+        var sent=captured.getLast();
+        assertTrue(sent.instructions().contains(workspaceJson.write(information)));
+        assertTrue(sent.instructions().contains("Допълнителна информация за теста от учителя:"));
+        assertTrue(sent.instructions().contains("<source>Reference material</source>"));
+        assertEquals("bg",sent.language());
+        assertEquals(1,sent.questionCount());
+        assertEquals(List.of("SINGLE_CHOICE"),sent.questionTypes());
+        assertEquals(Map.of("EASY",1),sent.difficultyCounts());
+        assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
+        assertEquals(1,number(organizations.subscription(org),"ai_used"));
+    }
+    @Test void additionalInformationIsValidatedBeforeReservationAndParticipatesInIdempotency() {
+        var request=new WorkspaceAiService.Generate("ai-extra-key","Boolean","Java","","bg",1,"EASY",null,null,null,"x".repeat(20000));
+        long id=number(ai.enqueue(teaching,request),"id");
+        assertEquals(id,number(ai.enqueue(teaching,request),"id"));
+        var changed=new WorkspaceAiService.Generate(request.requestKey(),request.topic(),request.subject(),request.level(),request.language(),request.questionCount(),request.difficulty(),null,null,null,"Different requirements");
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->ai.enqueue(teaching,changed)).getStatusCode());
+        var invalid=new WorkspaceAiService.Generate("ai-extra-too-long","Boolean","Java","","bg",1,"EASY",null,null,null,"x".repeat(20001));
+        assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->ai.enqueue(teaching,invalid)).getStatusCode());
+        assertEquals(1,number(organizations.subscription(org),"ai_reserved"));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_ai_jobs WHERE organization_id=?",org));
+    }
+    @Test void additionalInformationHttpContractIsTeacherOnlyAndReturnsValidationErrors() throws Exception {
+        var request=new WorkspaceAiService.Generate("ai-extra-http","Boolean","Java","","bg",1,"EASY",null,null,null,"Use practical examples");
+        String body=workspaceJson.write(request);
+        mvc.perform(post("/api/v1/ai/test-generations").contentType("application/json").content(body)).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/ai/test-generations").header("Authorization",authorization).header("X-Organization-Id",org).contentType("application/json").content(body)).andExpect(status().isForbidden());
+        assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        String response=mvc.perform(post("/api/v1/ai/test-generations").header("Authorization",bearer).header("X-Organization-Id",org).contentType("application/json").content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("queued")).andReturn().getResponse().getContentAsString();
+        var saved=workspaceJson.parse(workspaceJson.object(response).get("request_json"),WorkspaceAiService.Generate.class);
+        assertEquals(request,saved);
+        var invalid=new WorkspaceAiService.Generate("ai-extra-http-long","Boolean","Java","","bg",1,"EASY",null,null,null,"x".repeat(20001));
+        mvc.perform(post("/api/v1/ai/test-generations").header("Authorization",bearer).header("X-Organization-Id",org).contentType("application/json").content(workspaceJson.write(invalid)))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("validation"));
+        assertEquals(1,number(organizations.subscription(org),"ai_reserved"));
+    }
+    @Test void legacyAiJobWithoutAdditionalInformationStillDeduplicatesAndGenerates() {
+        var request=new WorkspaceAiService.Generate("ai-legacy-extra","Legacy topic","Java","12","en",1,"EASY","Legacy reference");
+        long id=number(ai.enqueue(teaching,request),"id");
+        var legacy=workspaceJson.object(workspaceJson.write(request));
+        legacy.remove("additionalInformation");
+        db.update("UPDATE workspace_ai_jobs SET request_json=? WHERE id=?",workspaceJson.write(legacy),id);
+        assertEquals(id,number(ai.enqueue(teaching,request),"id"));
+        var captured=new ArrayList<com.quicktest.ai.AiProvider.GenerateTestRequest>();
+        var mock=new com.quicktest.ai.MockAiProvider();
+        var worker=new WorkspaceAiService(aiRepository,workspaceJson,r->{if(r.topic().equals(request.topic())) captured.add(r);return mock.generateTest(r);},organizations,assessments,transactions,clock,images,true);
+        for(int n=0;n<20 && string(ai.get(teaching,id),"status").equals("queued");n++) worker.process();
+        assertEquals("completed",string(ai.get(teaching,id),"status"));
+        assertEquals(1,captured.size());
+        assertEquals("en",captured.getFirst().language());
+        assertTrue(captured.getFirst().instructions().contains("<source>Legacy reference</source>"));
+        assertFalse(captured.getFirst().instructions().contains("Допълнителна информация за теста от учителя:"));
     }
     @Test void immutableVersionsAndDeduplicatedRecipientSnapshot() {
         long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Group","","Java")),"id");organizations.addStudent(teaching,group,student);
@@ -946,13 +1104,13 @@ class WorkspaceTests {
         var oldWorker=new WorkspaceAiService(aiRepository,workspaceJson,r->{
             if(r.topic().equals("Lease test")) {
                 when(clock.instant()).thenReturn(now.plusSeconds(601));
-                new WorkspaceAiService(aiRepository,workspaceJson,mock,organizations,assessments,transactions,clock,true).process();assertEquals("failed",string(ai.get(teaching,id),"status"));ai.retry(teaching,id);
+                new WorkspaceAiService(aiRepository,workspaceJson,mock,organizations,assessments,transactions,clock,images,true).process();assertEquals("failed",string(ai.get(teaching,id),"status"));ai.retry(teaching,id);
             }
             return mock.generateTest(r);
-        },organizations,assessments,transactions,clock,true);
+        },organizations,assessments,transactions,clock,images,true);
         for(int i=0;i<20 && number(ai.get(teaching,id),"attempts")==0;i++) oldWorker.process();
         assertEquals("queued",string(ai.get(teaching,id),"status"));assertEquals(0,number(organizations.subscription(org),"ai_used"));
-        var worker=new WorkspaceAiService(aiRepository,workspaceJson,mock,organizations,assessments,transactions,clock,true);for(int i=0;i<20 && string(ai.get(teaching,id),"status").equals("queued");i++) worker.process();
+        var worker=new WorkspaceAiService(aiRepository,workspaceJson,mock,organizations,assessments,transactions,clock,images,true);for(int i=0;i<20 && string(ai.get(teaching,id),"status").equals("queued");i++) worker.process();
         assertEquals("completed",string(ai.get(teaching,id),"status"));assertEquals(1,number(organizations.subscription(org),"ai_used"));assertEquals(0,number(organizations.subscription(org),"ai_reserved"));
     }
     @Test void sharedAssignmentRequiresExplicitTeacherGrantAndRevocationIsImmediate() {

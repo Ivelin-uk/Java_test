@@ -46,6 +46,10 @@ public class WorkspaceAiRepository {
         return store.update("UPDATE workspace_ai_jobs SET status='running',attempts=attempts+1,updated_at=? WHERE id=?", timestamp, id);
     }
 
+    public int heartbeat(Instant timestamp, long org, long id, long lease) {
+        return store.update("UPDATE workspace_ai_jobs SET updated_at=? WHERE organization_id=? AND id=? AND status='running' AND attempts=?", timestamp, org, id, lease);
+    }
+
     public Map<String, Object> lockJob(long org, long id) {
         return store.one("SELECT * FROM workspace_ai_jobs WHERE organization_id=? AND id=? FOR UPDATE", org, id);
     }

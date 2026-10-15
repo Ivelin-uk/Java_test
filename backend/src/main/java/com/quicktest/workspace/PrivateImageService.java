@@ -15,7 +15,7 @@ public class PrivateImageService {
     private final WorkspaceJson json;
     private final PrivateImageRepository repository;private final OrganizationService organizations;private final WorkspaceAudit audit;private final Clock clock;private final WorkspaceCrypto crypto;
     public PrivateImageService(PrivateImageRepository repository,WorkspaceJson json,OrganizationService organizations,WorkspaceAudit audit,Clock clock,WorkspaceCrypto crypto) {this.repository=repository;this.json=json;this.organizations=organizations;this.audit=audit;this.clock=clock;this.crypto=crypto;}
-    @Transactional public Object upload(OrgAccess.Scope scope,Upload request) {
+    @Transactional public Map<String,Object> upload(OrgAccess.Scope scope,Upload request) {
         if(!scope.roles().contains("TEACHER") && !scope.roles().contains("ORG_ADMIN")) throw WorkspaceError.forbidden();
         if(!Set.of("question","logo").contains(Objects.toString(request.purpose(),"")) || request.base64()==null || request.base64().length()>2800000 || request.purpose().equals("logo") && !scope.roles().contains("ORG_ADMIN")) throw WorkspaceError.validation("Невалидно изображение.");
         byte[] original;try {original=Base64.getDecoder().decode(request.base64());}catch(IllegalArgumentException e) {throw WorkspaceError.validation("Невалидно изображение.");}

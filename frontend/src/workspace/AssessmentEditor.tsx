@@ -36,7 +36,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
   const [pendingImages, setPendingImages] = useState(0)
   const [addCount, setAddCount] = useState(1)
   const [jobMode, setJobMode] = useState<'new' | 'append'>('new')
-  const [aiSubject, setAiSubject] = useState(''), [aiLevel, setAiLevel] = useState(''), [aiLanguage, setAiLanguage] = useState('bg')
+  const [aiSubject, setAiSubject] = useState('')
   const [aiTypes, setAiTypes] = useState<string[]>(['SINGLE_CHOICE'])
   const [distribution, setDistribution] = useState<Record<string, number>>({ EASY: 2, MEDIUM: 2, HARD: 1, VERY_HARD: 0 })
   function reviewJob() {
@@ -55,7 +55,9 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
   const [topic, setTopic] = useState('Основи на Java')
   const [count, setCount] = useState(5)
   const [difficulty, setDifficulty] = useState('MEDIUM')
-  const [source, setSource] = useState('')
+  const [additionalInformation, setAdditionalInformation] = useState('')
+  const [includeImages, setIncludeImages] = useState(false)
+  const [imageCount, setImageCount] = useState(1)
   const [job, setJob] = useState<AiJob | null>(null)
   const [showAi, setShowAi] = useState(false)
   const [pollError, setPollError] = useState('')
@@ -64,7 +66,8 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
   const addLimit = Math.min(20, 100 - (draft?.questions.length ?? 0))
   const validAddCount = Number.isInteger(addCount) && addCount >= 1 && addCount <= addLimit
   const validDistribution = difficulty !== 'MIXED' || Object.values(distribution).every(value => Number.isInteger(value) && value >= 0 && value <= 20) && Object.values(distribution).reduce((sum, value) => sum + value, 0) === count
-  const validGeneration = !!topic.trim() && aiTypes.length > 0 && Number.isInteger(count) && count >= 1 && count <= 20 && validDistribution
+  const requestedImages = includeImages ? Math.min(imageCount, count) : 0
+  const validGeneration = !!topic.trim() && aiTypes.length > 0 && Number.isInteger(count) && count >= 1 && count <= 20 && validDistribution && (!includeImages || Number.isInteger(requestedImages) && requestedImages >= 1)
 
   useEffect(() => { window.scrollTo({ top: 0 }) }, [showAi])
 
@@ -143,24 +146,21 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
       if (!validGeneration || action.busy || generating) return
       void action.run(async () => {
         setJobMode('new'); setPollError('')
-        setJob(await api.post<AiJob>('/ai/test-generations', { requestKey: crypto.randomUUID(), topic: topic.trim(), subject: aiSubject, level: aiLevel, language: aiLanguage, questionCount: count, difficulty, sourceText: source, questionTypes: aiTypes, difficultyCounts: difficulty === 'MIXED' ? distribution : { [difficulty]: count } }))
+        setJob(await api.post<AiJob>('/ai/test-generations', { requestKey: crypto.randomUUID(), topic: topic.trim(), subject: aiSubject, level: '', language: 'bg', questionCount: count, difficulty, additionalInformation: additionalInformation.trim(), imageCount: requestedImages, questionTypes: aiTypes, difficultyCounts: difficulty === 'MIXED' ? distribution : { [difficulty]: count } }))
       })
     }}>
       <fieldset className="ws-editor" disabled={action.busy || generating}>
         <div className="ws-form-grid">
           <label>Тема<input autoFocus required value={topic} maxLength={500} onChange={e => setTopic(e.target.value)} /></label>
+          <label>Дисциплина<input value={aiSubject} maxLength={190} onChange={e => setAiSubject(e.target.value)} /></label>
           <label>Въпроси<input type="number" min={1} max={20} step={1} value={count} onChange={e => setCount(Number(e.target.value))} /></label>
           <label>Трудност<select value={difficulty} onChange={e => setDifficulty(e.target.value)}><option value="EASY">Лесни</option><option value="MEDIUM">Средни</option><option value="HARD">Трудни</option><option value="VERY_HARD">Много трудни</option><option value="MIXED">По разпределение</option></select></label>
         </div>
-        <div className="ws-form-grid">
-          <label>Дисциплина<input value={aiSubject} maxLength={190} onChange={e => setAiSubject(e.target.value)} /></label>
-          <label>Клас / ниво<input value={aiLevel} maxLength={190} onChange={e => setAiLevel(e.target.value)} /></label>
-          <label>Език<select value={aiLanguage} onChange={e => setAiLanguage(e.target.value)}><option value="bg">Български</option><option value="en">Английски</option></select></label>
-        </div>
         <fieldset className="ws-ai-types"><legend>Типове въпроси</legend><div className="ws-actions">{types.map(([key, title]) => <label className="ws-check" key={key}><input type="checkbox" checked={aiTypes.includes(key)} onChange={e => setAiTypes(e.target.checked ? [...aiTypes, key] : aiTypes.filter(t => t !== key))} />{title}</label>)}</div></fieldset>
+        <div className="ws-ai-image-settings"><label className="ws-check"><input type="checkbox" checked={includeImages} onChange={e => setIncludeImages(e.target.checked)} />С AI изображения</label>{includeImages && <label>Въпроси с изображение<input type="number" min={1} max={count} step={1} value={requestedImages} onChange={e => setImageCount(Number(e.target.value))} /></label>}</div>
         {difficulty === 'MIXED' && <div className="ws-form-grid">{Object.entries({ EASY: 'Лесни', MEDIUM: 'Средни', HARD: 'Трудни', VERY_HARD: 'Много трудни' }).map(([key, title]) => <label key={key}>{title}<input type="number" min={0} max={20} step={1} value={distribution[key]} onChange={e => setDistribution({ ...distribution, [key]: Number(e.target.value) })} /></label>)}</div>}
         {!validDistribution && <p className="error" role="alert">Сумата по трудност трябва да е равна на броя въпроси.</p>}
-        <label>Учебен текст<textarea value={source} maxLength={20000} onChange={e => setSource(e.target.value)} /></label>
+        <label>Допълнителна информация за теста<textarea rows={5} value={additionalInformation} maxLength={20000} onChange={e => setAdditionalInformation(e.target.value)} /></label>
       </fieldset>
       <div className="ws-actions">
         <button type="submit" className="primary command-button" disabled={action.busy || generating || !validGeneration}><Sparkles size={17} />{generating ? 'Генериране...' : 'Генерирай'}</button>
