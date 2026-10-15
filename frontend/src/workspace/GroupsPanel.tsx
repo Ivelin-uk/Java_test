@@ -6,6 +6,7 @@ import type { Group, Member } from './types'
 import { roles, date, label } from './types'
 import { Empty, Feedback, SectionHead } from './ui'
 import { DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
+import { RecipientPicker } from './RecipientPicker'
 
 export function GroupsPanel({ api, teacher }: { api: WorkspaceApi; teacher: boolean }) {
   const groups = useRemote<Group[]>(api, '/groups', [])
@@ -104,26 +105,40 @@ function GroupMembers({ api, group }: { api: WorkspaceApi; group: Group }) {
   const members = useRemote<(Member & { active: boolean })[]>(api, `/groups/${group.id}/members`, [])
   const directory = useRemote<Member[]>(api, '/members', [])
   const action = useAction()
-  const [user, setUser] = useState<Member | null>(null)
+  const [userIds, setUserIds] = useState<number[]>([])
+  const adding = useRef(false)
   const [removing, setRemoving] = useState<Member | null>(null)
   const [message, setMessage] = useState('')
   const participants = members.data.filter(member => member.active)
   const available = directory.data.filter(m => m.status === 'active' && roles(m).includes('STUDENT') && !roles(m).includes('TEACHER') && !participants.some(member => member.user_id === m.user_id))
+  const selected = userIds.filter(id => available.some(member => member.user_id === id))
+  const disabled = action.busy || directory.loading || members.loading || !!directory.error || !!members.error
   return <section className="ws-section ws-group-members" aria-label="Участници в групата">
     <h3>Ученици</h3>
     <Feedback error={members.error || directory.error || action.error} message={message || action.message} busy={action.busy || members.loading || directory.loading} />
-    <form className="ws-inline-form" onSubmit={e => {
+    <form className="ws-inline-form ws-group-add-members" aria-label="Добавяне на ученици" onSubmit={e => {
       e.preventDefault()
-      if (!user) return
+      if (!selected.length || disabled || adding.current) return
+      adding.current = true
       setMessage('')
       void action.run(async () => {
-        await api.post(`/groups/${group.id}/members`, { userId: user.user_id })
-        setUser(null)
-        await members.reload()
-      }, 'Ученикът е добавен в групата.')
+        const added: number[] = []
+        try {
+          for (const userId of selected) {
+            await api.post(`/groups/${group.id}/members`, { userId })
+            added.push(userId)
+            setUserIds(ids => ids.filter(id => id !== userId))
+          }
+        } finally {
+          if (added.length) {
+            setMessage(added.length === 1 ? 'Ученикът е добавен в групата.' : `Добавени ученици: ${added.length}.`)
+            await members.reload()
+          }
+        }
+      }).finally(() => { adding.current = false })
     }}>
-      <UserPicker users={available} selected={user} select={setUser} disabled={action.busy || directory.loading || members.loading} />
-      <button className="primary command-button" disabled={!user || action.busy || directory.loading || members.loading}><UserPlus size={17} /> Добави</button>
+      <RecipientPicker title="Ученици" searchLabel="Търси ученици" placeholder="Търси по име или имейл" emptyMessage="Няма налични ученици." options={available.map(member => ({ id: member.user_id, name: member.name, detail: member.email }))} selected={selected} toggle={id => setUserIds(ids => ids.includes(id) ? ids.filter(value => value !== id) : [...ids, id])} disabled={disabled} loading={directory.loading || members.loading} keepOpenOnSelect />
+      <button type="submit" className="primary command-button" disabled={!selected.length || disabled}><UserPlus size={17} /> Добави</button>
     </form>
     <div className="ws-table-wrap"><table className="ws-table" aria-label="Участници в групата">
       <thead><tr><th>Име</th><th>Имейл</th><th>Действие</th></tr></thead>
@@ -139,29 +154,6 @@ function GroupMembers({ api, group }: { api: WorkspaceApi; group: Group }) {
       setMessage('Ученикът е премахнат от групата.')
     }} />}
   </section>
-}
-
-function UserPicker({ users, selected, select, disabled }: { users: Member[]; selected: Member | null; select: (user: Member | null) => void; disabled: boolean }) {
-  const id = useId()
-  const [query, setQuery] = useState('')
-  const [open, setOpen] = useState(false)
-  const [index, setIndex] = useState(0)
-  const results = users.filter(user => `${user.name} ${user.email}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
-  function choose(user: Member) { select(user); setQuery(''); setOpen(false); setIndex(0) }
-  return <div className="ws-user-picker" onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false) }}>
-    <label htmlFor={id}>Ученик</label>
-    <input id={id} role="combobox" autoComplete="off" aria-expanded={open} aria-controls={`${id}-results`} aria-autocomplete="list" aria-activedescendant={open && results[index] ? `${id}-option-${results[index].user_id}` : undefined} disabled={disabled} placeholder="Търси по име или имейл" value={selected ? `${selected.name} · ${selected.email}` : query}
-      onFocus={() => setOpen(true)} onChange={e => { select(null); setQuery(e.target.value); setIndex(0); setOpen(true) }}
-      onKeyDown={e => {
-        if (e.key === 'Escape') { e.preventDefault(); setOpen(false) }
-        else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setOpen(true); const next = Math.max(0, Math.min(results.length - 1, index + (e.key === 'ArrowDown' ? 1 : -1))); setIndex(next); document.getElementById(`${id}-option-${results[next]?.user_id}`)?.scrollIntoView({ block: 'nearest' }) }
-        else if (e.key === 'Enter' && open) { e.preventDefault(); if (results[index]) choose(results[index]) }
-      }} />
-    {open && !disabled && <div className="ws-user-options" id={`${id}-results`} role="listbox" aria-label="Регистрирани ученици">
-      {results.map((user, i) => <button type="button" role="option" aria-selected={i === index} id={`${id}-option-${user.user_id}`} key={user.user_id} onMouseDown={e => e.preventDefault()} onClick={() => choose(user)}><strong>{user.name}</strong><span>{user.email}</span><small>{roles(user).includes('TEACHER') ? 'Учител' : 'Ученик'}</small></button>)}
-      {!results.length && <p>Няма намерени ученици.</p>}
-    </div>}
-  </div>
 }
 
 type GroupSummaryData = { group: Group; teachers: { name: string }[]; assignments: { assignment_id: number; student_id: number; student_name: string; title: string; ends_at: string; attempts: { id: number; attempt_number: number; status: string; grade: string | null; outcome: string | null }[] }[] }

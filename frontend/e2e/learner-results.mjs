@@ -11,7 +11,7 @@ await mkdir(artifacts, { recursive: true })
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined), headless: true })
 const errors = []
 try {
-  for (const viewport of [{ width: 1440, height: 1000, theme: 'dark' }, { width: 390, height: 844, theme: 'light' }, { width: 320, height: 844, theme: 'dark' }]) {
+  for (const viewport of [{ width: 1440, height: 1000, theme: 'dark' }, { width: 1440, height: 1000, theme: 'light' }, { width: 390, height: 844, theme: 'light' }, { width: 320, height: 844, theme: 'dark' }]) {
     const context = await browser.newContext({ viewport, colorScheme: viewport.theme })
     await context.addInitScript(auth => localStorage.setItem('quicktest.auth', JSON.stringify(auth)), auth)
     const page = await context.newPage()
@@ -66,7 +66,7 @@ try {
         assert.equal(await pending.getByRole('button').count(), 0)
       }
       const waiting = table.getByRole('row').filter({ hasText: 'Чака проверка' })
-      const reviewed = table.getByRole('row').filter({ hasText: '9.00%' })
+      const failed = table.getByRole('row').filter({ hasText: '9.00%' })
       async function colors(row) {
         return row.evaluate(element => {
           const cell = getComputedStyle(element.querySelector('td')), status = getComputedStyle(element.querySelector('.ws-attempt-status'))
@@ -80,15 +80,32 @@ try {
         })
       }
       assert.equal(await waiting.locator('.ws-attempt-status svg').count(), 1)
-      assert.equal(await reviewed.locator('.ws-attempt-status svg').count(), 1)
-      const pendingColors = await colors(waiting), approvedColors = await colors(reviewed)
-      assert.notEqual(pendingColors.background, approvedColors.background)
-      assert.notEqual(pendingColors.color, approvedColors.color)
-      assert(pendingColors.contrast >= 4.5); assert(approvedColors.contrast >= 4.5)
+      assert.equal(await failed.locator('.ws-attempt-status .lucide-circle-x').count(), 1)
+      assert.equal(await first.locator('.ws-attempt-status .lucide-circle-check').count(), 1)
+      const pendingColors = await colors(waiting), failedColors = await colors(failed), passedColors = await colors(first)
+      const danger = await page.evaluate(() => {
+        const sample = document.createElement('span')
+        sample.style.cssText = 'background: var(--danger-bg); color: var(--danger)'
+        document.body.append(sample)
+        const style = getComputedStyle(sample)
+        const value = { background: style.backgroundColor, color: style.color }
+        sample.remove()
+        return value
+      })
+      assert.equal(failedColors.background, danger.background)
+      assert.equal(failedColors.color, danger.color)
+      assert.equal(await failed.locator('.ws-attempt-outcome').evaluate(element => getComputedStyle(element).color), danger.color)
+      assert.notEqual(failedColors.background, passedColors.background)
+      assert.notEqual(failedColors.color, passedColors.color)
+      assert.notEqual(pendingColors.background, failedColors.background)
+      assert.notEqual(pendingColors.background, passedColors.background)
+      assert(pendingColors.contrast >= 4.5); assert(failedColors.contrast >= 4.5); assert(passedColors.contrast >= 4.5)
       await waiting.hover()
       assert.deepEqual(await colors(waiting), pendingColors)
-      await reviewed.hover()
-      assert.deepEqual(await colors(reviewed), approvedColors)
+      await failed.hover()
+      assert.deepEqual(await colors(failed), failedColors)
+      await first.hover()
+      assert.deepEqual(await colors(first), passedColors)
       for (const status of ['В процес', 'Анулиран']) assert.equal(await table.getByRole('row').filter({ hasText: status }).getAttribute('class'), null)
       assert.equal(await page.getByText('99.00%', { exact: true }).count(), 0)
       assert.equal(await page.getByText('100.00%', { exact: true }).count(), 0)
@@ -98,7 +115,7 @@ try {
       if (viewport.width < 760) assert(size.table > size.container)
       const box = await primary.boundingBox(), score = await primary.locator('.ws-best-score').boundingBox()
       assert(score.x >= box.x && score.x + score.width <= box.x + box.width + 1)
-      await page.screenshot({ path: new URL(`learner-results-${viewport.width}.png`, artifacts).pathname, fullPage: true })
+      await page.screenshot({ path: new URL(`learner-results-${viewport.theme}-${viewport.width}.png`, artifacts).pathname, fullPage: true })
       await first.getByRole('button', { name: 'Преглед на резултата', exact: true }).click()
       await page.getByText('Подробните отговори ще бъдат достъпни след края на разрешения период.', { exact: true }).waitFor()
       await page.getByRole('button', { name: 'Затвори резултата', exact: true }).click()
@@ -125,16 +142,29 @@ try {
       await page.getByRole('button', { name: 'Обнови', exact: true }).click()
       await primary.getByText('Възлагане №301 · Опит 3', { exact: true }).waitFor()
       assert.equal(await table.getByRole('row').count(), 8)
+      assert.equal(await table.locator('.ws-attempt-failed').count(), 0)
+      results.push({ ...result(407, '95.00', '6', 2), outcome: 'failed' })
+      await page.getByRole('button', { name: 'Обнови', exact: true }).click()
+      await secondary.getByText(/Неуспешен/).waitFor()
+      assert.equal(await secondary.locator('.ws-best-score-failed > strong').count(), 1)
+      assert.equal(await secondary.locator('.ws-best-score > strong').evaluate(element => getComputedStyle(element).color), danger.color)
+      assert.equal(await row(302, 1).getAttribute('class'), 'ws-attempt-finalized ws-attempt-failed')
+      await page.screenshot({ path: new URL(`learner-results-failed-best-${viewport.theme}-${viewport.width}.png`, artifacts).pathname, fullPage: true })
+      results.push(result(407, '95.00', '6', 3))
+      await page.getByRole('button', { name: 'Обнови', exact: true }).click()
+      await secondary.getByText(/Успешен/).waitFor()
+      assert.equal(await secondary.locator('.ws-best-score-failed').count(), 0)
+      assert.equal(await table.locator('.ws-attempt-failed').count(), 0)
       empty = true
       await page.getByRole('button', { name: 'Обнови', exact: true }).click()
       await best.getByText('Няма публикувани резултати.', { exact: true }).waitFor()
       await page.getByText('Няма започнати опити.', { exact: true }).waitFor()
       assert.equal(await table.getByRole('row').count(), 1)
     } catch (error) {
-      await page.screenshot({ path: new URL(`learner-results-${viewport.width}-failure.png`, artifacts).pathname, fullPage: true })
+      await page.screenshot({ path: new URL(`learner-results-${viewport.theme}-${viewport.width}-failure.png`, artifacts).pathname, fullPage: true })
       throw error
     } finally { await context.close() }
   }
   assert.deepEqual(errors, [])
-  console.log('Passed: single attempt/result table, best percentage per assignment, numeric ordering, latest corrections, pending and voided exclusion, tie breaking, refresh and empty states, result previews and release policy, pending/reviewed colors and icons, hover preservation, accessible contrast, desktop/mobile and light/dark themes. API fixtures only.')
+  console.log('Passed: single attempt/result table, best percentage per assignment, numeric ordering, latest corrections, pending and voided exclusion, tie breaking, refresh and empty states, result previews and release policy, pending/failed/passed colors and icons, outcome overrides, failed best score, hover preservation, accessible contrast, desktop/mobile and light/dark themes. API fixtures only.')
 } finally { await browser.close() }

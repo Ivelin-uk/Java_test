@@ -37,6 +37,8 @@
 .ws-test-picker-tools .icon-button { width: 30px; height: 30px; min-height: 30px; border: 0; background: transparent; }
 .ws-group-members { grid-template-columns: minmax(0, 1fr); }
 .ws-group-members > * { min-width: 0; }
+.ws-group-add-members { display: grid; grid-template-columns: minmax(0, 520px) max-content; align-items: start; }
+.ws-group-add-members > .primary { margin-top: 22px; }
 .ws-group-settings { display: grid; gap: 20px; min-width: 0; padding: 20px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .ws-feedback { display: flex; align-items: center; gap: 8px; padding: 10px 0; white-space: normal; }
 .ws-empty { padding: 24px 0; color: var(--muted); }
@@ -55,6 +57,7 @@
 .ws-best-result > div { display: grid; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
 .ws-best-result span { color: var(--muted); font-size: 13px; }
 .ws-best-score > strong { color: var(--success); font-size: 22px; font-variant-numeric: tabular-nums; }
+.ws-best-score-failed > strong { color: var(--danger); }
 .ws-table-wrap > .ws-table[aria-label="Опити и резултати"] { min-width: 1100px; }
 .ws-table[aria-label="Опити и резултати"] th:first-child { width: 25%; }
 .ws-table[aria-label="Опити и резултати"] td:nth-child(5), .ws-table[aria-label="Опити и резултати"] td:nth-child(6) { white-space: nowrap; }
@@ -64,10 +67,12 @@
 .ws-table tr:hover td { background: var(--hover); }
 .ws-table .ws-attempt-pending td, .ws-table .ws-attempt-pending:hover td { background: var(--warning-bg); }
 .ws-table .ws-attempt-finalized td, .ws-table .ws-attempt-finalized:hover td { background: var(--success-bg); }
+.ws-table .ws-attempt-failed td, .ws-table .ws-attempt-failed:hover td { background: var(--danger-bg); }
 .ws-attempt-status { display: inline-flex; align-items: center; gap: 6px; }
 .ws-attempt-status svg { flex-shrink: 0; }
 .ws-attempt-pending .ws-attempt-status { color: var(--warning); }
 .ws-attempt-finalized .ws-attempt-status { color: var(--success); }
+.ws-attempt-failed .ws-attempt-status, .ws-attempt-failed .ws-attempt-outcome { color: var(--danger); }
 .ws-table-wrap > .ws-table[aria-label="Възлагания"] { min-width: 1240px; }
 .ws-table[aria-label="Възлагания"] th:nth-child(6) { white-space: nowrap; }
 .ws-assignment-code { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -212,6 +217,12 @@
  .ws-metrics > button { padding: 16px; border-right: 0; border-bottom: 1px solid var(--border); }
  .ws-metrics > button:last-child { border-bottom: 0; }
  .ws-recipient-columns { grid-template-columns: 1fr; }
+ .ws-group-add-members { grid-template-columns: minmax(0, 1fr); }
+ .ws-group-add-members > .primary { margin-top: 0; justify-self: start; }
+ .ws-group-add-members .ws-recipient-control { display: grid; grid-template-columns: minmax(0, 1fr); }
+ .ws-group-add-members .ws-recipient-control > input { grid-area: 1 / 1; }
+ .ws-group-add-members .ws-test-picker-tools { position: relative; inset: auto; grid-area: 1 / 1; justify-self: end; margin-right: 4px; }
+ .ws-group-add-members .ws-user-options { position: static; margin-top: 6px; }
  .ws-table th, .ws-table td { padding: 10px; font-size: 12px; }
  .ws-table-wrap .ws-table { min-width: 650px; }
  .ws-group-members .ws-table-wrap .ws-table { min-width: 0; table-layout: fixed; }

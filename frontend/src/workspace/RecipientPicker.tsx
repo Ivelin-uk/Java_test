@@ -3,9 +3,10 @@ import { ChevronDown, Square, SquareCheck, X } from 'lucide-react'
 
 interface RecipientOption { id: number; name: string; detail: string }
 
-export function RecipientPicker({ title, searchLabel, placeholder, emptyMessage, options, selected, toggle, disabled, loading }: {
+export function RecipientPicker({ title, searchLabel, placeholder, emptyMessage, options, selected, toggle, disabled, loading, keepOpenOnSelect = false }: {
   title: string; searchLabel: string; placeholder: string; emptyMessage: string; options: RecipientOption[];
   selected: number[]; toggle: (id: number) => void; disabled: boolean; loading: boolean;
+  keepOpenOnSelect?: boolean;
 }) {
   const id = useId()
   const input = useRef<HTMLInputElement>(null)
@@ -22,9 +23,12 @@ export function RecipientPicker({ title, searchLabel, placeholder, emptyMessage,
     document.getElementById(`${id}-option-${results[next]?.id}`)?.scrollIntoView({ block: 'nearest' })
   }
   function choose(value: number) {
-    toggle(value); setQuery(''); setIndex(0); setOpen(false)
+    toggle(value); setQuery(''); setIndex(0); setOpen(keepOpenOnSelect)
   }
-  return <fieldset className="ws-recipient-picker" disabled={disabled || loading} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false) }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setOpen(false) } }}>
+  return <fieldset className="ws-recipient-picker" disabled={disabled || loading} onBlur={event => {
+    const scope = keepOpenOnSelect ? event.currentTarget.closest('form') ?? event.currentTarget : event.currentTarget
+    if (!scope.contains(event.relatedTarget)) setOpen(false)
+  }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setOpen(false) } }}>
     <legend>{title}</legend>
     <div className="ws-recipient-control">
       <input ref={input} id={id} role="combobox" aria-label={searchLabel} aria-expanded={expanded} aria-controls={expanded ? `${id}-results` : undefined} aria-autocomplete="list" aria-activedescendant={expanded && results[activeIndex] ? `${id}-option-${results[activeIndex].id}` : undefined} autoComplete="off" placeholder={placeholder} value={query}
