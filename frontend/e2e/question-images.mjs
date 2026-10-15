@@ -20,7 +20,7 @@ try {
   await page.getByRole('button', { name: 'Тестове', exact: true }).click()
   await page.getByRole('button', { name: 'Ръчен тест', exact: true }).click()
   const title = `Image question ${Date.now()}`
-  await page.getByLabel('Заглавие', { exact: true }).fill(title)
+  await page.getByLabel('Тема', { exact: true }).fill(title)
   await page.getByLabel('Текст', { exact: true }).fill('Какво се вижда на снимката?')
   await page.getByLabel('Опция 1', { exact: true }).fill('Кръг')
   await page.getByLabel('Опция 2', { exact: true }).fill('Квадрат')

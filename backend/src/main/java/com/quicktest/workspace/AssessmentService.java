@@ -34,6 +34,7 @@ public class AssessmentService {
     @Transactional
     public Map<String,Object> save(OrgAccess.Scope scope,Long id,Definition definition) {
         if(definition==null || definition.title()==null || definition.title().isBlank() || definition.title().length()>190 || definition.questions()==null || definition.questions().size()>100) throw WorkspaceError.validation("Заглавие до 190 символа и до 100 въпроса.");
+        validateAdditionalInformation(definition);
         for(var question:definition.questions()) if(question!=null) images.validateQuestionImage(scope,question.imageId());
         if(id==null) {
             if(scope.platform()) personal.member(scope.organizationId(),scope.userId(),"TEACHER");
@@ -64,7 +65,7 @@ public class AssessmentService {
     @Transactional
     public Map<String,Object> duplicate(OrgAccess.Scope scope,long id) {
         Definition old=json.parse(get(scope,id,false).get("definition_json"),Definition.class);
-        return save(scope,null,new Definition(old.title()+" (копие)",old.description(),old.subject(),old.level(),old.instructions(),old.language(),old.gradingScale(),old.passThreshold(),old.questions()));
+        return save(scope,null,new Definition(old.title()+" (копие)",old.description(),old.subject(),old.level(),old.instructions(),old.language(),old.gradingScale(),old.passThreshold(),old.questions(),old.additionalInformation()));
     }
     @Transactional
     public void archive(OrgAccess.Scope scope,long id) {
@@ -86,6 +87,7 @@ public class AssessmentService {
     }
     public void validate(Definition definition) {
         if(definition==null || definition.title()==null || definition.title().isBlank() || definition.title().length()>190 || definition.questions()==null || definition.questions().isEmpty() || definition.questions().size()>100) throw WorkspaceError.validation("Тестът трябва да има заглавие и 1–100 въпроса.");
+        validateAdditionalInformation(definition);
         if(!Set.of("bulgarian","percentage","pass_fail").contains(Objects.toString(definition.gradingScale(),"")) || definition.passThreshold()==null || definition.passThreshold().compareTo(BigDecimal.ZERO)<0 || definition.passThreshold().compareTo(new BigDecimal("100"))>0) throw WorkspaceError.validation("Невалидна скала или праг.");
         for(Question question:definition.questions()) validateQuestion(question);
     }
@@ -99,7 +101,12 @@ public class AssessmentService {
         if(q.acceptedAnswers()!=null && (q.acceptedAnswers().size()>30 || q.acceptedAnswers().stream().anyMatch(a->a==null || a.isBlank() || a.length()>4000))) throw WorkspaceError.validation("Невалидни допустими отговори.");
         if(q.type().equals("OPEN_ANSWER") && (q.criteria()==null || q.criteria().isBlank())) throw WorkspaceError.validation("Свободният отговор изисква критерии за проверка.");
     }
-    public record Definition(String title,String description,String subject,String level,String instructions,String language,String gradingScale,BigDecimal passThreshold,List<Question> questions) {}
+    private void validateAdditionalInformation(Definition definition) {
+        if(definition.additionalInformation()!=null && definition.additionalInformation().length()>20000) throw WorkspaceError.validation("Допълнителната информация трябва да е до 20 000 символа.");
+    }
+    public record Definition(String title,String description,String subject,String level,String instructions,String language,String gradingScale,BigDecimal passThreshold,List<Question> questions,String additionalInformation) {
+        public Definition(String title,String description,String subject,String level,String instructions,String language,String gradingScale,BigDecimal passThreshold,List<Question> questions) {this(title,description,subject,level,instructions,language,gradingScale,passThreshold,questions,null);}
+    }
     public record Question(String type,String text,String difficulty,BigDecimal points,int timeSeconds,List<Option> options,List<String> acceptedAnswers,boolean caseInsensitive,boolean collapseWhitespace,String criteria,String explanation,Long imageId) {
         public Question(String type,String text,String difficulty,BigDecimal points,int timeSeconds,List<Option> options,List<String> acceptedAnswers,boolean caseInsensitive,boolean collapseWhitespace,String criteria,String explanation) {this(type,text,difficulty,points,timeSeconds,options,acceptedAnswers,caseInsensitive,collapseWhitespace,criteria,explanation,null);}
     }

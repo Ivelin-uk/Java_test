@@ -6,9 +6,12 @@ const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173'
 const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
 const auth = { token: 'ai-page-fixture', user: { id: 101, name: 'AI Teacher', email: 'ai-page@example.test', role: 'TEACHER', active: true, passwordChangeRequired: false } }
 const question = text => ({ type: 'SINGLE_CHOICE', text, difficulty: 'MEDIUM', points: 1, timeSeconds: 60, options: [{ text: 'boolean', correct: true }, { text: 'int', correct: false }], acceptedAnswers: [], caseInsensitive: true, collapseWhitespace: true, criteria: '', explanation: 'A logical value.' })
-const definition = { title: 'AI generated test', description: 'Generated description', subject: 'Java', level: '12', instructions: '', language: 'bg', gradingScale: 'bulgarian', passThreshold: 50, questions: [{ ...question('First generated question'), imageId: 501 }, question('Second generated question')] }
+const additionalInformation = 'Практически задачи за логически стойности.\nБез въпроси за наследяване.'
+const definition = { title: 'Java basics', description: 'Generated description', subject: 'Java', level: '', instructions: 'Exam instructions', language: 'bg', gradingScale: 'bulgarian', passThreshold: 50, additionalInformation, questions: [{ ...question('First generated question'), difficulty: 'EASY', imageId: 501 }, { ...question('Second generated question'), type: 'SHORT_ANSWER', options: [], acceptedAnswers: ['boolean'] }] }
 const mutations = [], errors = []
 let jobStatus = 'running', failRetry = true, failImage = true, pollCount = 0, stored = null
+let finishSave
+const savePending = new Promise(resolve => { finishSave = resolve })
 const job = status => ({ id: 301, status, result_json: status === 'completed' ? JSON.stringify({ definition }) : null, error_message: status === 'failed' ? 'AI fixture failure.' : null })
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined), headless: true })
 const artifacts = new URL('../../.artifacts/', import.meta.url)
@@ -52,11 +55,17 @@ try {
         return respond(job('queued'))
       }
       if (method === 'POST' && path === '/api/v1/tests') {
+        await savePending
         const draft = request.postDataJSON()
         stored = { id: 201, title: draft.title, owner_id: auth.user.id, status: 'draft', shared: false, definition_json: JSON.stringify(draft), updated_at: new Date().toISOString(), question_count: draft.questions.length, total_time_seconds: 120 }
         return respond(stored)
       }
       if (method === 'POST' && path === '/api/v1/tests/201/publish') { stored.status = 'published'; return respond({ id: 202 }) }
+      if (method === 'PUT' && path === '/api/v1/tests/201') {
+        const draft = request.postDataJSON()
+        stored = { ...stored, title: draft.title, definition_json: JSON.stringify(draft), status: 'draft' }
+        return respond(stored)
+      }
     }
     errors.push(`Unexpected API: ${method} ${path}`)
     return route.fulfill({ status: 404 })
@@ -72,7 +81,7 @@ try {
   for (const removed of ['Клас / ниво', 'Език', 'Учебен текст']) assert.equal(await creator.getByLabel(removed, { exact: true }).count(), 0)
   assert.equal(await extra.getAttribute('maxlength'), '20000')
   assert.equal(await extra.getAttribute('required'), null)
-  assert.equal(await creator.getByRole('checkbox', { name: 'С AI изображения', exact: true }).isChecked(), false)
+  assert.equal(await creator.getByRole('checkbox', { name: 'С изображения', exact: true }).isChecked(), false)
   assert.equal(await creator.getByLabel('Въпроси с изображение', { exact: true }).count(), 0)
   await creator.getByLabel('Тема', { exact: true }).fill('State retained')
   await extra.fill('Additional details retained')
@@ -95,7 +104,7 @@ try {
   await creator.getByRole('checkbox', { name: 'Един верен отговор', exact: true }).check()
   await creator.getByRole('checkbox', { name: 'Кратък текст', exact: true }).check()
   await creator.getByLabel('Дисциплина', { exact: true }).fill('Java')
-  await creator.getByRole('checkbox', { name: 'С AI изображения', exact: true }).check()
+  await creator.getByRole('checkbox', { name: 'С изображения', exact: true }).check()
   const imageCount = creator.getByLabel('Въпроси с изображение', { exact: true })
   await imageCount.fill('0')
   assert.equal(await generate.isDisabled(), true)
@@ -104,7 +113,6 @@ try {
   assert.equal(await imageCount.inputValue(), '1')
   await creator.getByLabel('Въпроси', { exact: true }).fill('2')
   await imageCount.fill('1')
-  const additionalInformation = 'Практически задачи за логически стойности.\nБез въпроси за наследяване.'
   await extra.fill(`  ${additionalInformation}  `)
   await creator.getByRole('combobox', { name: 'Трудност', exact: true }).selectOption('MIXED')
   await creator.getByRole('alert').getByText('Сумата по трудност трябва да е равна на броя въпроси.', { exact: true }).waitFor()
@@ -150,10 +158,29 @@ try {
   await creator.getByRole('button', { name: 'Повтори', exact: true }).click()
   await creator.getByRole('button', { name: 'Генериране...', exact: true }).waitFor()
   jobStatus = 'completed'
-  await page.getByLabel('Заглавие', { exact: true }).waitFor()
+  await creator.waitFor({ state: 'detached' })
+  await page.getByLabel('Тема', { exact: true }).waitFor()
   assert.equal(await creator.count(), 0)
   assert.equal(await page.locator('.ws-question').count(), 2)
-  assert.equal(await page.getByLabel('Заглавие', { exact: true }).inputValue(), definition.title)
+  assert.equal(await page.getByLabel('Тема', { exact: true }).inputValue(), payload.topic)
+  const settings = page.getByRole('group', { name: 'Настройки на теста', exact: true })
+  async function assertSettings(topic, subject, information) {
+    assert.equal(await settings.getByLabel('Тема', { exact: true }).inputValue(), topic)
+    assert.equal(await settings.getByLabel('Дисциплина', { exact: true }).inputValue(), subject)
+    assert.equal(await settings.getByLabel('Допълнителна информация за теста', { exact: true }).inputValue(), information)
+    assert.equal(await settings.getByLabel('Въпроси', { exact: true }).inputValue(), '2')
+    assert.equal(await settings.getByLabel('Въпроси', { exact: true }).getAttribute('readonly'), '')
+    assert.equal(await settings.getByLabel('Трудност', { exact: true }).inputValue(), 'По разпределение')
+    assert.equal(await settings.getByLabel('Лесни', { exact: true }).inputValue(), '1')
+    assert.equal(await settings.getByLabel('Средни', { exact: true }).inputValue(), '1')
+    assert.equal(await settings.getByRole('checkbox', { name: 'Един верен отговор', exact: true }).isChecked(), true)
+    assert.equal(await settings.getByRole('checkbox', { name: 'Кратък текст', exact: true }).isChecked(), true)
+    assert.equal(await settings.getByRole('checkbox', { name: 'Няколко верни', exact: true }).isChecked(), false)
+    assert.equal(await settings.getByRole('checkbox', { name: 'С изображения', exact: true }).isChecked(), true)
+    assert.equal(await settings.getByLabel('Въпроси с изображение', { exact: true }).inputValue(), '1')
+    for (const advanced of ['Клас / ниво', 'Език', 'Описание', 'Инструкции за изпита', 'Скала', 'Праг за успех (%)']) assert.equal(await settings.getByLabel(advanced, { exact: true }).isVisible(), false)
+  }
+  await assertSettings(payload.topic, payload.subject, payload.additionalInformation)
   assert.equal(stored, null)
   const prompt = page.locator('.ws-question-prompt').first()
   await prompt.getByRole('alert').getByText('Изображението не може да се зареди.', { exact: true }).waitFor()
@@ -179,16 +206,70 @@ try {
   await viewer.getByRole('button', { name: 'Затвори изображението', exact: true }).click()
   await viewer.waitFor({ state: 'hidden' })
   await prompt.getByRole('button', { name: 'Смени снимката', exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Запази теста', exact: true }).click()
+  const bottomSave = page.getByRole('button', { name: 'Запази', exact: true })
+  const topSave = page.getByRole('button', { name: 'Запази теста', exact: true })
+  assert.equal(await topSave.isEnabled(), true)
+  assert.equal(await bottomSave.isEnabled(), true)
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 844 })
+    await bottomSave.scrollIntoViewIfNeeded()
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    assert.equal(await bottomSave.evaluate(button => {
+      const bounds = button.getBoundingClientRect()
+      const additions = document.querySelector('.ws-add-questions').getBoundingClientRect()
+      return bounds.top >= additions.bottom && bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight && button.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2))
+    }), true)
+    await page.screenshot({ path: new URL(`test-bottom-save-${width}.png`, artifacts).pathname })
+  }
+  await page.getByLabel('Минути за въпрос 1', { exact: true }).fill('0')
+  await bottomSave.click()
+  await page.getByText('Времето за въпрос 1 трябва да е между 0 мин 10 сек и 60 мин 0 сек, в цели секунди.', { exact: true }).first().waitFor()
+  assert.equal(mutations.filter(request => request.path === '/api/v1/tests').length, 0)
+  assert.equal(await bottomSave.isEnabled(), true)
+  await page.getByLabel('Минути за въпрос 1', { exact: true }).fill('1')
+  const saving = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/v1/tests')
+  await bottomSave.click()
+  await saving
+  assert.equal(await topSave.isDisabled(), true)
+  assert.equal(await bottomSave.isDisabled(), true)
+  assert.equal(mutations.filter(request => request.path === '/api/v1/tests').length, 1)
+  finishSave()
   await page.getByRole('heading', { name: 'Библиотека с тестове', exact: true }).waitFor()
   assert.equal(stored.status, 'published')
+  assert.equal(mutations.filter(request => request.path === '/api/v1/tests/201/publish').length, 1)
   assert.equal(JSON.parse(stored.definition_json).questions[0].imageId, 501)
   assert.equal(await page.getByRole('button', { name: definition.title, exact: true }).count(), 1)
   assert.equal(mutations.filter(request => request.path === '/api/v1/ai/test-generations').length, 1)
   await page.getByRole('button', { name: definition.title, exact: true }).click()
   await page.getByRole('region', { name: 'Избран тест' }).getByRole('img', { name: 'Изображение към въпроса', exact: true }).waitFor()
+  await page.getByRole('region', { name: 'Избран тест' }).getByRole('button', { name: 'Редактирай теста', exact: true }).click()
+  await assertSettings(payload.topic, payload.subject, payload.additionalInformation)
+  for (const { theme, width } of [{ theme: 'light', width: 1440 }, { theme: 'dark', width: 1440 }, { theme: 'light', width: 390 }, { theme: 'dark', width: 320 }]) {
+    await page.setViewportSize({ width, height: 1000 })
+    if (await page.locator('html').getAttribute('data-theme') !== theme) await page.getByRole('button', { name: theme === 'dark' ? 'Тъмна тема' : 'Светла тема', exact: true }).click()
+    await settings.scrollIntoViewIfNeeded()
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    assert.equal(await settings.evaluate(element => [...element.querySelectorAll('input,select,textarea')].filter(control => control.checkVisibility()).every(control => { const bounds = control.getBoundingClientRect(); return bounds.left >= 0 && bounds.right <= innerWidth })), true)
+    await settings.screenshot({ path: new URL(`test-settings-${theme}-${width}.png`, artifacts).pathname })
+  }
+  await settings.getByLabel('Тема', { exact: true }).fill('Edited Java basics')
+  await settings.getByLabel('Дисциплина', { exact: true }).fill('Programming')
+  await settings.getByLabel('Допълнителна информация за теста', { exact: true }).fill('Updated teacher context')
+  await bottomSave.click()
+  await page.getByRole('heading', { name: 'Библиотека с тестове', exact: true }).waitFor()
+  assert.equal(mutations.filter(request => request.method === 'PUT' && request.path === '/api/v1/tests/201').length, 1)
+  const edited = JSON.parse(stored.definition_json)
+  assert.equal(edited.description, definition.description)
+  assert.equal(edited.instructions, definition.instructions)
+  assert.equal(edited.gradingScale, definition.gradingScale)
+  assert.equal(edited.passThreshold, definition.passThreshold)
+  assert.equal(edited.questions[0].imageId, 501)
+  await page.reload()
+  await page.getByRole('button', { name: 'Тестове', exact: true }).click()
+  await page.getByRole('button', { name: 'Редактирай теста', exact: true }).click()
+  await assertSettings('Edited Java basics', 'Programming', 'Updated teacher context')
   assert.deepEqual(errors, [])
-  console.log('Passed: simplified AI form, additional context, automatic image count and validation, pending controls, polling/retry, image download retry, desktop/mobile image enlargement, illustrated draft persistence and library preview, both themes. API fixtures only.')
+  console.log('Passed: AI creation and editing share topic/subject/context, accurate question/type/difficulty/image summaries, save and reopen persistence, preserved advanced exam settings, bottom save validation and pending state, AI retry and image enlargement, desktop/mobile layouts in both themes. API fixtures only.')
 } finally {
   await browser.close()
 }

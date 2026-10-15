@@ -69,11 +69,14 @@ public class WorkspaceAiService {
             }
             var generated=provider.generateTest(new AiProvider.GenerateTestRequest(request.topic(),instruction,request.language(),request.questionCount(),request.difficulty(),request.questionTypes(),request.difficultyCounts(),request.imageCount()));
             var test=generated.test();
-            var definition=new AssessmentService.Definition(test.title(),test.description(),request.subject(),request.level(),"",test.language(),"bulgarian",new BigDecimal("50"),test.questions().stream().map(q->{
+            String title=request.topic().strip();
+            // Legacy generation requests allow longer topics than assessment titles.
+            if(title.length()>190) title=title.substring(0,190);
+            var definition=new AssessmentService.Definition(title,test.description(),request.subject(),request.level(),"",test.language(),"bulgarian",new BigDecimal("50"),test.questions().stream().map(q->{
                 boolean text=Set.of("SHORT_ANSWER","OPEN_ANSWER").contains(q.type().name());
                 String difficulty=q.difficulty()==null || q.difficulty().name().equals("MIXED")?"MEDIUM":q.difficulty().name();
                 return new AssessmentService.Question(q.type().name(),q.question(),difficulty,BigDecimal.valueOf(q.points()),q.timeSeconds()!=null?q.timeSeconds():difficulty.equals("EASY")?30:difficulty.equals("HARD")?120:difficulty.equals("VERY_HARD")?180:60,text?List.of():q.answers().stream().map(a->new AssessmentService.Option(a.answer(),a.correct())).toList(),q.type().name().equals("SHORT_ANSWER")?q.answers().stream().filter(a->a.correct()).map(a->a.answer()).toList():List.of(),true,true,text?Objects.toString(q.criteria(),"Проверете коректността и обосноваността на отговора."):"",q.explanation());
-            }).toList());
+            }).toList(),request.additionalInformation());
             assessments.validate(definition);
             if(definition.questions().size()!=request.questionCount() || request.questionTypes()!=null && definition.questions().stream().anyMatch(q->!request.questionTypes().contains(q.type()))) throw WorkspaceError.validation("AI не спази типовете или броя въпроси.");
             if(request.difficultyCounts()!=null) for(var entry:request.difficultyCounts().entrySet()) if(definition.questions().stream().filter(q->q.difficulty().equals(entry.getKey())).count()!=entry.getValue()) throw WorkspaceError.validation("AI не спази разпределението по трудност.");
@@ -102,7 +105,7 @@ public class WorkspaceAiService {
                 var q=questions.get(index);
                 questions.set(index,new AssessmentService.Question(q.type(),q.text(),q.difficulty(),q.points(),q.timeSeconds(),q.options(),q.acceptedAnswers(),q.caseInsensitive(),q.collapseWhitespace(),q.criteria(),q.explanation(),image));
             }
-            var result=new AssessmentService.Definition(definition.title(),definition.description(),definition.subject(),definition.level(),definition.instructions(),definition.language(),definition.gradingScale(),definition.passThreshold(),questions);
+            var result=new AssessmentService.Definition(definition.title(),definition.description(),definition.subject(),definition.level(),definition.instructions(),definition.language(),definition.gradingScale(),definition.passThreshold(),questions,definition.additionalInformation());
             String serialized=json.write(Map.of("definition",result,"model",generated.model(),"inputTokens",generated.inputTokens(),"outputTokens",generated.outputTokens(),
                     "imageModels",illustrated.stream().map(AiProvider.GeneratedImage::model).toList(),"imageInputTokens",illustrated.stream().mapToLong(AiProvider.GeneratedImage::inputTokens).sum(),"imageOutputTokens",illustrated.stream().mapToLong(AiProvider.GeneratedImage::outputTokens).sum()));
             repository.completeJob("completed",serialized,null,clock.instant(),org,id);

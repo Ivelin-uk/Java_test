@@ -2,7 +2,7 @@ export interface Member { user_id: number; name: string; email: string; roles_js
 export interface Group { id: number; name: string; description: string; subject: string }
 export type QuestionType = 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'TRUE_FALSE' | 'SHORT_ANSWER' | 'OPEN_ANSWER'
 export interface Question { imageId?: number | null; type: QuestionType; text: string; difficulty: string; points: number; timeSeconds: number; options: { text: string; correct: boolean }[]; acceptedAnswers: string[]; caseInsensitive: boolean; collapseWhitespace: boolean; criteria: string; explanation: string }
-export interface Definition { title: string; description: string; subject: string; level: string; instructions: string; language: string; gradingScale: string; passThreshold: number; questions: Question[] }
+export interface Definition { title: string; description: string; subject: string; level: string; instructions: string; language: string; gradingScale: string; passThreshold: number; questions: Question[]; additionalInformation?: string | null }
 export interface Assessment { id: number; title: string; status: string; shared: boolean; owner_id: number; definition_json: string; updated_at: string; question_count: number; total_time_seconds: number }
 export interface Version { id: number; version_number: number; title: string; published_at: string }
 export interface Assignment { id: number; teacher_id?: number; title: string; starts_at: string; ends_at: string; max_attempts: number; access_code?: string | null; recipients?: number; recipient_groups?: { id: number; name: string }[]; individual_recipients?: { id: number; name: string }[]; canceled?: boolean; fullscreen_exempt?: boolean }

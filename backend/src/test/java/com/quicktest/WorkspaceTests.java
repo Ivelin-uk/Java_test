@@ -106,6 +106,38 @@ class WorkspaceTests {
         assertEquals(90,number(row,"total_time_seconds"));
         assertFalse(row.containsKey("definition_json"));
     }
+    @Test void assessmentAdditionalInformationSurvivesEditingVersionsAndCopiesWithoutLeakingToStudents() throws Exception {
+        var original=definition(false);
+        String information="teacher-only-note: focus on practical boolean expressions";
+        var definition=new AssessmentService.Definition(original.title(),original.description(),"Java",original.level(),original.instructions(),original.language(),original.gradingScale(),original.passThreshold(),original.questions(),information);
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        String response=mvc.perform(post("/api/v1/tests").header("Authorization",bearer).header("X-Organization-Id",org).contentType("application/json").content(workspaceJson.write(definition))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        long test=number(workspaceJson.object(response),"id");
+        long published=number(assessments.publish(teaching,test),"id");
+        assertEquals(definition,workspaceJson.parse(assessments.get(teaching,test,true).get("definition_json"),AssessmentService.Definition.class));
+        var edited=new AssessmentService.Definition("Edited topic",definition.description(),definition.subject(),definition.level(),definition.instructions(),definition.language(),definition.gradingScale(),definition.passThreshold(),definition.questions(),"Updated private context");
+        mvc.perform(put("/api/v1/tests/"+test).header("Authorization",bearer).header("X-Organization-Id",org).contentType("application/json").content(workspaceJson.write(edited))).andExpect(status().isOk());
+        assertEquals(edited,workspaceJson.parse(assessments.get(teaching,test,true).get("definition_json"),AssessmentService.Definition.class));
+        assertEquals(information,workspaceJson.parse(db.one("SELECT definition_json FROM assessment_versions WHERE id=?",published).get("definition_json"),AssessmentService.Definition.class).additionalInformation());
+        assertEquals(edited.additionalInformation(),workspaceJson.parse(assessments.duplicate(teaching,test).get("definition_json"),AssessmentService.Definition.class).additionalInformation());
+        long assigned=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(published,List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true)),"id");
+        assertFalse(workspaceJson.write(assignments.preflight(learning,assigned)).contains(information));
+        mvc.perform(get("/api/v1/tests/"+test).header("Authorization",authorization)).andExpect(status().isForbidden());
+        mvc.perform(put("/api/v1/tests/"+test).header("Authorization",authorization).contentType("application/json").content(workspaceJson.write(edited))).andExpect(status().isForbidden());
+    }
+    @Test void assessmentAdditionalInformationValidatesLengthAndKeepsLegacyDefinitionsCompatible() {
+        var original=definition(false);
+        var invalid=new AssessmentService.Definition(original.title(),original.description(),original.subject(),original.level(),original.instructions(),original.language(),original.gradingScale(),original.passThreshold(),original.questions(),"x".repeat(20001));
+        long count=db.count("SELECT COUNT(*) FROM workspace_assessments WHERE organization_id=?",org);
+        assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->assessments.save(teaching,null,invalid)).getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->assessments.validate(invalid)).getStatusCode());
+        assertEquals(count,db.count("SELECT COUNT(*) FROM workspace_assessments WHERE organization_id=?",org));
+        var legacy=workspaceJson.object(workspaceJson.write(original));legacy.remove("additionalInformation");
+        var restored=workspaceJson.parse(workspaceJson.write(legacy),AssessmentService.Definition.class);
+        assertNull(restored.additionalInformation());
+        long test=number(assessments.save(teaching,null,restored),"id");
+        assertNotNull(assessments.publish(teaching,test));
+    }
     @Test void deletingPublishedTestRemovesItFromLibraryAndPreservesItsAssignmentAndAttempt() throws Exception {
         long test=number(db.one("SELECT assessment_id FROM assessment_versions WHERE id=?",version),"assessment_id");
         var request=startRequest();var state=start(request);long attempt=number(state,"id");var current=question(state);
@@ -414,6 +446,9 @@ class WorkspaceTests {
         assertEquals("completed",string(ai.get(teaching,id),"status"));
         var result=workspaceJson.object(ai.get(teaching,id).get("result_json"));
         var definition=workspaceJson.parse(workspaceJson.write(result.get("definition")),AssessmentService.Definition.class);
+        assertEquals(request.topic(),definition.title());
+        assertEquals(request.subject(),definition.subject());
+        assertEquals(request.additionalInformation(),definition.additionalInformation());
         long first=definition.questions().getFirst().imageId(),second=definition.questions().get(1).imageId();
         assertNotEquals(first,second);assertNull(definition.questions().get(2).imageId());
         assertEquals(2,db.count("SELECT COUNT(*) FROM private_images WHERE organization_id=? AND owner_id=?",org,teacher));

@@ -116,9 +116,13 @@
 .ws-metrics strong { font-size: 30px; font-variant-numeric: tabular-nums; }
 .ws-metrics strong.ws-metric-text { font-size: 20px; }
 .ws-editor { display: grid; gap: 20px; border: 0; padding: 0; margin: 0; min-width: 0; }
-.ws-test-settings { display: grid; gap: 20px; min-width: 0; padding: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
-.ws-test-settings > h3 { padding-bottom: 14px; border-bottom: 1px solid var(--border); }
-.ws-test-settings:focus-within { border-color: var(--hover-border); }
+.ws-editor-footer { justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 16px; }
+.ws-test-settings { display: grid; gap: 20px; min-width: 0; padding: 20px 0; border-top: 1px solid var(--border); }
+.ws-test-settings > .ws-section-head { padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.ws-test-settings > .ws-section-head button { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; }
+.ws-test-advanced { border-top: 1px solid var(--border); padding-top: 16px; }
+.ws-test-advanced summary { cursor: pointer; font-size: 14px; color: var(--muted); }
+.ws-test-advanced-fields { display: grid; gap: 20px; padding-top: 20px; min-width: 0; }
 .ws-add-questions { display: grid; gap: 12px; border-top: 1px solid var(--border); padding-top: 16px; }
 .ws-add-questions .ws-inline-form { border-bottom: 0; padding: 0; }
 .ws-add-questions .ws-inline-form label { flex: 0 1 180px; }
@@ -126,6 +130,7 @@
 .ws-group-dialog form { display: grid; gap: 14px; }
 .ws-group-create-dialog { width: min(560px, calc(100% - 28px)); }
 .ws-ai-form { display: grid; gap: 20px; min-width: 0; padding: 20px 0; border-top: 1px solid var(--border); }
+.ws-append-ai { scroll-margin-top: 20px; }
 .ws-ai-types { border: 0; padding: 0; margin: 0; min-width: 0; }
 .ws-ai-types legend { padding: 0; margin-bottom: 12px; font-size: 14px; color: var(--muted); }
 .ws-ai-image-settings { display: flex; align-items: center; flex-wrap: wrap; gap: 16px 24px; min-height: 38px; }
@@ -233,7 +238,6 @@
  .ws-form-grid { grid-template-columns: 1fr; }
  .ws-question-head { flex-wrap: wrap; }
  .ws-editor > .ws-question { padding: 16px; }
- .ws-test-settings { padding: 16px; }
  .ws-question-head select { max-width: 210px; }
  .exam-screen { padding: 16px; }
  .exam-header strong { flex-basis: 100%; }

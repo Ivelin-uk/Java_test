@@ -11,6 +11,7 @@
     "test:e2e": "node e2e/workspace.mjs",
     "test:authoring": "node e2e/authoring.mjs",
     "test:ai": "node e2e/ai-page.mjs",
+    "test:ai-append": "node e2e/ai-append.mjs",
     "test:groups": "node e2e/groups.mjs",
     "test:group-multiselect": "node e2e/group-multiselect.mjs",
     "test:library": "node e2e/test-library.mjs",
