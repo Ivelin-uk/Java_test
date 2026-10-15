@@ -767,6 +767,73 @@ class WorkspaceTests {
         }
         assertEquals(1,db.count("SELECT COUNT(*) FROM exam_attempts WHERE organization_id=? AND assignment_id=?",org,assignment));assertThrows(WorkspaceError.class,()->start(startRequest()));
     }
+    private AssessmentService.Definition assignQuestionOrder(boolean shuffled,int size,int maxAttempts) {
+        var questions=new ArrayList<AssessmentService.Question>();
+        for(int i=0;i<size;i++) questions.add(new AssessmentService.Question("SINGLE_CHOICE","Ordered question "+i,"MEDIUM",BigDecimal.valueOf(i+1),30+i,List.of(new AssessmentService.Option("Correct",true),new AssessmentService.Option("Wrong",false)),List.of(),true,true,"","Explanation "+i));
+        var definition=new AssessmentService.Definition("Student-specific order","","Java","12","Instructions","bg","bulgarian",new BigDecimal("50"),questions);
+        long test=number(assessments.save(teaching,null,definition),"id");version=number(assessments.publish(teaching,test),"id");
+        var assigned=assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),maxAttempts,shuffled,false,true));
+        assignment=number(assigned,"id");code=string(assigned,"code");return definition;
+    }
+    private List<AssessmentService.Question> savedAttemptQuestions(long id) {
+        return db.rows("SELECT definition_json FROM attempt_questions WHERE organization_id=? AND attempt_id=? ORDER BY position_index",org,id).stream()
+                .map(row->workspaceJson.parse(workspaceJson.write(workspaceJson.object(row.get("definition_json")).get("question")),AssessmentService.Question.class)).toList();
+    }
+    @Test void groupStudentsShuffleIndependentlyAndKeepOrderOnResumeTransferAndRetake() throws Exception {
+        var colleague=user(Role.STUDENT);db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,colleague.getId(),"[\"STUDENT\"]",now);
+        organizations.addStudent(teaching,defaultGroup,colleague.getId());
+        // Twenty distinct questions make an accidental matching permutation negligible (1 / 20!).
+        var definition=assignQuestionOrder(true,20,2);
+        var otherScope=new OrgAccess.Scope(org,colleague.getId(),Set.of("STUDENT"));
+        String otherAuthorization="Bearer "+auth.login(new AuthService.LoginRequest(colleague.getEmail(),"password123")).token();
+        var firstRequest=startRequest();var secondRequest=startRequest();
+        var otherSession=new AttemptService.Session(secondRequest.sessionToken(),secondRequest.browserId(),otherAuthorization);
+        Map<String,Object> firstState,secondState;var ready=new CountDownLatch(2);var go=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(2)) {
+            var first=pool.submit(()->{ready.countDown();assertTrue(go.await(5,TimeUnit.SECONDS));return start(firstRequest);});
+            var second=pool.submit(()->{ready.countDown();assertTrue(go.await(5,TimeUnit.SECONDS));return attempts.start(otherScope,assignment,secondRequest,otherAuthorization,"127.0.0.2");});
+            assertTrue(ready.await(5,TimeUnit.SECONDS));go.countDown();firstState=first.get(15,TimeUnit.SECONDS);secondState=second.get(15,TimeUnit.SECONDS);
+        }
+        long first=number(firstState,"id"),second=number(secondState,"id");
+        var firstOrder=savedAttemptQuestions(first);var secondOrder=savedAttemptQuestions(second);
+        assertNotEquals(first,second);assertEquals(20,firstOrder.size());assertEquals(20,secondOrder.size());
+        assertEquals(new HashSet<>(definition.questions()),new HashSet<>(firstOrder));assertEquals(new HashSet<>(definition.questions()),new HashSet<>(secondOrder));
+        assertNotEquals(firstOrder,secondOrder);
+        assertEquals(firstOrder.getFirst().text(),string(question(firstState),"text"));assertEquals(secondOrder.getFirst().text(),string(question(secondState),"text"));
+        assertEquals(first,number(start(firstRequest),"id"));assertEquals(firstOrder,savedAttemptQuestions(first));
+        assertEquals(second,number(attempts.start(otherScope,assignment,secondRequest,otherAuthorization,"127.0.0.2"),"id"));assertEquals(secondOrder,savedAttemptQuestions(second));
+        assertEquals(2,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=?",assignment));
+        assertEquals(question(firstState),question(attempts.getState(learning,first,session(firstRequest))));
+        assertEquals(question(secondState),question(attempts.getState(otherScope,second,otherSession)));
+        assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->attempts.getState(otherScope,first,otherSession)).getStatusCode());
+        assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->attempts.getState(learning,second,session(firstRequest))).getStatusCode());
+        var current=question(firstState);
+        attempts.answer(learning,first,number(current,"id"),session(firstRequest),new AttemptService.AnswerRequest("shuffle-correct-answer",string(current,"open_instance"),correct(current)));
+        assertEquals(0,decimal(db.one("SELECT automatic_points FROM attempt_questions WHERE id=?",number(current,"id")),"automatic_points").compareTo(firstOrder.getFirst().points()));
+        var next=attempts.open(learning,first,session(firstRequest),new AttemptService.Ready(true,true));assertEquals(firstOrder.get(1).text(),string(question(next),"text"));
+        var transferred=startRequest();attempts.transfer(learning,first,transferred,"password123",authorization);
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->attempts.getState(learning,first,session(firstRequest))).getStatusCode());
+        assertEquals(question(next),question(attempts.getState(learning,first,session(transferred))));assertEquals(firstOrder,savedAttemptQuestions(first));
+        attempts.submit(learning,first,session(transferred));
+        var retakeRequest=startRequest();long retake=number(start(retakeRequest),"id");var retakeOrder=savedAttemptQuestions(retake);
+        assertNotEquals(firstOrder,retakeOrder);assertEquals(new HashSet<>(definition.questions()),new HashSet<>(retakeOrder));
+        assertEquals(retake,number(start(retakeRequest),"id"));assertEquals(retakeOrder,savedAttemptQuestions(retake));assertEquals(firstOrder,savedAttemptQuestions(first));
+        assertEquals(definition,workspaceJson.parse(db.one("SELECT definition_json FROM assessment_versions WHERE id=?",version).get("definition_json"),AssessmentService.Definition.class));
+        for(var row:db.rows("SELECT definition_json FROM attempt_questions WHERE organization_id=? AND attempt_id IN (?,?,?)",org,first,second,retake)) {
+            var options=(List<?>)workspaceJson.object(row.get("definition_json")).get("options");
+            assertEquals(List.of("Correct","Wrong"),options.stream().map(o->((Map<?,?>)o).get("text")).toList());
+            assertEquals(List.of(true,false),options.stream().map(o->((Map<?,?>)o).get("correct")).toList());
+        }
+    }
+    @Test void disabledQuestionShufflePreservesThePublishedOrder() {
+        var definition=assignQuestionOrder(false,20,1);var request=startRequest();long id=number(start(request),"id");
+        assertEquals(definition.questions(),savedAttemptQuestions(id));assertEquals(id,number(start(request),"id"));assertEquals(definition.questions(),savedAttemptQuestions(id));
+    }
+    @Test void singleQuestionShuffleRemainsUsableAndStable() {
+        var definition=assignQuestionOrder(true,1,1);var request=startRequest();var state=start(request);long id=number(state,"id");
+        assertEquals(definition.questions(),savedAttemptQuestions(id));assertEquals(definition.questions().getFirst().text(),string(question(state),"text"));
+        assertEquals(question(state),question(attempts.getState(learning,id,session(request))));
+    }
     @Test void exactDeadlineRejectsCorrectAnswerAndDraftAndRetry() {
         var r=startRequest();var state=start(r);var q=question(state);long id=number(state,"id"),qid=number(q,"id");var response=new AttemptService.AnswerRequest("answer-key-123",string(q,"open_instance"),correct(q));
         attempts.draft(learning,id,qid,session(r),response);when(clock.instant()).thenReturn(Instant.parse(string(q,"deadline_at")));

@@ -48,7 +48,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
   const [end, setEnd] = useState(() => localTime(new Date(Date.now() + 3600000)))
   const periodError = start && end && new Date(start).getTime() >= new Date(end).getTime() ? 'Крайният срок трябва да е след началото.' : ''
   const [attempts, setAttempts] = useState(1)
-  const [shuffleQ, setShuffleQ] = useState(false)
+  const [shuffleQ, setShuffleQ] = useState(true)
   const [shuffleA, setShuffleA] = useState(false)
   const [afterDeadline, setAfterDeadline] = useState(true)
   const [revokingCode, setRevokingCode] = useState<Assignment | null>(null)
@@ -63,7 +63,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
     setStart(localTime(new Date(now)))
     setEnd(localTime(new Date(now + 3600000)))
     setAttempts(1)
-    setShuffleQ(false)
+    setShuffleQ(true)
     setShuffleA(false)
     setAfterDeadline(true)
     setFormError(null)
