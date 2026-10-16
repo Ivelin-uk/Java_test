@@ -42,7 +42,7 @@ class GoogleOAuthTests {
         var uri=UriComponentsBuilder.fromUriString(target).build();var params=uri.getQueryParams();
         assertEquals("accounts.google.com",uri.getHost());assertEquals("code",params.getFirst("response_type"));
         assertEquals("fixture.apps.googleusercontent.com",params.getFirst("client_id"));
-        assertEquals("http://localhost/login/oauth2/code/google",params.getFirst("redirect_uri"));
+        assertEquals("http://localhost:8080/login/oauth2/code/google",params.getFirst("redirect_uri"));
         assertNotNull(params.getFirst("state"));assertNotNull(params.getFirst("nonce"));
         assertEquals(Role.TEACHER,session.getAttribute("examai.google.registrationRole"));
     }

@@ -18,7 +18,7 @@ public class GoogleLoginService {
                               @Value("${app.backend-url:http://localhost:8080}") String backend) {
         this.identity = identity;
         this.enabled = enabled;
-        this.backend = backend;
+        this.backend = backend.strip().replaceAll("/+$", "");
     }
 
     public Map<String, Object> config() {
