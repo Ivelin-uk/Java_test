@@ -4,6 +4,8 @@ import com.quicktest.exception.ApiException;
 import com.quicktest.tests.QuestionType;
 import com.quicktest.tests.QuizDtos;
 import jakarta.validation.Validator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -33,6 +35,7 @@ import static org.springframework.http.HttpStatus.*;
 @Component
 @ConditionalOnProperty(name = "app.ai.provider", havingValue = "openai", matchIfMissing = true)
 public class OpenAiProvider implements AiProvider {
+    private static final Logger log = LoggerFactory.getLogger(OpenAiProvider.class);
     private static final String SCHEMA = """
             {
               "type": "object", "additionalProperties": false,
@@ -89,19 +92,18 @@ public class OpenAiProvider implements AiProvider {
                             @Value("${app.ai.openai.timeout-seconds:180}") int timeoutSeconds) {
         this.mapper = mapper;
         this.validator = validator;
-        this.endpoint = URI.create(baseUrl.endsWith("/") ? baseUrl : baseUrl + "/").resolve("responses");
-        this.imageEndpoint = URI.create(baseUrl.endsWith("/") ? baseUrl : baseUrl + "/").resolve("images/generations");
-        this.model = model;
-        this.imageModel = imageModel;
-        this.apiKey = apiKey;
+        URI base = baseUri(normalize(baseUrl));
+        this.endpoint = base == null ? null : base.resolve("responses");
+        this.imageEndpoint = base == null ? null : base.resolve("images/generations");
+        this.model = normalize(model);
+        this.imageModel = normalize(imageModel);
+        this.apiKey = normalize(apiKey);
         this.timeout = Duration.ofSeconds(timeoutSeconds);
     }
 
     @Override
     public GeneratedTest generateTest(GenerateTestRequest request) {
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new ApiException(SERVICE_UNAVAILABLE, "Липсва OPENAI_API_KEY на сървъра. Ръчното създаване остава достъпно.");
-        }
+        requireConfiguration(false, "Липсва OPENAI_API_KEY на сървъра. Ръчното създаване остава достъпно.");
         try {
             ObjectNode schema = (ObjectNode) mapper.readTree(SCHEMA);
             if (request.imageCount() > 0) {
@@ -175,9 +177,7 @@ public class OpenAiProvider implements AiProvider {
                 throw new ApiException(SERVICE_UNAVAILABLE, "OpenAI отхвърли API ключа или достъпа до модела. Проверете настройките на сървъра.");
             }
             if (response.statusCode() == 429) {
-                JsonNode error = mapper.readTree(response.body()).path("error");
-                String code = error.path("code").asString("");
-                if ("insufficient_quota".equals(code)) {
+                if (insufficientQuota(response.body())) {
                     throw new ApiException(SERVICE_UNAVAILABLE, "Няма наличен OpenAI API кредит. API се таксува отделно от абонамента за ChatGPT.");
                 }
                 throw new ApiException(SERVICE_UNAVAILABLE, "Достигнат е лимитът на OpenAI. Изчакайте и повторете заявката.");
@@ -188,22 +188,8 @@ public class OpenAiProvider implements AiProvider {
             if (response.statusCode() != 200) {
                 throw new ApiException(SERVICE_UNAVAILABLE, "AI услугата не е достъпна в момента.");
             }
-            JsonNode result = mapper.readTree(response.body());
-            if (!"completed".equals(result.path("status").asString())) {
-                throw invalidResponse();
-            }
-            StringBuilder content = new StringBuilder();
-            for (JsonNode output : result.path("output")) {
-                if (!"message".equals(output.path("type").asString())) continue;
-                for (JsonNode part : output.path("content")) {
-                    if ("refusal".equals(part.path("type").asString())) {
-                        throw new ApiException(BAD_GATEWAY, "OpenAI отказа тази заявка. Променете темата или учебния текст.");
-                    }
-                    if ("output_text".equals(part.path("type").asString())) content.append(part.path("text").asString(""));
-                }
-            }
-            if (content.isEmpty()) throw invalidResponse();
-            Draft draft = mapper.readValue(content.toString(), Draft.class);
+            JsonNode result = readResponse(response.body(), false);
+            Draft draft = mapper.readValue(responseText(result, false), Draft.class);
             if (draft == null) throw invalidResponse();
             QuizDtos.TestRequest test = new QuizDtos.TestRequest(
                     draft.title(), draft.description(), request.language(), null,
@@ -228,7 +214,7 @@ public class OpenAiProvider implements AiProvider {
 
     @Override
     public GeneratedImage generateImage(GenerateImageRequest request) {
-        if (apiKey == null || apiKey.isBlank()) throw new ApiException(SERVICE_UNAVAILABLE, "Липсва OPENAI_API_KEY за генериране на изображения.");
+        requireConfiguration(true, "Липсва OPENAI_API_KEY за генериране на изображения.");
         try {
             String prompt = "Create one accurate educational illustration for an exam question. "
                     + "Use a clean light background, crisp readable lines and correct spatial relationships. "
@@ -267,9 +253,7 @@ public class OpenAiProvider implements AiProvider {
 
     @Override
     public GradedAnswers gradeAnswers(GradeAnswersRequest request) {
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new ApiException(SERVICE_UNAVAILABLE, "Липсва OPENAI_API_KEY на сървъра. Ръчната проверка остава достъпна.");
-        }
+        requireConfiguration(false, "Липсва OPENAI_API_KEY на сървъра. Ръчната проверка остава достъпна.");
         try {
             var ids = request.questions().stream().map(GradingQuestion::id).toList();
             Map<String, Object> item = Map.of("type", "object", "additionalProperties", false,
@@ -301,23 +285,12 @@ public class OpenAiProvider implements AiProvider {
             if (response.statusCode() == 401 || response.statusCode() == 403)
                 throw new ApiException(SERVICE_UNAVAILABLE, "OpenAI отхвърли API ключа или достъпа до модела.");
             if (response.statusCode() == 429) {
-                boolean quota = "insufficient_quota".equals(mapper.readTree(response.body()).path("error").path("code").asString(""));
+                boolean quota = insufficientQuota(response.body());
                 throw new ApiException(SERVICE_UNAVAILABLE, quota ? "Няма наличен OpenAI API кредит." : "Достигнат е лимитът на OpenAI. Изчакайте и повторете.");
             }
             if (response.statusCode() != 200) throw new ApiException(SERVICE_UNAVAILABLE, "AI проверката не е достъпна в момента.");
-            JsonNode result = mapper.readTree(response.body());
-            if (!"completed".equals(result.path("status").asString())) throw invalidGrading();
-            StringBuilder content = new StringBuilder();
-            for (JsonNode output : result.path("output")) {
-                if (!"message".equals(output.path("type").asString())) continue;
-                for (JsonNode part : output.path("content")) {
-                    if ("refusal".equals(part.path("type").asString()))
-                        throw new ApiException(BAD_GATEWAY, "OpenAI отказа проверката. Използвайте ръчна проверка.");
-                    if ("output_text".equals(part.path("type").asString())) content.append(part.path("text").asString(""));
-                }
-            }
-            if (content.isEmpty()) throw invalidGrading();
-            GradingDraft draft = mapper.readValue(content.toString(), GradingDraft.class);
+            JsonNode result = readResponse(response.body(), true);
+            GradingDraft draft = mapper.readValue(responseText(result, true), GradingDraft.class);
             if (draft == null || draft.grades() == null || draft.grades().size() != ids.size()) throw invalidGrading();
             Set<Long> seen = new HashSet<>();
             for (AnswerGrade grade : draft.grades()) {
@@ -341,8 +314,99 @@ public class OpenAiProvider implements AiProvider {
         }
     }
 
+    private static String normalize(String value) {
+        return value == null ? "" : value.strip();
+    }
+
+    private static URI baseUri(String baseUrl) {
+        try {
+            URI base = URI.create(baseUrl.endsWith("/") ? baseUrl : baseUrl + "/");
+            if (!("https".equalsIgnoreCase(base.getScheme()) || "http".equalsIgnoreCase(base.getScheme()))
+                    || base.getHost() == null || base.getUserInfo() != null
+                    || base.getQuery() != null || base.getFragment() != null) return null;
+            return base;
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private void requireConfiguration(boolean image, String missingKeyMessage) {
+        if (apiKey.isBlank()) throw new ApiException(SERVICE_UNAVAILABLE, missingKeyMessage);
+        if (apiKey.codePoints().anyMatch(value -> value <= 32 || value >= 127))
+            throw new ApiException(SERVICE_UNAVAILABLE, "Невалиден OPENAI_API_KEY на сървъра. Поставете само ключа, без интервали или нови редове.");
+        if (endpoint == null)
+            throw new ApiException(SERVICE_UNAVAILABLE, "Невалиден OPENAI_BASE_URL на сървъра. Използвайте пълен HTTP/HTTPS адрес, например https://api.openai.com/v1.");
+        if ((image ? imageModel : model).isBlank())
+            throw new ApiException(SERVICE_UNAVAILABLE, image ? "Липсва OPENAI_IMAGE_MODEL на сървъра." : "Липсва OPENAI_MODEL на сървъра.");
+        if (timeout.isZero() || timeout.isNegative())
+            throw new ApiException(SERVICE_UNAVAILABLE, "Невалиден OPENAI_TIMEOUT_SECONDS на сървъра. Задайте положителен брой секунди.");
+    }
+
+    private boolean insufficientQuota(String body) {
+        try {
+            JsonNode result = mapper.readTree(body);
+            return result != null && "insufficient_quota".equals(result.path("error").path("code").asString(""));
+        } catch (JacksonException exception) {
+            return false;
+        }
+    }
+
+    private JsonNode readResponse(String body, boolean grading) {
+        JsonNode result;
+        try {
+            result = mapper.readTree(body);
+        } catch (JacksonException exception) {
+            throw rejectedResponse(grading, "invalid_response_json", null, null);
+        }
+        if (result == null || !result.isObject())
+            throw rejectedResponse(grading, "invalid_response_format", null, null);
+        return result;
+    }
+
+    private String responseText(JsonNode result, boolean grading) {
+        if (!"completed".equals(result.path("status").asString())) {
+            String reason = result.path("incomplete_details").path("reason").asString("");
+            if ("incomplete".equals(result.path("status").asString()) && "max_output_tokens".equals(reason))
+                throw rejectedResponse(grading, "output_token_limit", result, grading
+                        ? "Достигнат е лимитът за дължина на AI проверката. Резултатът не е публикуван. Проверете OPENAI_MODEL."
+                        : "Достигнат е лимитът за дължина на AI отговора. Намалете броя въпроси или проверете OPENAI_MODEL.");
+            if ("incomplete".equals(result.path("status").asString()) && "content_filter".equals(reason))
+                throw rejectedResponse(grading, "refusal", result, refusalMessage(grading));
+            throw rejectedResponse(grading, "response_not_completed", result, null);
+        }
+        StringBuilder content = new StringBuilder();
+        for (JsonNode output : result.path("output")) {
+            if (!"message".equals(output.path("type").asString())) continue;
+            for (JsonNode part : output.path("content")) {
+                if ("refusal".equals(part.path("type").asString()))
+                    throw rejectedResponse(grading, "refusal", result, refusalMessage(grading));
+                if ("output_text".equals(part.path("type").asString())) content.append(part.path("text").asString(""));
+            }
+        }
+        if (content.isEmpty()) throw rejectedResponse(grading, "empty_output", result, null);
+        return content.toString();
+    }
+
+    private String refusalMessage(boolean grading) {
+        return grading ? "OpenAI отказа проверката. Използвайте ръчна проверка."
+                : "OpenAI отказа тази заявка. Променете темата или учебния текст.";
+    }
+
+    private ApiException rejectedResponse(boolean grading, String reason, JsonNode result, String detail) {
+        // Only fixed categories and numeric usage are logged, never upstream text or headers.
+        String status = result == null ? "unknown" : result.path("status").asString("");
+        if (!Set.of("completed", "incomplete", "failed", "cancelled", "queued", "in_progress").contains(status)) status = "unknown";
+        int outputTokens = result == null ? 0 : result.path("usage").path("output_tokens").asInt(0);
+        int reasoningTokens = result == null ? 0 : result.path("usage").path("output_tokens_details").path("reasoning_tokens").asInt(0);
+        log.warn("OpenAI {} response rejected: reason={}, status={}, output_tokens={}, reasoning_tokens={}",
+                grading ? "grading" : "generation", reason, status, outputTokens, reasoningTokens);
+        return new ApiException(BAD_GATEWAY, detail != null ? detail : grading
+                ? "AI върна невалидна проверка. Резултатът не е публикуван."
+                : "AI върна невалидни въпроси. Опитай отново.");
+    }
+
     private ResponseStatusException invalidGrading() {
-        return new ApiException(BAD_GATEWAY, "AI върна невалидна проверка. Резултатът не е публикуван.");
+        return rejectedResponse(true, "invalid_grading_data", null, null);
     }
 
     private record GradingDraft(List<AnswerGrade> grades) {}
@@ -370,7 +434,7 @@ public class OpenAiProvider implements AiProvider {
     }
 
     private ResponseStatusException invalidResponse() {
-        return new ApiException(BAD_GATEWAY, "AI върна невалидни въпроси. Опитай отново.");
+        return rejectedResponse(false, "invalid_question_data", null, null);
     }
 
     private record Draft(String title, String description, List<QuizDtos.QuestionRequest> questions, List<String> imagePrompts) {}

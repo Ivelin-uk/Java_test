@@ -8,6 +8,10 @@ import jakarta.validation.ValidatorFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.function.Executable;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.JsonNode;
@@ -189,6 +193,17 @@ class OpenAiProviderTests {
         assertGradingFailure(HttpStatus.BAD_GATEWAY);
     }
 
+    @Test
+    void malformedRateLimitBodiesRemainServiceFailuresWithoutLeakingContent() {
+        responseStatus = 429;
+        responseBody = "private upstream error, not JSON";
+        var generation = assertThrows(ResponseStatusException.class, () -> provider().generateTest(request()));
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, generation.getStatusCode());
+        assertTrue(generation.getReason().contains("лимит"));
+        assertFalse(generation.getReason().contains("private upstream error"));
+        assertTrue(assertGradingFailure(HttpStatus.SERVICE_UNAVAILABLE).getReason().contains("лимит"));
+    }
+
     private ResponseStatusException assertGradingFailure(HttpStatus status) {
         var error = assertThrows(ResponseStatusException.class, () -> provider().gradeAnswers(gradingRequest()));
         assertEquals(status, error.getStatusCode()); assertFalse(error.getReason().contains("private upstream error"));
@@ -224,6 +239,93 @@ class OpenAiProviderTests {
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, error.getStatusCode());
         assertTrue(error.getReason().contains("OPENAI_API_KEY"));
         assertNull(received);
+    }
+
+    @Test
+    void normalizesCopiedConfigurationForGenerationGradingAndImages() {
+        String baseUrl = " \t http://127.0.0.1:" + server.getAddress().getPort() + "/ \r\n";
+        for (String key : List.of(" \ttest-key\n  ", " \ttest-key\r\n ")) {
+            var provider = new OpenAiProvider(mapper, validators.getValidator(), baseUrl,
+                    " \tgpt-4.1-mini\r\n ", " \ttest-image-model\n ", key, 2);
+            responseBody = response(draft());
+            assertEquals(2, provider.generateTest(request()).test().questions().size());
+            assertEquals("Bearer test-key", authorization);
+            assertEquals("gpt-4.1-mini", received.path("model").asString());
+
+            responseBody = response(gradingDraft());
+            assertEquals(2, provider.gradeAnswers(gradingRequest()).grades().size());
+            assertEquals("Bearer test-key", authorization);
+            assertEquals("gpt-4.1-mini", received.path("model").asString());
+
+            responseBody = mapper.writeValueAsString(Map.of("data", List.of(Map.of("b64_json", "aW1hZ2U="))));
+            assertEquals("test-image-model", provider.generateImage(new AiProvider.GenerateImageRequest("Triangle", "bg")).model());
+            assertEquals("Bearer test-key", authorization);
+            assertEquals("test-image-model", received.path("model").asString());
+        }
+    }
+
+    @Test
+    void rejectsInternalCredentialWhitespaceBeforeSendingAnyRequest() {
+        for (String key : List.of("key-secret-sentinel\nsuffix", "key-secret-sentinel\r\nsuffix",
+                "key-secret-sentinel suffix", "key-secret-sentinel\tsuffix")) {
+            var provider = new OpenAiProvider(mapper, validators.getValidator(),
+                    "http://127.0.0.1:" + server.getAddress().getPort(), "gpt-4.1-mini", "test-image-model", key, 2);
+            assertConfigurationFailure("OPENAI_API_KEY", "key-secret-sentinel", () -> provider.generateTest(request()));
+            assertConfigurationFailure("OPENAI_API_KEY", "key-secret-sentinel", () -> provider.gradeAnswers(gradingRequest()));
+            assertConfigurationFailure("OPENAI_API_KEY", "key-secret-sentinel", () -> provider.generateImage(new AiProvider.GenerateImageRequest("Triangle", "bg")));
+        }
+    }
+
+    @Test
+    void reportsInvalidBaseUrlsAsConfigurationFailuresBeforeSendingAnyRequest() {
+        for (String baseUrl : List.of("api.openai.com/v1", "ftp://config-secret-sentinel.example/v1",
+                "https://[config-secret-sentinel")) {
+            var provider = new OpenAiProvider(mapper, validators.getValidator(), baseUrl,
+                    "gpt-4.1-mini", "test-image-model", "test-key", 2);
+            assertConfigurationFailure("OPENAI_BASE_URL", "config-secret-sentinel", () -> provider.generateTest(request()));
+            assertConfigurationFailure("OPENAI_BASE_URL", "config-secret-sentinel", () -> provider.gradeAnswers(gradingRequest()));
+            assertConfigurationFailure("OPENAI_BASE_URL", "config-secret-sentinel", () -> provider.generateImage(new AiProvider.GenerateImageRequest("Triangle", "bg")));
+        }
+    }
+
+    @Test
+    void validatesTextAndImageModelsOnlyForTheirOperations() {
+        String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        var withoutTextModel = new OpenAiProvider(mapper, validators.getValidator(), baseUrl,
+                " \r\n ", "test-image-model", "test-key", 2);
+        assertConfigurationFailure("OPENAI_MODEL", "test-key", () -> withoutTextModel.generateTest(request()));
+        assertConfigurationFailure("OPENAI_MODEL", "test-key", () -> withoutTextModel.gradeAnswers(gradingRequest()));
+        responseBody = mapper.writeValueAsString(Map.of("data", List.of(Map.of("b64_json", "aW1hZ2U="))));
+        assertEquals("test-image-model", withoutTextModel.generateImage(new AiProvider.GenerateImageRequest("Triangle", "bg")).model());
+
+        var withoutImageModel = new OpenAiProvider(mapper, validators.getValidator(), baseUrl,
+                "gpt-4.1-mini", " \t ", "test-key", 2);
+        responseBody = response(draft());
+        assertEquals(2, withoutImageModel.generateTest(request()).test().questions().size());
+        responseBody = response(gradingDraft());
+        assertEquals(2, withoutImageModel.gradeAnswers(gradingRequest()).grades().size());
+        assertConfigurationFailure("OPENAI_IMAGE_MODEL", "test-key", () -> withoutImageModel.generateImage(new AiProvider.GenerateImageRequest("Triangle", "bg")));
+    }
+
+    private void assertConfigurationFailure(String property, String secret, Executable operation) {
+        received = null;
+        authorization = null;
+        var error = assertThrows(ResponseStatusException.class, operation);
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, error.getStatusCode());
+        assertTrue(error.getReason().contains(property));
+        assertFalse(error.getReason().contains(secret));
+        assertNull(received);
+        assertNull(authorization);
+    }
+
+    @Test
+    void rejectsNonpositiveTimeoutsAsConfigurationFailures() {
+        for (int seconds : List.of(0, -1)) {
+            var provider = new OpenAiProvider(mapper, validators.getValidator(),
+                    "http://127.0.0.1:" + server.getAddress().getPort(), "gpt-4.1-mini", "test-image-model", "test-key", seconds);
+            assertConfigurationFailure("OPENAI_TIMEOUT_SECONDS", "test-key", () -> provider.generateTest(request()));
+            assertConfigurationFailure("OPENAI_TIMEOUT_SECONDS", "test-key", () -> provider.gradeAnswers(gradingRequest()));
+        }
     }
 
     @Test
@@ -278,6 +380,67 @@ class OpenAiProviderTests {
         result.put("status", "incomplete");
         responseBody = mapper.writeValueAsString(result);
         assertFailure(HttpStatus.BAD_GATEWAY);
+    }
+
+    @Test
+    void distinguishesOutputTokenLimitsFromInvalidGenerationAndGrading() {
+        responseBody = mapper.writeValueAsString(Map.of("status", "incomplete", "output", List.of(),
+                "incomplete_details", Map.of("reason", "max_output_tokens"), "private", "private upstream error"));
+        var generation = assertThrows(ResponseStatusException.class, () -> provider().generateTest(request()));
+        assertEquals(HttpStatus.BAD_GATEWAY, generation.getStatusCode());
+        assertTrue(generation.getReason().contains("лимит"));
+        assertFalse(generation.getReason().contains("невалидни въпроси"));
+        assertFalse(generation.getReason().contains("private upstream error"));
+        var grading = assertGradingFailure(HttpStatus.BAD_GATEWAY);
+        assertTrue(grading.getReason().contains("лимит"));
+        assertFalse(grading.getReason().contains("невалидна проверка"));
+    }
+
+    @Test
+    void treatsFilteredIncompleteResponsesAsRefusalsWithoutExposingProviderContent() {
+        responseBody = mapper.writeValueAsString(Map.of("status", "incomplete", "output", List.of(),
+                "incomplete_details", Map.of("reason", "content_filter"), "private", "private upstream error"));
+        var generation = assertThrows(ResponseStatusException.class, () -> provider().generateTest(request()));
+        assertEquals(HttpStatus.BAD_GATEWAY, generation.getStatusCode());
+        assertTrue(generation.getReason().contains("отказа"));
+        assertFalse(generation.getReason().contains("private upstream error"));
+        assertTrue(assertGradingFailure(HttpStatus.BAD_GATEWAY).getReason().contains("отказа"));
+    }
+
+    @Test
+    void rejectsUnknownIncompleteReasonsAndEmptyCompletedOutputs() {
+        for (String status : List.of("incomplete", "completed")) {
+            responseBody = mapper.writeValueAsString(Map.of("status", status, "output", List.of(),
+                    "incomplete_details", Map.of("reason", "private upstream error")));
+            var generation = assertThrows(ResponseStatusException.class, () -> provider().generateTest(request()));
+            assertEquals(HttpStatus.BAD_GATEWAY, generation.getStatusCode());
+            assertFalse(generation.getReason().contains("private upstream error"));
+            assertGradingFailure(HttpStatus.BAD_GATEWAY);
+        }
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void diagnosticsLogOnlySafeCategoriesAndTokenCounts(CapturedOutput output) {
+        String privateContent = "private-key-and-student-answer-sentinel";
+        responseBody = mapper.writeValueAsString(Map.of("status", "incomplete", "output", List.of(),
+                "incomplete_details", Map.of("reason", "max_output_tokens"), "private", privateContent,
+                "usage", Map.of("output_tokens", 2048, "output_tokens_details", Map.of("reasoning_tokens", 2000))));
+        assertFailure(HttpStatus.BAD_GATEWAY);
+        assertGradingFailure(HttpStatus.BAD_GATEWAY);
+        assertTrue(output.getAll().contains("reason=output_token_limit, status=incomplete, output_tokens=2048, reasoning_tokens=2000"));
+
+        responseBody = mapper.writeValueAsString(Map.of("status", privateContent, "output", List.of(),
+                "incomplete_details", Map.of("reason", privateContent)));
+        assertFailure(HttpStatus.BAD_GATEWAY);
+        assertGradingFailure(HttpStatus.BAD_GATEWAY);
+        assertTrue(output.getAll().contains("reason=response_not_completed, status=unknown"));
+        responseBody = privateContent;
+        assertFailure(HttpStatus.BAD_GATEWAY);
+        assertGradingFailure(HttpStatus.BAD_GATEWAY);
+        assertTrue(output.getAll().contains("reason=invalid_response_json"));
+        assertFalse(output.getAll().contains(privateContent));
+        assertFalse(output.getAll().contains("Bearer test-key"));
     }
 
     @Test

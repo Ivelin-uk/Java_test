@@ -10,6 +10,24 @@ Verification: separate `examai_verification` schema, disposable `example.test` i
 
 Production preparation: separate database and application credentials, HTTPS reverse proxy, secure OAuth state cookies, disabled demos/legacy/local fixtures/local mailbox, configured real email and AI, protected secrets/backups and institution-approved retention. `SPRING_PROFILES_ACTIVE=production` activates fail-closed demo/configuration checks. Stripe remains test-only; this project has no approved live payment mode. No public deployment was performed.
 
+## Railway AI Troubleshooting
+
+If AI works locally but fails on Railway, compare the deployed commit and the **backend service's Variables in the correct environment** with the project's defaults:
+
+```text
+AI_PROVIDER=openai
+OPENAI_MODEL=gpt-4.1-mini
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_TIMEOUT_SECONDS=180
+WORKSPACE_WORKERS=true
+```
+
+Set `OPENAI_API_KEY` privately in that backend service: paste only the key value on one line, without quotes or an `OPENAI_API_KEY=` prefix. Local `.local/openai.properties` is outside Git and the container; do not upload `.local`. Apply the variable changes by deploying them; saved edits alone do not change the running deployment. See [Railway's variable documentation](https://docs.railway.com/variables).
+
+The provider strips outer whitespace from keys, base URLs and model names. Embedded whitespace/control characters in a key and an invalid absolute HTTP(S) base URL produce a safe configuration error. An incomplete response with `max_output_tokens` produces a specific token-limit error. Neither malformed configuration nor a token limit is a confirmed explanation for a particular deployment until its configuration and logs are checked.
+
+For failed generation or grading, inspect the safe structured provider log fields: failure reason, response status and numeric output/reasoning token counts. These distinguish incomplete output from invalid JSON or question/grade validation. Never log or share real keys, Authorization headers, request/response bodies, generated content or student answers.
+
 ## Backup And Restore
 
 Before schema upgrades or retention, stop writes or use a consistent InnoDB dump. Backup files contain identities, answer evidence, session credentials and delivery tokens. Keep them private and encrypted, outside git; do not share them as test fixtures.
