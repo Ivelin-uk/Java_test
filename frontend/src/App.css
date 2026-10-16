@@ -25,7 +25,7 @@
 
 .eyebrow {
   color: var(--link);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -43,7 +43,7 @@
 .participant h1 {
   color: var(--text);
   font-size: 30px;
-  line-height: 1.04;
+  line-height: 1.25;
   margin-top: 6px;
 }
 
@@ -77,7 +77,7 @@
 .test-pill span,
 .test-pill small {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .stat strong {
@@ -347,7 +347,7 @@ button:disabled {
 
 .table-head {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 800;
 }
 
@@ -412,8 +412,8 @@ button:disabled {
   gap: 10px;
   min-height: 40px;
   min-width: 0;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 700;
   background: #fff;
   color: #1f1f1f;
   border-color: #747775;
@@ -499,14 +499,14 @@ progress {
 
 .account-topbar { align-items: center; }
 .account-topbar h1 { font-size: 28px; line-height: 1.2; }
-.account-summary { margin-left: auto; display: grid; gap: 4px; min-width: 0; font-size: 13px; text-align: right; overflow-wrap: anywhere; }
+.account-summary { margin-left: auto; display: grid; gap: 4px; min-width: 0; font-size: 14px; text-align: right; overflow-wrap: anywhere; }
 .account-summary > span { color: var(--muted); }
 .account-summary .good, .good { color: var(--success); }
-.status-text { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.status-text { color: var(--muted); font-size: 14px; line-height: 1.6; }
 .muted, .inline-muted { color: var(--muted); }
 .warning-text { color: var(--warning); }
 .app-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
-.app-tabs > button, .app-tabs > a { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); font-size: 14px; text-decoration: none; }
+.app-tabs > button, .app-tabs > a { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); font-size: 15px; font-weight: 700; text-decoration: none; }
 .app-tabs > .active { color: var(--link); border-bottom-color: var(--link); font-weight: 700; }
 .app-tabs > button:hover { background: var(--hover); }
 .section-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
@@ -517,18 +517,18 @@ progress {
 .search-field > svg { position: absolute; left: 12px; top: 13px; color: var(--muted); }
 .search-field input { padding-left: 38px; }
 .filter-bar > button { margin-left: auto; }
-.count-label { color: var(--muted); font-size: 12px; font-weight: 500; }
+.count-label { color: var(--muted); font-size: 14px; font-weight: 600; }
 .table-scroll { width: 100%; min-width: 0; overflow: auto; border-top: 1px solid var(--border); }
-.data-table { border-collapse: collapse; width: 100%; min-width: 680px; text-align: left; font-size: 13px; }
-.data-table th { background: var(--subtle); color: var(--muted); padding: 12px; font-weight: 600; white-space: nowrap; }
-.data-table td { border-bottom: 1px solid var(--border); padding: 13px 12px; vertical-align: middle; line-height: 1.5; }
+.data-table { border-collapse: collapse; width: 100%; min-width: 680px; text-align: left; font-size: 15px; }
+.data-table th { background: var(--subtle); color: var(--text); padding: 14px 12px; font-size: 14px; font-weight: 700; white-space: nowrap; }
+.data-table td { border-bottom: 1px solid var(--border); padding: 15px 12px; vertical-align: middle; line-height: 1.6; }
 .data-table td:first-child { min-width: 160px; }
-.data-table td small { display: block; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.data-table td small { display: block; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
 .data-table td small.warning-text { color: var(--warning); }
-.data-table td strong { font-weight: 600; }
+.data-table td strong { font-weight: 700; }
 .data-table .inline-muted { display: inline; }
 .data-table tbody tr:hover { background: var(--hover); }
-.data-table code { font-size: 12px; color: var(--text); }
+.data-table code { font-size: 14px; color: var(--text); }
 .users-table { min-width: 870px; }
 .users-table td:last-child { width: 144px; }
 .permissions-table { min-width: 970px; }
@@ -537,7 +537,7 @@ progress {
 .permissions-table .fixed-policy { background: var(--subtle); }
 .route-text { font-family: ui-monospace, SFMono-Regular, monospace; margin-top: 3px; }
 .grant-cell { display: grid; gap: 8px; }
-.checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 15px; }
 .checkbox-label input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--link); flex-shrink: 0; }
 .admin-access { display: inline-flex; align-items: center; gap: 6px; color: var(--success); white-space: nowrap; }
 .row-actions { display: flex; gap: 6px; }
@@ -545,23 +545,23 @@ progress {
 .role-cell > span { flex: 1; }
 .role-cell > button { flex-shrink: 0; }
 .role-change-account { display: grid; gap: 4px; overflow-wrap: anywhere; }
-.role-change-account > span { color: var(--muted); font-size: 13px; }
-.status-badge { display: inline-block; padding: 3px 7px; border-radius: 4px; font-size: 12px; background: var(--success-bg); }
+.role-change-account > span { color: var(--muted); font-size: 14px; }
+.status-badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 14px; font-weight: 700; background: var(--success-bg); }
 .status-badge.inactive { color: var(--danger); background: var(--danger-bg); }
 .empty-cell { text-align: center; color: var(--muted); padding: 28px !important; }
-.admin-panel h2, .profile-layout h2, .student-sections h2 { font-size: 18px; line-height: 1.4; }
+.admin-panel h2, .profile-layout h2, .student-sections h2 { font-size: 20px; line-height: 1.4; }
 .dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .dialog-heading h2 { margin: 0; }
 .admin-dialog { width: min(480px, calc(100% - 28px)); }
 .admin-dialog p + p { margin-top: 12px; }
 .user-form, .password-form { display: grid; gap: 16px; }
 .subscription-fields { display: grid; gap: 12px; border: 0; border-top: 1px solid var(--border); padding: 12px 0 0; margin: 0; }
-.subscription-fields legend { padding: 0 8px 0 0; font-size: 14px; color: var(--muted); }
+.subscription-fields legend { padding: 0 8px 0 0; font-size: 15px; color: var(--text); }
 .credential-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; margin: 10px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .credential-line code { min-width: 0; overflow-wrap: anywhere; font-size: 15px; user-select: all; }
 .profile-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 400px); gap: 48px; align-items: start; }
-.profile-details { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 16px; font-size: 14px; margin-top: 24px; }
-.profile-details dt { color: var(--muted); }
+.profile-details { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 16px; font-size: 15px; margin-top: 24px; }
+.profile-details dt { color: var(--muted); font-weight: 700; }
 .profile-details dd { margin: 0; overflow-wrap: anywhere; }
 .password-form { max-width: 400px; }
 .student-sections { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; }
@@ -574,14 +574,14 @@ progress {
 .participant-head, .result-card { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .builder > .panel:first-child { border: 0; background: transparent; box-shadow: none; }
 .builder-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
-button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
 
 @media (max-width: 860px) {
   .account-topbar { flex-wrap: wrap; gap: 12px; }
   .account-topbar > div:first-child { flex: 1; }
   .account-summary { flex-basis: 100%; text-align: left; order: 3; margin: 0; }
   .account-topbar h1 { font-size: 24px; }
-  .app-tabs > button, .app-tabs > a { padding: 9px 10px; font-size: 13px; }
+  .app-tabs > button, .app-tabs > a { padding: 9px 10px; font-size: 14px; }
   .filter-bar { gap: 10px; }
   .filter-bar > select { flex: 1 1 220px; min-width: 220px; width: 100%; }
   .filter-bar > button { margin-left: auto; }
@@ -589,7 +589,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .profile-layout { grid-template-columns: 1fr; gap: 32px; }
   .password-form { max-width: none; }
   .admin-dialog { padding: 18px; }
-  .credential-line code { font-size: 13px; }
+  .credential-line code { font-size: 14px; }
   .student-catalog, .student-results { min-width: 0; display: block; }
   .student-catalog thead, .student-results thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .student-catalog tbody, .student-results tbody { display: block; }
@@ -600,7 +600,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .student-catalog td:nth-child(3) { display: none; }
   .student-catalog td:nth-child(4) { grid-column: 2; grid-row: 1; align-self: start; }
   .student-results td:first-child, .student-results td:nth-child(4) { grid-column: 1 / -1; }
-  .student-results td:first-child { font-weight: 600; }
-  .student-results td[data-label]::before { content: attr(data-label); display: block; font-size: 12px; color: var(--muted); }
+  .student-results td:first-child { font-weight: 700; }
+  .student-results td[data-label]::before { content: attr(data-label); display: block; font-size: 14px; color: var(--muted); }
   .student-catalog td.empty-cell, .student-results td.empty-cell { grid-column: 1 / -1; }
 }
