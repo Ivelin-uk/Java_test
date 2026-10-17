@@ -530,7 +530,7 @@ progress {
 .data-table tbody tr:hover { background: var(--hover); }
 .data-table code { font-size: 14px; color: var(--text); }
 .users-table { min-width: 870px; }
-.users-table td:last-child { width: 144px; }
+.users-table td:last-child { width: 184px; }
 .permissions-table { min-width: 970px; }
 .permissions-table th:nth-child(3), .permissions-table th:nth-child(4) { width: 160px; }
 .permissions-table td:nth-child(2) { min-width: 260px; }

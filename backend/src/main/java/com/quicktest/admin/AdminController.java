@@ -5,6 +5,7 @@ import com.quicktest.auth.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.HttpStatus;
 import java.util.List;
 
 @RestController
@@ -41,6 +42,13 @@ public class AdminController {
     @PostMapping("/users/{id}/reset-password")
     public AdminService.PasswordResponse resetPassword(@RequestHeader("Authorization") String authorization, @PathVariable Long id) {
         return admin.resetPassword(auth.requireUser(authorization), id);
+    }
+
+    @DeleteMapping("/users/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteUser(@RequestHeader("Authorization") String authorization, @PathVariable Long id,
+                           @Valid @RequestBody AdminService.DeleteUserRequest request) {
+        admin.delete(auth.requireUser(authorization), id, request.password());
     }
 
     @GetMapping("/permissions")

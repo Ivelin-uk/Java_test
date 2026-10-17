@@ -4,11 +4,15 @@ import com.quicktest.admin.AdminService;
 import com.quicktest.admin.AdminAuditRepository;
 import com.quicktest.auth.*;
 import com.quicktest.tests.*;
+import com.quicktest.workspace.PersonalWorkspace;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,9 +22,11 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.sql.Statement;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -29,6 +35,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @Transactional
 class AdminSecurityTests {
+    // Rate-limit counters commit independently; give each test its own client address.
+    private static final AtomicInteger nextClient = new AtomicInteger();
+    private final String remoteAddress = "192.0.2." + nextClient.incrementAndGet();
+
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper mapper;
     @Autowired AppUserRepository users;
@@ -38,6 +48,9 @@ class AdminSecurityTests {
     @Autowired QuizTestRepository tests;
     @Autowired AttemptRepository attempts;
     @Autowired AdminAuditRepository audits;
+    @Autowired JdbcTemplate jdbc;
+    @Autowired EntityManager entities;
+    @Autowired PersonalWorkspace personal;
 
     @Test
     void registrationCannotChoosePrivilegedRoleOrSubscription() throws Exception {
@@ -61,12 +74,14 @@ class AdminSecurityTests {
             call(put("/api/admin/users/" + actor.user.getId()), actor.token, edit(actor.user), 403);
             call(put("/api/admin/users/" + actor.user.getId() + "/role"), actor.token, new AdminService.RoleEdit(Role.ADMIN), 403);
             call(post("/api/admin/users/" + actor.user.getId() + "/reset-password"), actor.token, null, 403);
+            call(delete("/api/admin/users/" + actor.user.getId()), actor.token, Map.of("password", "password123"), 403);
             call(get("/api/admin/permissions"), actor.token, null, 403);
             call(put("/api/admin/permissions"), actor.token, permission("QuizController.list", Role.STUDENT, true, false), 403);
             call(get("/api/admin/audit"), actor.token, null, 403);
         }
         call(get("/api/admin/users"), null, null, 401);
         call(put("/api/admin/users/" + teacher.user.getId() + "/role"), null, new AdminService.RoleEdit(Role.ADMIN), 401);
+        call(delete("/api/admin/users/" + teacher.user.getId()), null, Map.of("password", "password123"), 401);
         call(get("/api/public/tests/unknown"), null, null, 401);
     }
 
@@ -92,7 +107,7 @@ class AdminSecurityTests {
     void fixedAndUnknownPermissionsCannotBeDelegatedAndBatchesAreAtomic() throws Exception {
         Session admin = session(Role.ADMIN);
         Session teacher = session(Role.TEACHER);
-        for (String key : List.of("AdminController.users", "AdminController.changeRole", "AuthController.me", "AuthController.login", "Missing.method"))
+        for (String key : List.of("AdminController.users", "AdminController.changeRole", "AdminController.deleteUser", "AuthController.me", "AuthController.login", "Missing.method"))
             call(put("/api/admin/permissions"), admin.token, permission(key, Role.STUDENT, true, false), 400);
         call(put("/api/admin/permissions"), admin.token, permission("QuizController.list", Role.ADMIN, false, true), 400);
         var change = new AdminService.PermissionChange("QuizController.list", Role.TEACHER, false, false);
@@ -383,6 +398,304 @@ class AdminSecurityTests {
         assertTrue(login.path("user").path("subscription").path("active").asBoolean());
     }
 
+    @Test
+    void deleteRequiresValidAdministratorPasswordAndDoesNotMutateOnFailure() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session target = session(Role.STUDENT);
+        target.user.setPasswordHash(encoder.encode("target-password123"));
+        users.saveAndFlush(target.user);
+        String path = "/api/admin/users/" + target.user.getId();
+        for (Object invalid : List.of(Map.of(), Map.of("password", ""), Map.of("password", "   "),
+                mapper.createObjectNode().putNull("password"))) {
+            call(delete(path), admin.token, invalid, 400);
+        }
+        call(delete(path), admin.token, null, 400);
+        call(delete(path), admin.token, Map.of("password", "incorrect-password"), 403);
+        call(delete(path), admin.token, Map.of("password", "target-password123"), 403);
+        assertEquals(1, count("SELECT COUNT(*) FROM users WHERE id=?", target.user.getId()));
+        assertEquals(0, audits.count());
+        call(get("/api/auth/me"), target.token, null, 200);
+        call(get("/api/admin/users"), admin.token, null, 200);
+        call(delete("/api/admin/users/9223372036854775807"), admin.token, Map.of("password", "password123"), 404);
+    }
+
+    @Test
+    void administratorCannotDeleteOwnAccountEvenWhenAnotherAdministratorExists() throws Exception {
+        Session admin = session(Role.ADMIN);
+        call(delete("/api/admin/users/" + admin.user.getId()), admin.token, Map.of("password", "password123"), 400);
+        Session second = session(Role.ADMIN);
+        call(delete("/api/admin/users/" + admin.user.getId()), admin.token, Map.of("password", "password123"), 400);
+        assertEquals(2, count("SELECT COUNT(*) FROM users WHERE role='ADMIN' AND active=TRUE"));
+        assertEquals(0, audits.count());
+        call(get("/api/admin/users"), admin.token, null, 200);
+        call(get("/api/admin/users"), second.token, null, 200);
+    }
+
+    @Test
+    void administratorCanDeleteAnotherAdminAndAuditHistorySurvivesDetachedReferences() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session target = session(Role.ADMIN);
+        call(put("/api/admin/permissions"), target.token, permission("QuizController.list", Role.TEACHER, true, false), 200);
+        call(put("/api/admin/users/" + target.user.getId()), admin.token, edit(target.user), 200);
+        long targetId = target.user.getId();
+        call(delete("/api/admin/users/" + targetId), admin.token, Map.of("password", "password123"), 204);
+        entities.clear();
+        assertTrue(users.findById(targetId).isEmpty());
+        call(get("/api/admin/users"), target.token, null, 401);
+        JsonNode log = call(get("/api/admin/audit"), admin.token, null, 200);
+        assertEquals(3, log.size());
+        JsonNode deletion = null;
+        for (JsonNode entry : log) {
+            if (entry.path("action").asText().equals("USER_DELETED")) deletion = entry;
+            if (entry.path("action").asText().equals("PERMISSION_UPDATED")) assertEquals("Изтрит потребител", entry.path("actorEmail").asText());
+            if (entry.path("action").asText().equals("USER_UPDATED")) assertTrue(entry.path("targetEmail").isNull());
+        }
+        assertNotNull(deletion);
+        assertEquals(admin.user.getEmail(), deletion.path("actorEmail").asText());
+        assertTrue(deletion.path("targetEmail").isNull());
+        assertTrue(deletion.path("details").asText().contains(Long.toString(targetId)));
+        assertFalse(log.toString().contains("password123"));
+        assertFalse(log.toString().contains(target.user.getPasswordHash()));
+    }
+
+    @Test
+    void deletePhysicallyRemovesAccountCredentialsAndLegacyQuizGraphWithoutTouchingUnrelatedData() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session target = session(Role.TEACHER);
+        Session survivor = session(Role.TEACHER);
+        long targetId = target.user.getId();
+        String deletedEmail = target.user.getEmail();
+        String secondToken = call(post("/api/auth/login"), null,
+                new AuthService.LoginRequest(deletedEmail, "password123"), 200).path("token").asText();
+        JsonNode owned = call(post("/api/tests"), target.token, quiz(), 200);
+        JsonNode retained = call(post("/api/tests"), survivor.token, quiz(), 200);
+        long ownedId = owned.path("id").asLong();
+        long retainedId = retained.path("id").asLong();
+        String ownedCode = call(post("/api/tests/" + ownedId + "/publish"), target.token, null, 200).path("publicCode").asText();
+        String retainedCode = call(post("/api/tests/" + retainedId + "/publish"), survivor.token, null, 200).path("publicCode").asText();
+        long otherStudentOnDeletedQuiz = submitQuiz(ownedCode, survivor).path("attemptId").asLong();
+        long deletedStudentOnRetainedQuiz = submitQuiz(retainedCode, target).path("attemptId").asLong();
+        long retainedAttempt = submitQuiz(retainedCode, survivor).path("attemptId").asLong();
+        jdbc.update("INSERT INTO external_identities(user_id,provider,subject,linked_at) VALUES(?,'google',?,CURRENT_TIMESTAMP)",
+                targetId, "fixture-google-" + targetId);
+        jdbc.update("INSERT INTO identity_challenges(token_hash,user_id,purpose,expires_at) VALUES(?,?,'password_recovery',DATEADD('DAY',1,CURRENT_TIMESTAMP))",
+                "fixture-recovery-" + targetId, targetId);
+        jdbc.update("INSERT INTO notification_addresses(user_id,email,verified_at) VALUES(?,?,CURRENT_TIMESTAMP)", targetId, deletedEmail);
+        jdbc.update("INSERT INTO profile_exam_locks(user_id) VALUES(?)", targetId);
+        jdbc.update("INSERT INTO ai_usage(user_id,operation,model,input_tokens,output_tokens,created_at) VALUES(?,'generate','fixture',1,1,CURRENT_TIMESTAMP)", targetId);
+        assertEquals(2, count("SELECT COUNT(*) FROM auth_token WHERE user_id=?", targetId));
+
+        call(delete("/api/admin/users/" + targetId), admin.token, Map.of("password", "password123"), 204);
+        entities.clear();
+        assertTrue(users.findById(targetId).isEmpty());
+        assertTrue(tests.findById(ownedId).isEmpty());
+        assertTrue(attempts.findById(otherStudentOnDeletedQuiz).isEmpty());
+        assertTrue(attempts.findById(deletedStudentOnRetainedQuiz).isEmpty());
+        for (String table : List.of("auth_token", "external_identities", "identity_challenges", "notification_addresses", "profile_exam_locks", "ai_usage")) {
+            assertEquals(0, count("SELECT COUNT(*) FROM " + table + " WHERE user_id=?", targetId), table);
+        }
+        assertEquals(0, count("SELECT COUNT(*) FROM question WHERE test_id=?", ownedId));
+        assertEquals(2, count("SELECT COUNT(*) FROM answer"));
+        assertEquals(1, count("SELECT COUNT(*) FROM attempt_answer"));
+        assertTrue(users.findById(survivor.user.getId()).isPresent());
+        assertTrue(tests.findById(retainedId).isPresent());
+        assertTrue(attempts.findById(retainedAttempt).isPresent());
+        call(get("/api/auth/me"), target.token, null, 401);
+        call(get("/api/auth/me"), secondToken, null, 401);
+        call(get("/api/tests/" + retainedId), survivor.token, null, 200);
+        call(post("/api/auth/login"), null, new AuthService.LoginRequest(deletedEmail, "password123"), 401);
+        JsonNode recreated = call(post("/api/auth/register"), null,
+                new AuthService.RegisterRequest("New account", deletedEmail, "new-password123"), 200);
+        assertNotEquals(targetId, recreated.path("user").path("id").asLong());
+        call(delete("/api/admin/users/" + targetId), admin.token, Map.of("password", "password123"), 404);
+    }
+
+    @Test
+    void deletePurgesPersonalWorkspaceGraphAndRetainsUnrelatedWorkspaceAndAuditHistory() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session target = session(Role.TEACHER);
+        Session survivor = session(Role.TEACHER);
+        long targetId = target.user.getId();
+        long organization = personal.workspace(target.user);
+        long retainedOrganization = personal.workspace(survivor.user);
+        personal.member(retainedOrganization, targetId, "TEACHER");
+        long assessment = workspaceAssessment(organization, targetId);
+        long version = workspaceVersion(organization, assessment);
+        long assignment = workspaceAssignment(organization, version, targetId);
+        long attempt = workspaceAttempt(organization, assignment, targetId);
+        long question = insert("INSERT INTO attempt_questions(organization_id,attempt_id,position_index,definition_json,maximum_points,time_seconds) VALUES(?,?,0,'{}',1,30)", organization, attempt);
+        insert("INSERT INTO exam_events(organization_id,attempt_id,question_id,event_key,event_type,telemetry_json,received_at) VALUES(?,?,?,'fixture','answer','{}',CURRENT_TIMESTAMP)", organization, attempt, question);
+        long revision = workspaceResult(organization, attempt, targetId);
+        insert("INSERT INTO notification_outbox(organization_id,revision_id,user_id,notification_type,recipient_email,payload_json,status,available_at,created_at) VALUES(?,?,?,'final_result',?,'{}','sent',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", organization, revision, targetId, target.user.getEmail());
+        insert("INSERT INTO workspace_ai_jobs(organization_id,user_id,request_key,request_json,status,created_at,updated_at) VALUES(?,?,'fixture','{}','completed',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", organization, targetId);
+        insert("INSERT INTO workspace_ai_grading_jobs(organization_id,attempt_id,user_id,request_key,snapshot_hash,status,created_at,updated_at) VALUES(?,?,?,'fixture','fixture','completed',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", organization, attempt, targetId);
+        insert("INSERT INTO question_bank_items(organization_id,owner_id,subject,definition_json,created_at) VALUES(?,?,'Math','{}',CURRENT_TIMESTAMP)", organization, targetId);
+        long image = insert("INSERT INTO private_images(organization_id,owner_id,purpose,mime_type,byte_size,width,height,content,created_at) VALUES(?,?,'logo','image/png',1,1,1,?,CURRENT_TIMESTAMP)", organization, targetId, new byte[]{0});
+        jdbc.update("UPDATE organizations SET logo_id=? WHERE id=?", image, organization);
+        long group = insert("INSERT INTO learning_groups(organization_id,name,description,subject,created_at) VALUES(?,'Fixture','','Math',CURRENT_TIMESTAMP)", organization);
+        jdbc.update("INSERT INTO group_teachers(organization_id,group_id,user_id) VALUES(?,?,?)", organization, group, targetId);
+        jdbc.update("INSERT INTO group_members(organization_id,group_id,user_id) VALUES(?,?,?)", organization, group, targetId);
+        long conversation = insert("INSERT INTO workspace_conversations(organization_id,group_id,title) VALUES(?,?,'Fixture')", organization, group);
+        jdbc.update("INSERT INTO conversation_members(organization_id,conversation_id,user_id) VALUES(?,?,?)", organization, conversation, targetId);
+        long message = insert("INSERT INTO workspace_messages(organization_id,conversation_id,sender_id,body,created_at) VALUES(?,?,?,'Fixture',CURRENT_TIMESTAMP)", organization, conversation, targetId);
+        insert("INSERT INTO message_reports(organization_id,message_id,reporter_id,reason,created_at) VALUES(?,?,?,'Fixture',CURRENT_TIMESTAMP)", organization, message, targetId);
+        jdbc.update("INSERT INTO realtime_tickets(token_hash,organization_id,conversation_id,user_id,auth_session_hash,expires_at) VALUES('fixture-ticket',?,?,?,'fixture',DATEADD('DAY',1,CURRENT_TIMESTAMP))", organization, conversation, targetId);
+        jdbc.update("INSERT INTO assignment_teachers(organization_id,assignment_id,teacher_id) VALUES(?,?,?)", organization, assignment, targetId);
+        jdbc.update("INSERT INTO assignment_code_deliveries(organization_id,assignment_id,generation,student_id,channel,created_at) VALUES(?,?,1,?,'email',CURRENT_TIMESTAMP)", organization, assignment, targetId);
+        jdbc.update("INSERT INTO organization_quota_locks(organization_id) VALUES(?)", organization);
+        jdbc.update("INSERT INTO organization_retention_locks(organization_id) VALUES(?)", organization);
+        long retainedAudit = insert("INSERT INTO workspace_audit(organization_id,actor_id,action,detail_json,created_at) VALUES(?,?,'fixture','{}',CURRENT_TIMESTAMP)", retainedOrganization, targetId);
+        long retainedRetention = insert("INSERT INTO retention_runs(organization_id,request_key,actor_id,cutoff,reason,redacted_attempts,created_at) VALUES(?,'fixture',?,CURRENT_TIMESTAMP,'Fixture',0,CURRENT_TIMESTAMP)", retainedOrganization, targetId);
+
+        call(delete("/api/admin/users/" + targetId), admin.token, Map.of("password", "password123"), 204);
+        entities.clear();
+        for (String table : List.of("personal_workspaces", "memberships", "organization_subscriptions", "learning_groups",
+                "group_teachers", "group_members", "workspace_assessments", "assessment_versions", "exam_assignments",
+                "assignment_teachers", "assignment_recipients", "assignment_code_deliveries", "exam_attempts", "attempt_questions",
+                "exam_events", "result_revisions", "notification_outbox", "workspace_conversations", "conversation_members",
+                "workspace_messages", "message_reports", "realtime_tickets", "workspace_ai_jobs", "workspace_ai_grading_jobs",
+                "question_bank_items", "private_images", "organization_quota_locks", "organization_retention_locks")) {
+            assertEquals(0, count("SELECT COUNT(*) FROM " + table + " WHERE organization_id=?", organization), table);
+        }
+        assertEquals(0, count("SELECT COUNT(*) FROM organizations WHERE id=?", organization));
+        assertEquals(1, count("SELECT COUNT(*) FROM organizations WHERE id=?", retainedOrganization));
+        assertEquals(1, count("SELECT COUNT(*) FROM organization_subscriptions WHERE organization_id=?", retainedOrganization));
+        assertEquals(1, count("SELECT COUNT(*) FROM memberships WHERE organization_id=? AND user_id=?", retainedOrganization, survivor.user.getId()));
+        assertEquals(0, count("SELECT COUNT(*) FROM memberships WHERE user_id=?", targetId));
+        assertEquals(1, count("SELECT COUNT(*) FROM workspace_audit WHERE id=? AND actor_id IS NULL", retainedAudit));
+        assertEquals(1, count("SELECT COUNT(*) FROM retention_runs WHERE id=? AND actor_id IS NULL", retainedRetention));
+        call(get("/api/auth/me"), survivor.token, null, 200);
+    }
+
+    @Test
+    void runningAiAndProcessingMailBlockDeletionWithoutPartialCleanup() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session target = session(Role.TEACHER);
+        long targetId = target.user.getId();
+        long organization = personal.workspace(target.user);
+        long job = insert("INSERT INTO workspace_ai_jobs(organization_id,user_id,request_key,request_json,status,created_at,updated_at) VALUES(?,?,'fixture','{}','running',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", organization, targetId);
+        call(delete("/api/admin/users/" + targetId), admin.token, Map.of("password", "password123"), 409);
+        assertEquals(1, count("SELECT COUNT(*) FROM workspace_ai_jobs WHERE id=? AND status='running'", job));
+        assertEquals(1, count("SELECT COUNT(*) FROM users WHERE id=?", targetId));
+        assertEquals(0, audits.count());
+        call(get("/api/auth/me"), target.token, null, 200);
+        jdbc.update("UPDATE workspace_ai_jobs SET status='failed' WHERE id=?", job);
+        long delivery = insert("INSERT INTO notification_outbox(user_id,notification_type,recipient_email,payload_json,status,available_at,created_at) VALUES(?,'password_recovery',?,'{}','processing',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", targetId, target.user.getEmail());
+        call(delete("/api/admin/users/" + targetId), admin.token, Map.of("password", "password123"), 409);
+        assertEquals(1, count("SELECT COUNT(*) FROM notification_outbox WHERE id=? AND status='processing'", delivery));
+        assertEquals(1, count("SELECT COUNT(*) FROM users WHERE id=?", targetId));
+        assertEquals(1, count("SELECT COUNT(*) FROM personal_workspaces WHERE user_id=?", targetId));
+        assertEquals(0, audits.count());
+        call(get("/api/auth/me"), target.token, null, 200);
+        jdbc.update("UPDATE notification_outbox SET status='sent' WHERE id=?", delivery);
+        call(delete("/api/admin/users/" + targetId), admin.token, Map.of("password", "password123"), 204);
+    }
+
+    @Test
+    void deletingStudentRemovesOnlyTheirWorkspaceAttemptsAndRefundsQueuedAiQuota() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session teacher = session(Role.TEACHER);
+        Session target = session(Role.STUDENT);
+        Session survivor = session(Role.STUDENT);
+        long organization = personal.workspace(teacher.user);
+        personal.member(organization, target.user.getId(), "STUDENT");
+        personal.member(organization, survivor.user.getId(), "STUDENT");
+        long assessment = workspaceAssessment(organization, teacher.user.getId());
+        long version = workspaceVersion(organization, assessment);
+        long assignment = workspaceAssignment(organization, version, teacher.user.getId());
+        long deletedAttempt = workspaceAttempt(organization, assignment, target.user.getId());
+        long retainedAttempt = workspaceAttempt(organization, assignment, survivor.user.getId());
+        long retainedResult = workspaceResult(organization, retainedAttempt, target.user.getId());
+        insert("INSERT INTO workspace_ai_grading_jobs(organization_id,attempt_id,user_id,request_key,snapshot_hash,status,quota_reserved,created_at,updated_at) VALUES(?,?,?,'fixture','fixture','queued',TRUE,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", organization, deletedAttempt, teacher.user.getId());
+        insert("INSERT INTO workspace_ai_jobs(organization_id,user_id,request_key,request_json,status,created_at,updated_at) VALUES(?,?,'fixture','{}','queued',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", organization, target.user.getId());
+        jdbc.update("UPDATE organization_subscriptions SET ai_reserved=2 WHERE organization_id=?", organization);
+
+        call(delete("/api/admin/users/" + target.user.getId()), admin.token, Map.of("password", "password123"), 204);
+        entities.clear();
+        assertEquals(0, count("SELECT COUNT(*) FROM exam_attempts WHERE id=?", deletedAttempt));
+        assertEquals(0, count("SELECT COUNT(*) FROM assignment_recipients WHERE student_id=?", target.user.getId()));
+        assertEquals(0, count("SELECT COUNT(*) FROM workspace_ai_grading_jobs WHERE attempt_id=?", deletedAttempt));
+        assertEquals(0, count("SELECT COUNT(*) FROM workspace_ai_jobs WHERE user_id=?", target.user.getId()));
+        assertEquals(0, count("SELECT ai_reserved FROM organization_subscriptions WHERE organization_id=?", organization));
+        assertEquals(1, count("SELECT COUNT(*) FROM exam_attempts WHERE id=?", retainedAttempt));
+        assertEquals(1, count("SELECT COUNT(*) FROM result_revisions WHERE id=? AND author_id IS NULL", retainedResult));
+        assertEquals(1, count("SELECT COUNT(*) FROM workspace_assessments WHERE id=?", assessment));
+        assertEquals(1, count("SELECT COUNT(*) FROM exam_assignments WHERE id=?", assignment));
+        assertEquals(1, count("SELECT COUNT(*) FROM organizations WHERE id=?", organization));
+        call(get("/api/auth/me"), teacher.token, null, 200);
+        call(get("/api/auth/me"), survivor.token, null, 200);
+    }
+
+    @Test
+    void deletionBlocksSharedAssessmentAssignmentsAndActiveBilling() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session target = session(Role.TEACHER);
+        Session otherTeacher = session(Role.TEACHER);
+        long organization = personal.workspace(otherTeacher.user);
+        personal.member(organization, target.user.getId(), "TEACHER");
+        long assessment = workspaceAssessment(organization, target.user.getId());
+        long version = workspaceVersion(organization, assessment);
+        long assignment = workspaceAssignment(organization, version, otherTeacher.user.getId());
+        call(delete("/api/admin/users/" + target.user.getId()), admin.token, Map.of("password", "password123"), 409);
+        assertEquals(1, count("SELECT COUNT(*) FROM workspace_assessments WHERE id=?", assessment));
+        assertEquals(1, count("SELECT COUNT(*) FROM exam_assignments WHERE id=?", assignment));
+        assertEquals(0, audits.count());
+        call(get("/api/auth/me"), target.token, null, 200);
+
+        long personalOrganization = personal.workspace(target.user);
+        jdbc.update("INSERT INTO stripe_subscription_bindings(organization_id,subscription_id,customer_id) VALUES(?,'fixture-subscription','fixture-customer')", personalOrganization);
+        // Remove the shared-assessment blocker, leaving the external billing obligation as the only blocker.
+        jdbc.update("DELETE FROM exam_assignments WHERE id=?", assignment);
+        call(delete("/api/admin/users/" + target.user.getId()), admin.token, Map.of("password", "password123"), 409);
+        assertEquals(1, count("SELECT COUNT(*) FROM stripe_subscription_bindings WHERE organization_id=?", personalOrganization));
+        assertEquals(1, count("SELECT COUNT(*) FROM users WHERE id=?", target.user.getId()));
+        assertEquals(0, audits.count());
+    }
+
+    private long workspaceAssessment(long organization, long owner) {
+        return insert("INSERT INTO workspace_assessments(organization_id,owner_id,title,definition_json,updated_at) VALUES(?,?,'Fixture','{}',CURRENT_TIMESTAMP)", organization, owner);
+    }
+
+    private long workspaceVersion(long organization, long assessment) {
+        return insert("INSERT INTO assessment_versions(organization_id,assessment_id,version_number,title,definition_json,published_at) VALUES(?,?,1,'Fixture','{}',CURRENT_TIMESTAMP)", organization, assessment);
+    }
+
+    private long workspaceAssignment(long organization, long version, long teacher) {
+        return insert("INSERT INTO exam_assignments(organization_id,version_id,teacher_id,starts_at,ends_at,created_at) VALUES(?,?,?,CURRENT_TIMESTAMP,DATEADD('DAY',1,CURRENT_TIMESTAMP),CURRENT_TIMESTAMP)", organization, version, teacher);
+    }
+
+    private long workspaceAttempt(long organization, long assignment, long student) {
+        jdbc.update("INSERT INTO assignment_recipients(organization_id,assignment_id,student_id,source_groups_json,individually_assigned,max_attempts) VALUES(?,?,?,'[]',TRUE,1)", organization, assignment, student);
+        return insert("INSERT INTO exam_attempts(organization_id,assignment_id,student_id,attempt_number,start_key,session_hash,auth_session_hash,browser_id,status,started_at) VALUES(?,?,?,1,'fixture','fixture','fixture','fixture','submitted',CURRENT_TIMESTAMP)", organization, assignment, student);
+    }
+
+    private long workspaceResult(long organization, long attempt, long author) {
+        return insert("INSERT INTO result_revisions(organization_id,attempt_id,revision_number,publication_key,author_id,points,maximum_points,percentage,grade,outcome,reason,snapshot_json,published_at) VALUES(?,?,1,'fixture',?,1,1,100,'6','passed','','{}',CURRENT_TIMESTAMP)", organization, attempt, author);
+    }
+
+    private long insert(String sql, Object... parameters) {
+        GeneratedKeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update(connection -> {
+            var statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+            for (int i = 0; i < parameters.length; i++) statement.setObject(i + 1, parameters[i]);
+            return statement;
+        }, keys);
+        return keys.getKey().longValue();
+    }
+
+    private JsonNode submitQuiz(String code, Session participant) throws Exception {
+        JsonNode publicTest = call(get("/api/public/tests/" + code), participant.token, null, 200);
+        JsonNode question = publicTest.path("questions").get(0);
+        return call(post("/api/public/tests/" + code + "/attempts"), participant.token,
+                new QuizDtos.SubmitAttemptRequest(participant.user.getName(), participant.user.getEmail(),
+                        List.of(new QuizDtos.SubmittedAnswer(question.path("id").asLong(),
+                                List.of(question.path("answers").get(0).path("id").asLong()), null))), 200);
+    }
+
+    private long count(String sql, Object... parameters) {
+        return jdbc.queryForObject(sql, Long.class, parameters);
+    }
+
     private Session session(Role role) throws Exception {
         AppUser user = new AppUser(); user.setName(role.name()); user.setEmail(UUID.randomUUID() + "@example.test");
         user.setRole(role); user.setPasswordHash(encoder.encode("password123")); users.saveAndFlush(user);
@@ -402,6 +715,7 @@ class AdminSecurityTests {
                         List.of(new QuizDtos.AnswerRequest("4", true), new QuizDtos.AnswerRequest("5", false)))));
     }
     private JsonNode call(MockHttpServletRequestBuilder request, String token, Object body, int expected) throws Exception {
+        request.with(servletRequest -> { servletRequest.setRemoteAddr(remoteAddress); return servletRequest; });
         if (token != null) request.header("Authorization", "Bearer " + token);
         if (body != null) request.contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(body));
         String response = mvc.perform(request).andExpect(status().is(expected)).andReturn().getResponse().getContentAsString();

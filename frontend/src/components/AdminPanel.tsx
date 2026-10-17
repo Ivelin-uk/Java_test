@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { Users, ShieldCheck, History, UserPlus, UserRoundCog, Pencil, KeyRound, UserCheck, UserX, RefreshCw, Save, X, Copy, Check, Search } from 'lucide-react'
+import { Users, ShieldCheck, History, UserPlus, UserRoundCog, Pencil, KeyRound, UserCheck, UserX, RefreshCw, Save, X, Copy, Check, Search, Trash2 } from 'lucide-react'
 import { api } from '../api/client'
 import { formatDate, roleLabels, subscriptionLabel } from '../api/access'
+import { DeleteConfirmationDialog } from './DeleteConfirmationDialog'
 import type { AuditEntry, AuthResponse, PasswordResponse, PermissionChange, PermissionRow, Role, User, UserEdit } from '../types/models'
 
 const modes = { ADMIN: 'Само администратор', PUBLIC: 'Публичен вход', PROFILE: 'Собствен профил', MANAGED: '' }
-const actions: Record<string, string> = { USER_CREATED: 'Нов потребител', USER_UPDATED: 'Промяна на профил', USER_ROLE_CHANGED: 'Смяна на роля', PASSWORD_RESET: 'Нова временна парола', PERMISSION_UPDATED: 'Промяна на права' }
+const actions: Record<string, string> = { USER_CREATED: 'Нов потребител', USER_UPDATED: 'Промяна на профил', USER_DELETED: 'Изтриване на потребител', USER_ROLE_CHANGED: 'Смяна на роля', PASSWORD_RESET: 'Нова временна парола', PERMISSION_UPDATED: 'Промяна на права' }
 const emptyUser: UserEdit = { name: '', email: '', role: 'STUDENT', active: true, subscriptionPaid: false, subscriptionPaidUntil: null }
 function userEdit(user: User): UserEdit {
   return { name: user.name, email: user.email, role: user.role, active: user.active, subscriptionPaid: user.subscription.paid, subscriptionPaidUntil: user.subscription.paidUntil }
@@ -28,6 +29,8 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
   const [editing, setEditing] = useState<{ id: number | null; value: UserEdit } | null>(null)
   const [roleChange, setRoleChange] = useState<{ user: User; role: Role } | null>(null)
   const [confirming, setConfirming] = useState<{ user: User; action: 'reset' | 'toggle' } | null>(null)
+  const [deleting, setDeleting] = useState<User | null>(null)
+  const [deletePassword, setDeletePassword] = useState('')
   const [credentials, setCredentials] = useState<PasswordResponse | null>(null)
   const [copied, setCopied] = useState(false)
   const token = auth.token
@@ -82,6 +85,22 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
       else await refresh()
     })
   }
+  async function deleteUser() {
+    if (!deleting || busy || !deletePassword.trim()) return
+    setBusy(true); setError(''); setMessage('')
+    try {
+      await api.deleteUser(token, deleting.id, deletePassword)
+      setUsers(current => current.filter(user => user.id !== deleting.id))
+      setMessage(`Потребителят ${deleting.email} и свързаните му данни са изтрити.`)
+      setDeleting(null); setDeletePassword('')
+      try {
+        const [nextUsers, nextAudit] = await Promise.all([api.users(token), api.audit(token)])
+        setUsers(nextUsers); setAudit(nextAudit)
+      } catch {
+        setError('Потребителят е изтрит, но списъкът и журналът не се обновиха. Натиснете „Обнови“.')
+      }
+    } finally { setBusy(false) }
+  }
   function changePermission(row: PermissionRow, role: 'TEACHER' | 'STUDENT', property: 'allowed' | 'subscriptionRequired', value: boolean) {
     const column = role === 'TEACHER' ? 'teacher' : 'student'
     const grant = { ...row[column], [property]: value }
@@ -121,6 +140,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
             <button className="icon-button" title="Редактирай профил и имейл" aria-label={`Редактирай ${user.email}`} disabled={busy} onClick={() => { setError(''); setEditing({ id: user.id, value: userEdit(user) }) }}><Pencil size={16} /></button>
             <button className="icon-button" title={user.id === auth.user.id ? 'Смяна на собствена парола от Профил' : 'Нова временна парола'} aria-label={`Нова парола за ${user.email}`} disabled={busy || user.id === auth.user.id} onClick={() => { setError(''); setConfirming({ user, action: 'reset' }) }}><KeyRound size={16} /></button>
             <button className={`icon-button ${user.active ? 'danger' : ''}`} title={user.active ? 'Деактивирай' : 'Активирай'} aria-label={`${user.active ? 'Деактивирай' : 'Активирай'} ${user.email}`} disabled={busy} onClick={() => { setError(''); setConfirming({ user, action: 'toggle' }) }}>{user.active ? <UserX size={16} /> : <UserCheck size={16} />}</button>
+            <button className="icon-button danger" title={user.id === auth.user.id ? 'Не можете да изтриете собствения си профил.' : 'Изтрий потребителя и свързаните му данни'} aria-label={`Изтрий ${user.email}`} disabled={busy || user.id === auth.user.id} onClick={() => { setError(''); setDeletePassword(''); setDeleting(user) }}><Trash2 size={16} /></button>
           </div></td>
         </tr>)}
         {!loading && !filteredUsers.length && <tr><td colSpan={5} className="empty-cell">Няма намерени потребители.</td></tr>}
@@ -153,6 +173,10 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
       {audit.map(entry => <tr key={entry.id}><td>{new Date(entry.createdAt).toLocaleString('bg-BG')}</td><td>{entry.actorEmail}</td><td>{actions[entry.action] ?? entry.action}<small>{entry.targetEmail}</small></td><td>{entry.details}</td></tr>)}
       {!loading && !audit.length && <tr><td colSpan={4} className="empty-cell">Няма записани промени.</td></tr>}
     </tbody></table></div>}
+
+    {deleting && <DeleteConfirmationDialog title="Изтриване на потребител" description={<>Да изтрием ли <strong>{deleting.email}</strong>? Ще бъдат изтрити профилът, Google връзката, сесиите, опитите и резултатите му, както и собствените тестове и възлагания с опитите и резултатите на всички участници. Това е необратимо. Административният журнал се запазва.</>} confirmLabel="Изтрий потребителя" confirmDisabled={!deletePassword.trim()} onCancel={() => { setDeleting(null); setDeletePassword('') }} onConfirm={deleteUser}>
+      <label>Вашата администраторска парола<input type="password" required autoComplete="current-password" value={deletePassword} onChange={event => setDeletePassword(event.target.value)} /></label>
+    </DeleteConfirmationDialog>}
 
     {roleChange && <AdminDialog title="Смяна на роля" busy={busy} onClose={() => { setRoleChange(null); setError('') }}>
       <form className="user-form" onSubmit={saveRole}>

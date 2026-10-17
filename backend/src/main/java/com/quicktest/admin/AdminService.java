@@ -25,11 +25,12 @@ public class AdminService {
     private final EndpointPermissionRepository permissions;
     private final PermissionAccess access;
     private final AdminAuditRepository audits;
+    private final UserDeletionRepository deletion;
     private final SecureRandom random = new SecureRandom();
 
     public AdminService(AppUserRepository users, AuthTokenRepository tokens, AuthService auth, PasswordEncoder encoder,
                         EndpointCatalog catalog, EndpointPermissionRepository permissions, PermissionAccess access,
-                        AdminAuditRepository audits) {
+                        AdminAuditRepository audits, UserDeletionRepository deletion) {
         this.users = users;
         this.tokens = tokens;
         this.auth = auth;
@@ -38,6 +39,7 @@ public class AdminService {
         this.permissions = permissions;
         this.access = access;
         this.audits = audits;
+        this.deletion = deletion;
     }
 
     @Transactional(readOnly = true)
@@ -106,6 +108,31 @@ public class AdminService {
         return new PasswordResponse(auth.toResponse(user), password);
     }
 
+    @Transactional
+    public void delete(AppUser actor, Long id, String password) {
+        // Follow the same administrator -> target lock order as role/status edits.
+        List<AppUser> administrators = users.lockAdministrators();
+        AppUser administrator = administrators.stream()
+                .filter(user -> user.getId().equals(actor.getId()) && user.isActive())
+                .findFirst().orElseThrow(() -> new ApiException(FORBIDDEN, "Изтриването е достъпно само за активен администратор."));
+        if (administrator.getId().equals(id))
+            throw new ApiException(BAD_REQUEST, "Не можете да изтриете собствения си администраторски профил.");
+        if (password == null || password.isBlank() || !encoder.matches(password, administrator.getPasswordHash()))
+            throw new ApiException(FORBIDDEN, "Паролата за потвърждение е неправилна.");
+        AppUser target = users.lockById(id)
+                .orElseThrow(() -> new ApiException(NOT_FOUND, "Потребителят не съществува."));
+        if (target.getRole() == Role.ADMIN && target.isActive()
+                && administrators.stream().filter(AppUser::isActive).count() <= 1)
+            throw new ApiException(CONFLICT, "Трябва да остане поне един активен администратор.");
+        var plan = deletion.lockDependencies(id);
+        if (!plan.blockers().isEmpty()) throw new ApiException(CONFLICT, plan.blockers().getFirst());
+        tokens.deleteByUserId(id);
+        tokens.flush();
+        deletion.purge(plan);
+        users.deletePermanentlyById(id);
+        audit(administrator, null, "USER_DELETED", "Изтрит профил №" + id + "; свързани данни: " + plan.counts());
+    }
+
     @Transactional(readOnly = true)
     public List<PermissionRow> matrix() {
         return catalog.all().stream().map(endpoint -> new PermissionRow(endpoint.key(), endpoint.controller(), endpoint.method(),
@@ -142,7 +169,7 @@ public class AdminService {
     @Transactional(readOnly = true)
     public List<AuditResponse> auditLog() {
         return audits.findTop200ByOrderByCreatedAtDescIdDesc().stream().map(item -> new AuditResponse(item.getId(),
-                item.getActor().getEmail(), item.getTargetUser() == null ? null : item.getTargetUser().getEmail(),
+                item.getActor() == null ? "Изтрит потребител" : item.getActor().getEmail(), item.getTargetUser() == null ? null : item.getTargetUser().getEmail(),
                 item.getAction(), item.getDetails(), item.getCreatedAt())).toList();
     }
 
@@ -200,6 +227,7 @@ public class AdminService {
     public record UserEdit(@NotBlank @Size(max = 120) String name, @Email @NotBlank @Size(max = 190) String email,
                            @NotNull Role role, boolean active, boolean subscriptionPaid, LocalDate subscriptionPaidUntil) {}
     public record RoleEdit(@NotNull Role role) {}
+    public record DeleteUserRequest(@NotBlank @Size(max = 72) String password) {}
     public record PasswordResponse(AuthService.UserResponse user, String temporaryPassword) {}
     public record PermissionChange(@NotBlank String key, @NotNull Role role, boolean allowed, boolean subscriptionRequired) {}
     public record PermissionEdit(@NotEmpty @Size(max = 200) List<@Valid PermissionChange> changes) {}

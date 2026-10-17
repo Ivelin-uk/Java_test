@@ -12,7 +12,7 @@ import java.time.Instant;
 public class AdminAudit {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    @ManyToOne(optional = false)
+    @ManyToOne
     private AppUser actor;
     @ManyToOne
     private AppUser targetUser;

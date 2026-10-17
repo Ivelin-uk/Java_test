@@ -72,6 +72,7 @@ export const api = {
   users: (token: string) => request<User[]>('/api/admin/users', {}, token),
   createUser: (token: string, payload: UserEdit) => request<PasswordResponse>('/api/admin/users', { method: 'POST', body: JSON.stringify(payload) }, token),
   updateUser: (token: string, id: number, payload: UserEdit) => request<User>(`/api/admin/users/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, token),
+  deleteUser: (token: string, id: number, password: string) => request<void>(`/api/admin/users/${id}`, { method: 'DELETE', body: JSON.stringify({ password }) }, token),
   changeUserRole: (token: string, id: number, role: Role) => request<User>(`/api/admin/users/${id}/role`, { method: 'PUT', body: JSON.stringify({ role }) }, token),
   resetPassword: (token: string, id: number) => request<PasswordResponse>(`/api/admin/users/${id}/reset-password`, { method: 'POST' }, token),
   permissions: (token: string) => request<PermissionRow[]>('/api/admin/permissions', {}, token),
