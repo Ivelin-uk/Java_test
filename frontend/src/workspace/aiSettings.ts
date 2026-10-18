@@ -13,6 +13,10 @@ export interface AiSettings {
   includeImages: boolean
   imageCount: number
   additionalInformation: string
+  sourceMaterial: { fileName: string; sourceText: string; characterCount: number } | null
+  useSourceMaterial: boolean
+  sourceMaterialLoading: boolean
+  sourceMaterialError: string
 }
 
 export function newAiSettings(definition?: Definition, count = 5): AiSettings {
@@ -23,6 +27,7 @@ export function newAiSettings(definition?: Definition, count = 5): AiSettings {
     difficulty, questionTypes: selectedTypes.length ? selectedTypes : ['SINGLE_CHOICE'],
     difficultyCounts: definition ? { EASY: 0, MEDIUM: 0, HARD: 0, VERY_HARD: 0, [difficulty]: count } : { EASY: 2, MEDIUM: 2, HARD: 1, VERY_HARD: 0 },
     includeImages: false, imageCount: 1, additionalInformation: definition?.additionalInformation ?? '',
+    sourceMaterial: null, useSourceMaterial: false, sourceMaterialLoading: false, sourceMaterialError: '',
   }
 }
 
@@ -35,7 +40,7 @@ export function validDistribution(settings: AiSettings) {
 }
 
 export function validAiSettings(settings: AiSettings, maximum = 20) {
-  return !!settings.topic.trim() && settings.topic.trim().length <= 190 && settings.questionTypes.length > 0 && Number.isInteger(settings.questionCount) && settings.questionCount >= 1 && settings.questionCount <= maximum && validDistribution(settings) && (!settings.includeImages || Number.isInteger(requestedImages(settings)) && requestedImages(settings) >= 1)
+  return !settings.sourceMaterialLoading && (!settings.useSourceMaterial || !!settings.sourceMaterial?.sourceText.trim()) && !!settings.topic.trim() && settings.topic.trim().length <= 190 && settings.questionTypes.length > 0 && Number.isInteger(settings.questionCount) && settings.questionCount >= 1 && settings.questionCount <= maximum && validDistribution(settings) && (!settings.includeImages || Number.isInteger(requestedImages(settings)) && requestedImages(settings) >= 1)
 }
 
 export function generationPayload(settings: AiSettings) {
@@ -44,5 +49,6 @@ export function generationPayload(settings: AiSettings) {
     questionCount: settings.questionCount, difficulty: settings.difficulty, questionTypes: settings.questionTypes,
     difficultyCounts: settings.difficulty === 'MIXED' ? settings.difficultyCounts : { [settings.difficulty]: settings.questionCount },
     additionalInformation: settings.additionalInformation.trim(), imageCount: requestedImages(settings),
+    ...(settings.useSourceMaterial && settings.sourceMaterial ? { sourceText: settings.sourceMaterial.sourceText, sourceOnly: true } : {}),
   }
 }

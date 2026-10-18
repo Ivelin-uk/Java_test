@@ -25,6 +25,7 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")
 	implementation("org.apache.commons:commons-csv:1.14.1")
+	implementation("org.apache.pdfbox:pdfbox:3.0.8")
 	implementation("org.springframework.boot:spring-boot-starter-security-oauth2-client")
 	implementation("org.springframework.boot:spring-boot-starter-mail")
 	implementation("com.stripe:stripe-java:33.4.1")

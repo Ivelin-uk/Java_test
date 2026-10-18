@@ -11,6 +11,7 @@ import { formatDuration } from './duration'
 import { DurationInput } from './DurationInput'
 import { DeleteConfirmationButton, DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
 import { AiTestFields } from './AiTestFields'
+import { QuestionReplacementDialog } from './QuestionReplacementDialog'
 import { difficulties, generationPayload, newAiSettings, questionTypes as types, validAiSettings } from './aiSettings'
 
 const question = (): Question => ({ type: 'SINGLE_CHOICE', text: '', difficulty: 'MEDIUM', points: 1, timeSeconds: 60, options: [{ text: '', correct: true }, { text: '', correct: false }], acceptedAnswers: [], caseInsensitive: true, collapseWhitespace: true, criteria: '', explanation: '' })
@@ -55,12 +56,14 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
   const [draft, setDraft] = useState<Definition | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Assessment | null>(null)
   const [pendingRemoval, setPendingRemoval] = useState<{ questionIndex: number; optionIndex?: number } | null>(null)
+  const [replacement, setReplacement] = useState<{ index: number; question: Question } | null>(null)
+  const replacementTrigger = useRef<HTMLElement | null>(null)
   const [job, setJob] = useState<AiJob | null>(null)
   const [showAi, setShowAi] = useState(false)
   const [pollError, setPollError] = useState('')
   const editable = !current || current.owner_id === userId
   const generating = !!job && ['queued', 'running'].includes(job.status)
-  const saveDisabled = action.busy || !editable || generating || pendingImages > 0
+  const saveDisabled = action.busy || !editable || generating || pendingImages > 0 || !!replacement
   const addLimit = Math.min(20, 100 - (draft?.questions.length ?? 0))
   const validAddCount = Number.isInteger(addCount) && addCount >= 1 && addCount <= addLimit
   const validGeneration = validAiSettings(aiSettings)
@@ -112,11 +115,37 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
       setJobMode('append'); setPollError('')
       setJob(await api.post<AiJob>('/ai/test-generations', {
         ...generationPayload(appendSettings), level: draft.level, language: draft.language,
-        sourceText: `${draft.description ?? ''}\n${draft.instructions ?? ''}\nВече включени въпроси (създай различни нови въпроси):\n${draft.questions.map(q => q.text).join('\n')}`.slice(0, 20000),
+        ...(appendSettings.useSourceMaterial && appendSettings.sourceMaterial ? {
+          additionalInformation: `${appendSettings.additionalInformation.trim()}\nВече включени въпроси (създай различни нови въпроси само по качения материал):\n${draft.questions.map(q => q.text).join('\n')}`.slice(0, 20000),
+        } : {
+          sourceText: `${draft.description ?? ''}\n${draft.instructions ?? ''}\nВече включени въпроси (създай различни нови въпроси):\n${draft.questions.map(q => q.text).join('\n')}`.slice(0, 20000),
+        }),
       }))
     })
   }
   function patchQuestion(index: number, patch: Partial<Question>) { if (draft) setDraft({ ...draft, questions: draft.questions.map((q, i) => i === index ? { ...q, ...patch } : q) }) }
+  function openReplacement(index: number) {
+    if (!draft || saveDisabled || !draft.questions[index]) return
+    replacementTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    action.clearFeedback()
+    setShowAppendAi(false); setJob(null); setPollError('')
+    setReplacement({ index, question: draft.questions[index] })
+  }
+  function closeReplacement() {
+    setReplacement(null)
+    window.requestAnimationFrame(() => replacementTrigger.current?.focus())
+  }
+  function replaceQuestion(next: Question) {
+    if (!replacement || !draft || !editable || draft.questions[replacement.index] !== replacement.question) {
+      throw new Error('Въпросът е променен. Затворете прозореца и опитайте отново.')
+    }
+    const { index, question: original } = replacement
+    setDraft(previous => previous && previous.questions[index] === original ? {
+      ...previous,
+      questions: previous.questions.map((q, i) => i === index ? { ...next, points: original.points, timeSeconds: original.timeSeconds } : q),
+    } : previous)
+    closeReplacement()
+  }
   function typeChange(index: number, type: QuestionType) {
     const text = ['SHORT_ANSWER', 'OPEN_ANSWER'].includes(type)
     patchQuestion(index, { type, options: text ? [] : type === 'TRUE_FALSE' ? [{ text: 'Вярно', correct: true }, { text: 'Невярно', correct: false }] : [{ text: '', correct: true }, { text: '', correct: false }] })
@@ -136,7 +165,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
     })
   }
   async function save() {
-    if (!draft) return
+    if (!draft || saveDisabled) return
     await action.run(async () => {
       const invalid = draft.questions.findIndex(q => !Number.isInteger(q.timeSeconds) || q.timeSeconds < 10 || q.timeSeconds > 3600)
       if (invalid >= 0) throw new Error(`Времето за въпрос ${invalid + 1} трябва да е между 0 мин 10 сек и 60 мин 0 сек, в цели секунди.`)
@@ -159,7 +188,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
         setJob(await api.post<AiJob>('/ai/test-generations', { ...generationPayload(aiSettings), level: '', language: 'bg' }))
       })
     }}>
-      <AiTestFields value={aiSettings} onChange={setAiSettings} disabled={action.busy || generating} />
+      <AiTestFields api={api} value={aiSettings} onChange={setAiSettings} disabled={action.busy || generating} />
       <div className="ws-actions">
         <button type="submit" className="primary command-button" disabled={action.busy || generating || !validGeneration}><Sparkles size={17} />{generating ? 'Генериране...' : 'Генерирай'}</button>
         {job && <span role="status">{label(job.status)}</span>}
@@ -170,7 +199,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
   </section>
   return <section className="ws-section">
     <SectionHead title={draft ? draft.title : 'Библиотека с тестове'}>
-      {draft ? <><button title="Към библиотеката" className="icon-button" disabled={action.busy || generating || pendingImages > 0} onClick={() => { setDraft(null); setCurrent(null); setJob(null); setShowAi(false); setShowAppendAi(false) }}><ArrowLeft size={18} /></button><button className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази теста</button></> : <div className="ws-actions"><button className="primary command-button" disabled={!!job && ['queued', 'running'].includes(job.status)} onClick={() => { setCurrent(null); setDraft(blank()); setJob(null); setShowAppendAi(false) }}><Plus size={17} /> Ръчен тест</button><button className="command-button" disabled={action.busy} onClick={() => { setPreview(null); setShowAi(true) }}><Sparkles size={17} /> С AI</button></div>}
+      {draft ? <><button title="Към библиотеката" className="icon-button" disabled={action.busy || generating || pendingImages > 0 || !!replacement} onClick={() => { setDraft(null); setCurrent(null); setJob(null); setShowAi(false); setShowAppendAi(false) }}><ArrowLeft size={18} /></button><button className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази теста</button></> : <div className="ws-actions"><button className="primary command-button" disabled={!!job && ['queued', 'running'].includes(job.status)} onClick={() => { setCurrent(null); setDraft(blank()); setJob(null); setShowAppendAi(false) }}><Plus size={17} /> Ръчен тест</button><button className="command-button" disabled={action.busy} onClick={() => { setPreview(null); setShowAi(true) }}><Sparkles size={17} /> С AI</button></div>}
     </SectionHead>
     <Feedback error={action.error || list.error || pollError} message={action.message} busy={action.busy || list.loading} />
     {!draft ? <>
@@ -197,7 +226,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
       </div></details>
       <p className="ws-summary">{draft.questions.length} въпроса · {draft.questions.reduce((sum, q) => sum + q.points, 0)} точки · {duration(draft.questions)}</p>
       </div>
-      {draft.questions.map((q, index) => <article className="ws-question" key={index}><div className="ws-question-head"><strong>Въпрос {index + 1}</strong><select aria-label={`Тип на въпрос ${index + 1}`} value={q.type} onChange={e => typeChange(index, e.target.value as QuestionType)}>{types.map(([type, text]) => <option key={type} value={type}>{text}</option>)}</select><button className="icon-button danger" title="Изтрий въпрос" onClick={() => setPendingRemoval({ questionIndex: index })}><Trash2 size={17} /></button></div><QuestionPrompt api={api} question={q} textChanged={text => patchQuestion(index, { text })} imageChanged={imageId => patchQuestion(index, { imageId })} uploadChanged={busy => setPendingImages(previous => previous + (busy ? 1 : -1))} /><div className="ws-form-grid"><label>Трудност<select value={q.difficulty} onChange={e => patchQuestion(index, { difficulty: e.target.value, timeSeconds: ({ EASY: 30, MEDIUM: 60, HARD: 120, VERY_HARD: 180 })[e.target.value as 'EASY'] })}><option value="EASY">Лесен</option><option value="MEDIUM">Среден</option><option value="HARD">Труден</option><option value="VERY_HARD">Много труден</option></select></label><label>Точки<input type="number" min={0.0001} step="0.1" value={q.points} onChange={e => patchQuestion(index, { points: Number(e.target.value) })} /></label><DurationInput seconds={q.timeSeconds} question={index + 1} onChange={timeSeconds => patchQuestion(index, { timeSeconds })} /></div>
+      {draft.questions.map((q, index) => <article className="ws-question" key={index}><div className="ws-question-head"><strong>Въпрос {index + 1}</strong><select aria-label={`Тип на въпрос ${index + 1}`} value={q.type} onChange={e => typeChange(index, e.target.value as QuestionType)}>{types.map(([type, text]) => <option key={type} value={type}>{text}</option>)}</select><button type="button" className="command-button" aria-label={`Подмени въпрос ${index + 1} с AI`} disabled={saveDisabled} onClick={() => openReplacement(index)}><Sparkles size={17} /> Подмени с AI</button><button className="icon-button danger" title="Изтрий въпрос" onClick={() => setPendingRemoval({ questionIndex: index })}><Trash2 size={17} /></button></div><QuestionPrompt api={api} question={q} textChanged={text => patchQuestion(index, { text })} imageChanged={imageId => patchQuestion(index, { imageId })} uploadChanged={busy => setPendingImages(previous => previous + (busy ? 1 : -1))} /><div className="ws-form-grid"><label>Трудност<select value={q.difficulty} onChange={e => patchQuestion(index, { difficulty: e.target.value, timeSeconds: ({ EASY: 30, MEDIUM: 60, HARD: 120, VERY_HARD: 180 })[e.target.value as 'EASY'] })}><option value="EASY">Лесен</option><option value="MEDIUM">Среден</option><option value="HARD">Труден</option><option value="VERY_HARD">Много труден</option></select></label><label>Точки<input type="number" min={0.0001} step="0.1" value={q.points} onChange={e => patchQuestion(index, { points: Number(e.target.value) })} /></label><DurationInput seconds={q.timeSeconds} question={index + 1} onChange={timeSeconds => patchQuestion(index, { timeSeconds })} /></div>
         {q.options.map((option, i) => <div className="ws-option-editor" key={i}><input aria-label={`Верен отговор ${i + 1}`} type={q.type === 'MULTIPLE_CHOICE' ? 'checkbox' : 'radio'} name={`correct-${index}`} checked={option.correct} onChange={e => patchQuestion(index, { options: q.options.map((o, j) => j === i ? { ...o, correct: e.target.checked } : q.type === 'MULTIPLE_CHOICE' ? o : { ...o, correct: false }) })} /><input aria-label={`Опция ${i + 1}`} value={option.text} onChange={e => patchQuestion(index, { options: q.options.map((o, j) => j === i ? { ...o, text: e.target.value } : o) })} /><button className="icon-button danger" title="Премахни опция" onClick={() => setPendingRemoval({ questionIndex: index, optionIndex: i })}><X size={16} /></button></div>)}
         {['SINGLE_CHOICE', 'MULTIPLE_CHOICE'].includes(q.type) && <button className="command-button" onClick={() => patchQuestion(index, { options: [...q.options, { text: '', correct: false }] })}><Plus size={16} /> Опция</button>}
         {q.type === 'SHORT_ANSWER' && <><label>Допустими отговори (по един на ред)<textarea value={q.acceptedAnswers.join('\n')} onChange={e => patchQuestion(index, { acceptedAnswers: e.target.value ? e.target.value.split('\n') : [] })} /></label><div className="ws-actions"><label className="ws-check"><input type="checkbox" checked={q.caseInsensitive} onChange={e => patchQuestion(index, { caseInsensitive: e.target.checked })} /> Без разлика малки / главни</label><label className="ws-check"><input type="checkbox" checked={q.collapseWhitespace} onChange={e => patchQuestion(index, { collapseWhitespace: e.target.checked })} /> Нормализирай интервали</label></div></>}
@@ -208,7 +237,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
         <Feedback error={action.error || (job?.status === 'failed' ? job.error_message ?? 'AI заявката не успя.' : pollError)} busy={generating} />
         {showAppendAi && <form ref={appendForm} className="ws-ai-form ws-append-ai" aria-label="Добавяне на въпроси с AI" onSubmit={e => { e.preventDefault(); void appendAiQuestions() }}>
           <div className="ws-section-head"><h3>Нови въпроси с AI</h3><button type="button" className="icon-button" title="Затвори AI настройките" disabled={saveDisabled} onClick={closeAppendAi}><X size={18} /></button></div>
-          <AiTestFields value={appendSettings} onChange={setAppendSettings} disabled={saveDisabled} maximum={addLimit} />
+          <AiTestFields api={api} value={appendSettings} onChange={setAppendSettings} disabled={saveDisabled} maximum={addLimit} />
           <div className="ws-actions"><button type="submit" className="primary command-button" disabled={saveDisabled || !validAiSettings(appendSettings, addLimit)}><Sparkles size={17} />{generating ? 'Генериране...' : 'Генерирай'}</button>
             {job && <span role="status">{label(job.status)}</span>}
             {job?.status === 'failed' && <button type="button" className="command-button" disabled={saveDisabled} onClick={() => void action.run(async () => { setPollError(''); setJob(await api.post<AiJob>(`/ai/test-generations/${job.id}/retry`)) })}><Sparkles size={17} /> Повтори</button>}
@@ -217,6 +246,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
       </section>
       <div className="ws-actions ws-editor-footer"><button type="button" className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази</button></div>
     </fieldset>}
+    {replacement && draft && <QuestionReplacementDialog api={api} definition={draft} questionIndex={replacement.index} onClose={closeReplacement} onReplace={replaceQuestion} />}
     {pendingDelete && <TestDeleteDialog api={api} test={pendingDelete} owned={pendingDelete.owner_id === userId} close={() => setPendingDelete(null)} deleted={async () => { if (preview?.assessment.id === pendingDelete.id) setPreview(null); await list.reload(); setPendingDelete(null) }} />}
     {pendingRemoval && draft && <DeleteConfirmationDialog
       title={pendingRemoval.optionIndex === undefined ? 'Изтриване на въпрос' : 'Премахване на опция'}
