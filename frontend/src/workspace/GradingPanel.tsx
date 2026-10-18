@@ -1,3 +1,4 @@
+import { QuestionText } from '../components/QuestionText'
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Save, Check, Ban, Sparkles, PencilLine, RefreshCw, LoaderCircle, CircleCheck, CircleX, CircleAlert, Circle, Clock3 } from 'lucide-react'
 import type { WorkspaceApi } from './api'
@@ -115,7 +116,7 @@ function QuestionReview({ api, attempt, number, question: row, refresh }: { api:
   const ResultIcon = result === 'correct' ? CircleCheck : result === 'wrong' ? CircleX : result === 'partial' ? CircleAlert : result === 'manual' ? Clock3 : Circle
   return <article className="ws-question ws-review-question" aria-labelledby={`review-question-${row.id}`}>
     <header className="ws-review-head"><strong id={`review-question-${row.id}`}>Въпрос {number}</strong><span className={`ws-review-verdict ws-review-${result}`} data-result={result}><ResultIcon size={17} aria-hidden="true" />{resultText}</span><span className="ws-review-points">{row.final_points ?? '-'} / {row.maximum_points} точки</span></header>
-    <h3>{snapshot.question.text}</h3><WorkspaceImage api={api} id={snapshot.question.imageId} /><p className="ws-muted">{label(row.status)} · Автоматични точки: {row.automatic_points ?? 'ръчна проверка'}</p>
+    <div role="heading" aria-level={3} className="question-heading"><QuestionText value={snapshot.question.text} /></div><WorkspaceImage api={api} id={snapshot.question.imageId} /><p className="ws-muted">{label(row.status)} · Автоматични точки: {row.automatic_points ?? 'ръчна проверка'}</p>
     <div className="ws-review-answer"><h4>Отговор на ученика</h4>
       {choice && <ul className="ws-review-choices" aria-label={`Отговори към въпрос ${number}`}>{snapshot.options.map(o => {
         const selected = submitted?.optionIds.includes(o.id) ?? false

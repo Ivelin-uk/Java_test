@@ -38,20 +38,33 @@
     "test:grading": "node e2e/grading-limits.mjs",
     "test:grading-answers": "node e2e/grading-answers.mjs",
     "test:ai-grading": "node e2e/ai-grading.mjs",
-    "test:deletions": "node e2e/deletion-confirmations.mjs"
+    "test:deletions": "node e2e/deletion-confirmations.mjs",
+    "test:rich-text": "node e2e/rich-text.mjs"
   },
   "dependencies": {
+    "@tiptap/core": "^3.32.0",
+    "@tiptap/extension-mathematics": "^3.32.0",
+    "@tiptap/extension-subscript": "^3.32.0",
+    "@tiptap/extension-superscript": "^3.32.0",
+    "@tiptap/extension-text-align": "^3.32.0",
+    "@tiptap/pm": "^3.32.0",
+    "@tiptap/react": "^3.32.0",
+    "@tiptap/starter-kit": "^3.32.0",
+    "dompurify": "^3.4.17",
+    "katex": "^0.18.10",
     "lucide-react": "^1.52.0",
+    "mathlive": "^0.111.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "playwright": "1.63.0",
+    "@types/katex": "^0.16.8",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "oxlint": "^1.81.0",
+    "playwright": "1.63.0",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
   }

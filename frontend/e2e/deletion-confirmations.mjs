@@ -121,7 +121,7 @@ try {
   await questionDialog.getByRole('button', { name: 'Изтрий', exact: true }).click()
   await questionDialog.waitFor({ state: 'detached' })
   assert.equal(await questions.count(), 1)
-  assert.equal(await questions.first().getByLabel('Текст', { exact: true }).inputValue(), 'Second question')
+  assert.equal(await questions.first().getByLabel('Текст', { exact: true }).innerText(), 'Second question')
   assert.equal(mutations.length, 0)
 
   await page.setViewportSize({ width: 1440, height: 1000 })

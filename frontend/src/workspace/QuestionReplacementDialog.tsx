@@ -1,3 +1,5 @@
+import { plainQuestionText } from '../components/richText'
+import { QuestionText } from '../components/QuestionText'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Check, LoaderCircle, RefreshCw, Sparkles, X } from 'lucide-react'
 import { AiTestFields } from './AiTestFields'
@@ -51,8 +53,8 @@ function initialSettings(definition: Definition, original?: Question): AiSetting
 
 function replacementPayload(settings: AiSettings, definition: Definition, questionIndex: number) {
   const original = definition.questions[questionIndex]
-  const oldQuestion = `Въпрос за подмяна:\n${original.text.slice(0, 12000)}\n`
-  const existing = `Други въпроси в теста:\n${definition.questions.filter((_, index) => index !== questionIndex).map((q, index) => `${index + 1}. ${q.text.slice(0, 1000)}`).join('\n')}`
+  const oldQuestion = `Въпрос за подмяна:\n${plainQuestionText(original.text).slice(0, 12000)}\n`
+  const existing = `Други въпроси в теста:\n${definition.questions.filter((_, index) => index !== questionIndex).map((q, index) => `${index + 1}. ${plainQuestionText(q.text).slice(0, 1000)}`).join('\n')}`
   const context = `${oldQuestion}${existing}`.slice(0, 16000)
   const guidance = 'Създай един различен въпрос за подмяна на избрания. Избягвай повторение на въпроса за подмяна и на другите въпроси в теста.'
   const payload = generationPayload(settings)
@@ -218,12 +220,12 @@ export function QuestionReplacementDialog({ api, definition, questionIndex, onCl
       </header>
       <div className="ws-replacement-content">
         <p id={`${id}-description`}>Прегледайте новия въпрос и потвърдете подмяната. {original && <>Точките ({original.points}) и времето ({formatDuration(original.timeSeconds)}) се запазват.</>}</p>
-        {original && <details className="ws-replacement-original"><summary>Текущ въпрос</summary><p>{original.text}</p></details>}
+        {original && <details className="ws-replacement-original"><summary>Текущ въпрос</summary><QuestionText value={original.text} /></details>}
         <AiTestFields api={api} value={settings} onChange={setSettings} disabled={disabled || !original} maximum={1} fixedQuestionCount={1} />
         {preview && <section ref={previewRef} tabIndex={-1} className="ws-replacement-preview" aria-label="Преглед на новия въпрос">
           <h3><Check size={19} aria-hidden="true" />Преглед на новия въпрос</h3>
           <p className="ws-muted">{questionTypes.find(([key]) => key === preview.type)?.[1]} · {difficultyLabels[preview.difficulty]} · {original.points} точки · {formatDuration(original.timeSeconds)}</p>
-          <p className="ws-replacement-prompt">{preview.text}</p>
+          <QuestionText value={preview.text} className="ws-replacement-prompt" />
           <WorkspaceImage api={api} id={preview.imageId} />
           {preview.options.length > 0 && <ol className="ws-preview-options">{preview.options.map((option, index) => <li key={index} className={option.correct ? 'ws-correct-option' : undefined}>{option.correct && <Check size={15} aria-label="Верен отговор" />}{option.text}</li>)}</ol>}
           {preview.acceptedAnswers.length > 0 && <p><strong>Допустими отговори:</strong> {preview.acceptedAnswers.join(', ')}</p>}

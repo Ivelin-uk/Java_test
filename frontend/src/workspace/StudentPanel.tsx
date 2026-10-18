@@ -1,3 +1,4 @@
+import { QuestionText } from '../components/QuestionText'
 import { useEffect, useState } from 'react'
 import { Play, RotateCw, FileCheck, X, Clock3, CircleCheck, CircleX } from 'lucide-react'
 import type { WorkspaceApi } from './api'
@@ -63,6 +64,6 @@ function ResultDetails({ api, attempt, value }: { api: WorkspaceApi; attempt: nu
     const snapshot = JSON.parse(row.definition_json) as { question: Question; options: { id: string; text: string; correct: boolean }[] }
     const answer = row.answer_json ? JSON.parse(row.answer_json) as ExamAnswer : null
     const selected = snapshot.options.filter(o => answer?.optionIds.includes(o.id)).map(o => o.text).join(', ')
-    return <article className="ws-question" key={row.id}><h3>{snapshot.question.text}</h3><WorkspaceImage api={api} id={snapshot.question.imageId} attempt={attempt} /><p>{row.final_points}/{row.maximum_points} точки · {label(row.status)}</p><h4>Вашият отговор</h4><p className="ws-answer-text">{answer ? selected || answer.text || 'Празен отговор' : 'Няма предаден отговор'}</p><h4>Верен отговор / критерии</h4><p className="ws-answer-text">{snapshot.options.filter(o => o.correct).map(o => o.text).join(', ') || snapshot.question.acceptedAnswers.join(', ') || snapshot.question.criteria}</p><p>{snapshot.question.explanation}</p>{row.teacher_comment && <p>{row.teacher_comment}</p>}</article>
+    return <article className="ws-question" key={row.id}><div role="heading" aria-level={3} className="question-heading"><QuestionText value={snapshot.question.text} /></div><WorkspaceImage api={api} id={snapshot.question.imageId} attempt={attempt} /><p>{row.final_points}/{row.maximum_points} точки · {label(row.status)}</p><h4>Вашият отговор</h4><p className="ws-answer-text">{answer ? selected || answer.text || 'Празен отговор' : 'Няма предаден отговор'}</p><h4>Верен отговор / критерии</h4><p className="ws-answer-text">{snapshot.options.filter(o => o.correct).map(o => o.text).join(', ') || snapshot.question.acceptedAnswers.join(', ') || snapshot.question.criteria}</p><p>{snapshot.question.explanation}</p>{row.teacher_comment && <p>{row.teacher_comment}</p>}</article>
   })}</>
 }

@@ -120,7 +120,7 @@ try {
     assert.equal(await settings.getByLabel('Допълнителна информация за теста', { exact: true }).inputValue(), definition.additionalInformation)
     for (let index = 0; index < definition.questions.length; index++) {
       const article = questions.nth(index), expected = definition.questions[index]
-      assert.equal(await article.getByLabel('Текст', { exact: true }).inputValue(), expected.text)
+      assert.equal(await article.getByLabel('Текст', { exact: true }).innerText(), expected.text)
       assert.equal(await article.getByLabel(`Тип на въпрос ${index + 1}`, { exact: true }).inputValue(), expected.type)
       assert.equal(await article.locator('.ws-form-grid select').inputValue(), expected.difficulty)
       assert.equal(Number(await article.getByLabel('Точки', { exact: true }).inputValue()), expected.points)
@@ -316,8 +316,8 @@ try {
   await modal.getByRole('button', { name: 'Подмени въпроса', exact: true }).click()
   await modal.waitFor({ state: 'detached' })
   assert.equal(await questions.count(), 100)
-  assert.equal(await questions.first().getByLabel('Текст', { exact: true }).inputValue(), atLimit.questions[0].text)
-  assert.equal(await questions.nth(98).getByLabel('Текст', { exact: true }).inputValue(), atLimit.questions[98].text)
+  assert.equal(await questions.first().getByLabel('Текст', { exact: true }).innerText(), atLimit.questions[0].text)
+  assert.equal(await questions.nth(98).getByLabel('Текст', { exact: true }).innerText(), atLimit.questions[98].text)
   const atLimitExpected = { ...atLimit, questions: atLimit.questions.map((q, index) => index === 99 ? { ...limitReplacement, imageId: null, points: q.points, timeSeconds: q.timeSeconds } : q) }
   await page.getByRole('button', { name: 'Запази', exact: true }).click()
   await page.getByRole('heading', { name: 'Библиотека с тестове', exact: true }).waitFor()

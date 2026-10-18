@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Plus, Save, Trash2, Sparkles, ArrowLeft, X, Check, Pencil, ImagePlus } from 'lucide-react'
 import { useAction, useRemote } from './api'
 import type { WorkspaceApi } from './api'
@@ -9,20 +9,24 @@ import { WorkspaceImage } from './WorkspaceImage'
 import { imageBase64 } from './imageUpload'
 import { formatDuration } from './duration'
 import { DurationInput } from './DurationInput'
+import { QuestionText } from '../components/QuestionText'
+import { plainQuestionText, questionTextLimit } from '../components/richText'
 import { DeleteConfirmationButton, DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
 import { AiTestFields } from './AiTestFields'
 import { QuestionReplacementDialog } from './QuestionReplacementDialog'
 import { difficulties, generationPayload, newAiSettings, questionTypes as types, validAiSettings } from './aiSettings'
 
+const QuestionTextEditor = lazy(() => import('../components/QuestionTextEditor').then(module => ({ default: module.QuestionTextEditor })))
+
 const question = (): Question => ({ type: 'SINGLE_CHOICE', text: '', difficulty: 'MEDIUM', points: 1, timeSeconds: 60, options: [{ text: '', correct: true }, { text: '', correct: false }], acceptedAnswers: [], caseInsensitive: true, collapseWhitespace: true, criteria: '', explanation: '' })
 const duration = (questions: Question[]) => formatDuration(questions.reduce((total, q) => total + q.timeSeconds, 0))
 const blank = (): Definition => ({ title: 'Нов тест', description: '', subject: '', level: '', instructions: '', language: 'bg', gradingScale: 'bulgarian', passThreshold: 50, questions: [question()], additionalInformation: '' })
 
-function QuestionPrompt({ api, question: q, textChanged, imageChanged, uploadChanged }: { api: WorkspaceApi; question: Question; textChanged: (text: string) => void; imageChanged: (id: number | null) => void; uploadChanged: (busy: boolean) => void }) {
+function QuestionPrompt({ api, question: q, textChanged, imageChanged, uploadChanged, disabled }: { disabled: boolean; api: WorkspaceApi; question: Question; textChanged: (text: string) => void; imageChanged: (id: number | null) => void; uploadChanged: (busy: boolean) => void }) {
   const fileInput = useRef<HTMLInputElement>(null)
   const upload = useAction()
   return <div className="ws-question-prompt">
-    <label>Условие на въпроса<textarea aria-label="Текст" value={q.text} onChange={e => textChanged(e.target.value)} /></label>
+    <Suspense fallback={<p role="status">Зареждане на редактора…</p>}><QuestionTextEditor value={q.text} onChange={textChanged} disabled={disabled} /></Suspense>
     <div className="ws-actions"><button type="button" className="command-button" disabled={upload.busy} onClick={() => fileInput.current?.click()}><ImagePlus size={17} />{q.imageId ? 'Смени снимката' : 'Добави снимка'}</button>
       <input ref={fileInput} hidden aria-label="Снимка към условието" type="file" accept="image/png,image/jpeg" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void upload.run(async () => { uploadChanged(true); try { const saved = await api.post<{ id: number }>('/files', { purpose: 'question', base64: await imageBase64(file) }); imageChanged(saved.id) } finally { uploadChanged(false) } }) }} />
       {q.imageId && <DeleteConfirmationButton label="Премахни снимката" icon={X} disabled={upload.busy} title="Премахване на снимка" confirmLabel="Премахни" description="Да премахнем ли снимката от условието на въпроса?" onConfirm={() => imageChanged(null)} />}
@@ -116,9 +120,9 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
       setJob(await api.post<AiJob>('/ai/test-generations', {
         ...generationPayload(appendSettings), level: draft.level, language: draft.language,
         ...(appendSettings.useSourceMaterial && appendSettings.sourceMaterial ? {
-          additionalInformation: `${appendSettings.additionalInformation.trim()}\nВече включени въпроси (създай различни нови въпроси само по качения материал):\n${draft.questions.map(q => q.text).join('\n')}`.slice(0, 20000),
+          additionalInformation: `${appendSettings.additionalInformation.trim()}\nВече включени въпроси (създай различни нови въпроси само по качения материал):\n${draft.questions.map(q => plainQuestionText(q.text)).join('\n')}`.slice(0, 20000),
         } : {
-          sourceText: `${draft.description ?? ''}\n${draft.instructions ?? ''}\nВече включени въпроси (създай различни нови въпроси):\n${draft.questions.map(q => q.text).join('\n')}`.slice(0, 20000),
+          sourceText: `${draft.description ?? ''}\n${draft.instructions ?? ''}\nВече включени въпроси (създай различни нови въпроси):\n${draft.questions.map(q => plainQuestionText(q.text)).join('\n')}`.slice(0, 20000),
         }),
       }))
     })
@@ -167,6 +171,8 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
   async function save() {
     if (!draft || saveDisabled) return
     await action.run(async () => {
+      const invalidText = draft.questions.findIndex(q => !plainQuestionText(q.text).trim() || q.text.length > questionTextLimit)
+      if (invalidText >= 0) throw new Error(`Условието на въпрос ${invalidText + 1} е празно или надвишава ${questionTextLimit} символа с форматирането.`)
       const invalid = draft.questions.findIndex(q => !Number.isInteger(q.timeSeconds) || q.timeSeconds < 10 || q.timeSeconds > 3600)
       if (invalid >= 0) throw new Error(`Времето за въпрос ${invalid + 1} трябва да е между 0 мин 10 сек и 60 мин 0 сек, в цели секунди.`)
       const saved = await api.call<Assessment>(current ? `/tests/${current.id}` : '/tests', current ? 'PUT' : 'POST', draft)
@@ -208,7 +214,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
         <SectionHead title={preview.assessment.title}>{preview.assessment.owner_id === userId && <button className="command-button" disabled={action.busy || generating} onClick={() => { setCurrent(preview.assessment); setDraft(preview.definition); setShowAppendAi(false) }}><Pencil size={17} /> Редактирай теста</button>}</SectionHead>
         {preview.definition.description && <p>{preview.definition.description}</p>}
         <p className="ws-summary">{preview.definition.questions.length} въпроса · {preview.definition.questions.reduce((sum, q) => sum + q.points, 0)} точки · {duration(preview.definition.questions)}</p>
-        <div className="ws-table-wrap"><table className="ws-table" aria-label="Въпроси на избрания тест"><thead><tr><th>#</th><th>Въпрос и отговори</th><th>Тип</th><th>Точки</th><th>Време</th></tr></thead><tbody>{preview.definition.questions.map((q, index) => <tr key={index}><td>{index + 1}</td><td className="ws-preview-question"><p className="ws-preview-prompt">{q.text}</p><WorkspaceImage api={api} id={q.imageId} />{q.options.length > 0 && <ol className="ws-preview-options">{q.options.map((option, i) => <li key={i} className={option.correct ? 'ws-correct-option' : undefined}>{option.correct && <Check size={15} aria-label="Верен отговор" />}{option.text}</li>)}</ol>}{q.acceptedAnswers.length > 0 && <p>Допустими отговори: {q.acceptedAnswers.join(', ')}</p>}{q.criteria && <p>Критерии: {q.criteria}</p>}{q.explanation && <p className="ws-muted">{q.explanation}</p>}</td><td>{types.find(([key]) => key === q.type)?.[1] ?? q.type}</td><td>{q.points}</td><td>{formatDuration(q.timeSeconds)}</td></tr>)}</tbody></table></div>
+        <div className="ws-table-wrap"><table className="ws-table" aria-label="Въпроси на избрания тест"><thead><tr><th>#</th><th>Въпрос и отговори</th><th>Тип</th><th>Точки</th><th>Време</th></tr></thead><tbody>{preview.definition.questions.map((q, index) => <tr key={index}><td>{index + 1}</td><td className="ws-preview-question"><QuestionText value={q.text} className="ws-preview-prompt" /><WorkspaceImage api={api} id={q.imageId} />{q.options.length > 0 && <ol className="ws-preview-options">{q.options.map((option, i) => <li key={i} className={option.correct ? 'ws-correct-option' : undefined}>{option.correct && <Check size={15} aria-label="Верен отговор" />}{option.text}</li>)}</ol>}{q.acceptedAnswers.length > 0 && <p>Допустими отговори: {q.acceptedAnswers.join(', ')}</p>}{q.criteria && <p>Критерии: {q.criteria}</p>}{q.explanation && <p className="ws-muted">{q.explanation}</p>}</td><td>{types.find(([key]) => key === q.type)?.[1] ?? q.type}</td><td>{q.points}</td><td>{formatDuration(q.timeSeconds)}</td></tr>)}</tbody></table></div>
         {!preview.definition.questions.length && <Empty>Няма въпроси в този тест.</Empty>}
       </section>}
     </> : <fieldset className="ws-editor" disabled={saveDisabled}>
@@ -226,7 +232,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
       </div></details>
       <p className="ws-summary">{draft.questions.length} въпроса · {draft.questions.reduce((sum, q) => sum + q.points, 0)} точки · {duration(draft.questions)}</p>
       </div>
-      {draft.questions.map((q, index) => <article className="ws-question" key={index}><div className="ws-question-head"><strong>Въпрос {index + 1}</strong><select aria-label={`Тип на въпрос ${index + 1}`} value={q.type} onChange={e => typeChange(index, e.target.value as QuestionType)}>{types.map(([type, text]) => <option key={type} value={type}>{text}</option>)}</select><button type="button" className="command-button" aria-label={`Подмени въпрос ${index + 1} с AI`} disabled={saveDisabled} onClick={() => openReplacement(index)}><Sparkles size={17} /> Подмени с AI</button><button className="icon-button danger" title="Изтрий въпрос" onClick={() => setPendingRemoval({ questionIndex: index })}><Trash2 size={17} /></button></div><QuestionPrompt api={api} question={q} textChanged={text => patchQuestion(index, { text })} imageChanged={imageId => patchQuestion(index, { imageId })} uploadChanged={busy => setPendingImages(previous => previous + (busy ? 1 : -1))} /><div className="ws-form-grid"><label>Трудност<select value={q.difficulty} onChange={e => patchQuestion(index, { difficulty: e.target.value, timeSeconds: ({ EASY: 30, MEDIUM: 60, HARD: 120, VERY_HARD: 180 })[e.target.value as 'EASY'] })}><option value="EASY">Лесен</option><option value="MEDIUM">Среден</option><option value="HARD">Труден</option><option value="VERY_HARD">Много труден</option></select></label><label>Точки<input type="number" min={0.0001} step="0.1" value={q.points} onChange={e => patchQuestion(index, { points: Number(e.target.value) })} /></label><DurationInput seconds={q.timeSeconds} question={index + 1} onChange={timeSeconds => patchQuestion(index, { timeSeconds })} /></div>
+      {draft.questions.map((q, index) => <article className="ws-question" key={index}><div className="ws-question-head"><strong>Въпрос {index + 1}</strong><select aria-label={`Тип на въпрос ${index + 1}`} value={q.type} onChange={e => typeChange(index, e.target.value as QuestionType)}>{types.map(([type, text]) => <option key={type} value={type}>{text}</option>)}</select><button type="button" className="command-button" aria-label={`Подмени въпрос ${index + 1} с AI`} disabled={saveDisabled} onClick={() => openReplacement(index)}><Sparkles size={17} /> Подмени с AI</button><button className="icon-button danger" title="Изтрий въпрос" onClick={() => setPendingRemoval({ questionIndex: index })}><Trash2 size={17} /></button></div><QuestionPrompt disabled={saveDisabled} api={api} question={q} textChanged={text => patchQuestion(index, { text })} imageChanged={imageId => patchQuestion(index, { imageId })} uploadChanged={busy => setPendingImages(previous => previous + (busy ? 1 : -1))} /><div className="ws-form-grid"><label>Трудност<select value={q.difficulty} onChange={e => patchQuestion(index, { difficulty: e.target.value, timeSeconds: ({ EASY: 30, MEDIUM: 60, HARD: 120, VERY_HARD: 180 })[e.target.value as 'EASY'] })}><option value="EASY">Лесен</option><option value="MEDIUM">Среден</option><option value="HARD">Труден</option><option value="VERY_HARD">Много труден</option></select></label><label>Точки<input type="number" min={0.0001} step="0.1" value={q.points} onChange={e => patchQuestion(index, { points: Number(e.target.value) })} /></label><DurationInput seconds={q.timeSeconds} question={index + 1} onChange={timeSeconds => patchQuestion(index, { timeSeconds })} /></div>
         {q.options.map((option, i) => <div className="ws-option-editor" key={i}><input aria-label={`Верен отговор ${i + 1}`} type={q.type === 'MULTIPLE_CHOICE' ? 'checkbox' : 'radio'} name={`correct-${index}`} checked={option.correct} onChange={e => patchQuestion(index, { options: q.options.map((o, j) => j === i ? { ...o, correct: e.target.checked } : q.type === 'MULTIPLE_CHOICE' ? o : { ...o, correct: false }) })} /><input aria-label={`Опция ${i + 1}`} value={option.text} onChange={e => patchQuestion(index, { options: q.options.map((o, j) => j === i ? { ...o, text: e.target.value } : o) })} /><button className="icon-button danger" title="Премахни опция" onClick={() => setPendingRemoval({ questionIndex: index, optionIndex: i })}><X size={16} /></button></div>)}
         {['SINGLE_CHOICE', 'MULTIPLE_CHOICE'].includes(q.type) && <button className="command-button" onClick={() => patchQuestion(index, { options: [...q.options, { text: '', correct: false }] })}><Plus size={16} /> Опция</button>}
         {q.type === 'SHORT_ANSWER' && <><label>Допустими отговори (по един на ред)<textarea value={q.acceptedAnswers.join('\n')} onChange={e => patchQuestion(index, { acceptedAnswers: e.target.value ? e.target.value.split('\n') : [] })} /></label><div className="ws-actions"><label className="ws-check"><input type="checkbox" checked={q.caseInsensitive} onChange={e => patchQuestion(index, { caseInsensitive: e.target.checked })} /> Без разлика малки / главни</label><label className="ws-check"><input type="checkbox" checked={q.collapseWhitespace} onChange={e => patchQuestion(index, { collapseWhitespace: e.target.checked })} /> Нормализирай интервали</label></div></>}
