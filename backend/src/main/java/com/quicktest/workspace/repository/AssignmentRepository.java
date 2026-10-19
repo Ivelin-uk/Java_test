@@ -24,7 +24,7 @@ public class AssignmentRepository {
     }
 
     public List<Map<String, Object>> findStudentAssignments(long organizationId, boolean platform, long userId) {
-        return store.rows("SELECT a.id,a.starts_at,a.ends_at,r.max_attempts,r.canceled,r.fullscreen_exempt,r.time_multiplier,v.title FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id JOIN assignment_recipients r ON r.organization_id=a.organization_id AND r.assignment_id=a.id WHERE (a.organization_id=? OR ?) AND r.student_id=? AND r.canceled=FALSE ORDER BY a.ends_at DESC", organizationId, platform, userId);
+        return store.rows("SELECT a.id,a.starts_at,a.ends_at,r.max_attempts,r.canceled,r.fullscreen_exempt,r.time_multiplier,v.title,teacher.name teacher_name FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id JOIN assignment_recipients r ON r.organization_id=a.organization_id AND r.assignment_id=a.id LEFT JOIN users teacher ON teacher.id=a.teacher_id WHERE (a.organization_id=? OR ?) AND r.student_id=? AND r.canceled=FALSE ORDER BY a.ends_at DESC", organizationId, platform, userId);
     }
 
     public List<Map<String, Object>> findTeacherAssignments(long organizationId, boolean platform, long userId, long userId2) {

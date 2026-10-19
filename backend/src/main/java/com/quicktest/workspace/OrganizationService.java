@@ -150,6 +150,19 @@ public class OrganizationService {
         return groupAccess(scope,id);
     }
     @Transactional
+    public Map<String,Object> rotateGroupCode(OrgAccess.Scope scope,long group,String currentCode) {
+        if(!scope.roles().contains("TEACHER")) throw WorkspaceError.forbidden();
+        var row=groupAccess(scope,group);long org=number(row,"organization_id");
+        if(currentCode==null || !currentCode.matches("[A-HJ-NP-Z2-9]{8}")) throw WorkspaceError.validation("Невалиден текущ код за група.");
+        var locked=repository.lockGroup(org,group);
+        // Repeating a request for an already replaced code returns the current one.
+        if(!currentCode.equals(string(locked,"join_code"))) return Map.of("code",string(locked,"join_code"));
+        String code;do {code=crypto.code();} while(repository.groupCodeExists(code));
+        repository.updateGroupCode(org,group,code);
+        audit.write(org,scope.userId(),"group.code_rotated",group,Map.of());
+        return Map.of("code",code);
+    }
+    @Transactional
     public Map<String,Object> joinGroup(OrgAccess.Scope scope,String code,String ip) {
         if(!scope.roles().contains("STUDENT")) throw WorkspaceError.forbidden();
         repository.requireActiveProfile(scope.userId(),"STUDENT");
@@ -159,8 +172,9 @@ public class OrganizationService {
         if(!codeLimiter.checkGroupJoin(scope.userId(),ip,valid)) throw codeLimiter.limited();
         if(!valid) throw WorkspaceError.validation("Невалиден код за група или групата е премахната.");
         var group=found.orElseThrow();long org=number(group,"organization_id"),id=number(group,"id");
-        // Serialize joins with group deletion, then apply the existing membership workflow.
-        repository.lockGroup(org,id);
+        // Recheck after locking: a teacher may have replaced the code during lookup.
+        var locked=repository.lockGroup(org,id);
+        if(!normalized.equals(string(locked,"join_code"))) throw WorkspaceError.validation("Невалиден код за група или групата е премахната.");
         if(scope.platform()) personal.member(org,scope.userId(),"STUDENT");
         else requireActiveMember(org,scope.userId(),"STUDENT");
         boolean alreadyMember=repository.countActiveGroupMembers(org,id,scope.userId())>0;

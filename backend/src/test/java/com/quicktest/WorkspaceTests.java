@@ -723,6 +723,26 @@ class WorkspaceTests {
         String rotated=string(assignments.rotate(teaching,assignment),"code");
         assertEquals(rotated,assignments.list(teaching).getFirst().get("access_code"));
     }
+    @Test void studentAssignmentsIdentifyTheAssigningTeacherAndPreserveRecipientPrivacy() throws Exception {
+        String teacherName="Г-жа Мария Николова",colleagueName="Г-н Георги Петров";
+        db.update("UPDATE users SET name=? WHERE id=?",teacherName,teacher);
+        var colleague=user(Role.TEACHER);db.update("UPDATE users SET name=? WHERE id=?",colleagueName,colleague.getId());
+        db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,colleague.getId(),"[\"TEACHER\"]",now);
+        long test=number(db.one("SELECT assessment_id FROM assessment_versions WHERE id=?",version),"assessment_id");assessments.share(teaching,test,true);
+        var colleagueScope=new OrgAccess.Scope(org,colleague.getId(),Set.of("TEACHER"));
+        long group=number(organizations.createGroup(colleagueScope,new OrganizationService.GroupRequest("Colleague group","","Java")),"id");organizations.addStudent(colleagueScope,group,student);
+        long assigned=number(assignments.create(colleagueScope,new AssignmentService.AssignmentRequest(version,List.of(group),List.of(),now,now.plusSeconds(7200),1,false,false,true)),"id");
+        var names=new HashMap<Long,String>();for(var row:assignments.list(learning)) {
+            names.put(number(row,"id"),string(row,"teacher_name"));
+            assertFalse(row.containsKey("email"));assertFalse(row.containsKey("teacher_email"));assertFalse(row.containsKey("access_code"));assertFalse(row.containsKey("code_hash"));
+        }
+        assertEquals(Map.of(assignment,teacherName,assigned,colleagueName),names);
+        mvc.perform(get("/api/v1/assignments").header("Authorization",authorization)).andExpect(status().isOk()).andExpect(jsonPath("$[0].teacher_name").value(colleagueName)).andExpect(jsonPath("$[*].teacher_email").isEmpty());
+        var stranger=user(Role.STUDENT);String bearer="Bearer "+auth.login(new AuthService.LoginRequest(stranger.getEmail(),"password123")).token();
+        mvc.perform(get("/api/v1/assignments").header("Authorization",bearer)).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        assertTrue(assignments.list(new OrgAccess.Scope(other,student,Set.of("STUDENT"))).isEmpty());
+        assignments.removeRecipient(teaching,assignment,student);assertEquals(1,assignments.list(learning).size());assertEquals(colleagueName,assignments.list(learning).getFirst().get("teacher_name"));
+    }
     @Test void assignmentCodesAreOnlyVisibleToAuthorizedTeachers() throws Exception {
         var colleague=user(Role.TEACHER);
         db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,colleague.getId(),"[\"TEACHER\"]",now);
@@ -1315,6 +1335,51 @@ class WorkspaceTests {
         db.update("UPDATE organization_subscriptions SET plan_id=(SELECT id FROM organization_plans WHERE name='Starter') WHERE organization_id=?",org);
         List<String> invitations=new ArrayList<>();for(int i=0;i<4;i++) invitations.add(string(organizations.invite(teaching,new OrganizationService.InvitationRequest("quota-"+UUID.randomUUID()+"@example.test",List.of("TEACHER"),null)),"token"));
         assertThrows(WorkspaceError.class,()->organizations.invite(teaching,new OrganizationService.InvitationRequest("over-quota@example.test",List.of("TEACHER"),null)));assertEquals(4,invitations.size());
+    }
+    @Test void groupCodeRotationInvalidatesOldCodePreservesHistoryAndRepeatsSafely() throws Exception {
+        var request=startRequest();long attempt=number(start(request),"id");attempts.submit(learning,attempt,session(request));
+        grading.finalizeResult(teaching,attempt,new GradingService.Finalize("before-code-rotation","",null,null),false);
+        var members=db.rows("SELECT * FROM group_members WHERE group_id=?",defaultGroup);
+        var recipients=db.rows("SELECT * FROM assignment_recipients WHERE assignment_id=?",assignment);
+        var revisions=db.rows("SELECT * FROM result_revisions WHERE attempt_id=?",attempt);
+        String previous=string(organizations.groupAccess(teaching,defaultGroup),"join_code");
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        var response=mvc.perform(post("/api/v1/groups/"+defaultGroup+"/code/rotate").header("Authorization",bearer).contentType("application/json").content(db.json(Map.of("currentCode",previous))))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String replacement=string(db.object(response),"code");assertTrue(replacement.matches("[A-HJ-NP-Z2-9]{8}"));assertNotEquals(previous,replacement);
+        assertEquals(replacement,organizations.rotateGroupCode(teaching,defaultGroup,previous).get("code"));
+        assertEquals(replacement,organizations.groups(teaching).getFirst().get("join_code"));
+        assertEquals(members,db.rows("SELECT * FROM group_members WHERE group_id=?",defaultGroup));
+        assertEquals(recipients,db.rows("SELECT * FROM assignment_recipients WHERE assignment_id=?",assignment));
+        assertEquals(revisions,db.rows("SELECT * FROM result_revisions WHERE attempt_id=?",attempt));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_audit WHERE action='group.code_rotated' AND resource_id=?",defaultGroup));
+        assertEquals("{}",db.one("SELECT detail_json FROM workspace_audit WHERE action='group.code_rotated' AND resource_id=?",defaultGroup).get("detail_json"));
+        var learner=user(Role.STUDENT);var scope=new OrgAccess.Scope(other,learner.getId(),Set.of("STUDENT"),true);
+        assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->organizations.joinGroup(scope,previous,"rotate-old-"+org)).getStatusCode());
+        assertEquals(defaultGroup,number(organizations.joinGroup(scope,replacement,"rotate-new-"+org),"id"));
+    }
+    @Test void concurrentGroupCodeRotationForOneDisplayedCodeChangesItOnce() throws Exception {
+        String previous=string(organizations.groupAccess(teaching,defaultGroup),"join_code");var returned=new HashSet<String>();
+        try(var pool=Executors.newFixedThreadPool(4)) {
+            List<Callable<Map<String,Object>>> work=new ArrayList<>();for(int i=0;i<4;i++) work.add(()->organizations.rotateGroupCode(teaching,defaultGroup,previous));
+            for(var future:pool.invokeAll(work)) returned.add(string(future.get(15,TimeUnit.SECONDS),"code"));
+        }
+        assertEquals(1,returned.size());assertFalse(returned.contains(previous));assertTrue(returned.contains(string(organizations.groupAccess(teaching,defaultGroup),"join_code")));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_audit WHERE action='group.code_rotated' AND resource_id=?",defaultGroup));
+    }
+    @Test void groupCodeRotationRejectsStudentsOtherTeachersForeignScopesAndDeletedGroups() throws Exception {
+        String previous=string(organizations.groupAccess(teaching,defaultGroup),"join_code");
+        var outsider=user(Role.TEACHER);var scope=new OrgAccess.Scope(org,outsider.getId(),Set.of("TEACHER"),true);
+        assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->organizations.rotateGroupCode(scope,defaultGroup,previous)).getStatusCode());
+        assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->organizations.rotateGroupCode(learning,defaultGroup,previous)).getStatusCode());
+        assertEquals(HttpStatus.NOT_FOUND,assertThrows(WorkspaceError.class,()->organizations.rotateGroupCode(new OrgAccess.Scope(other,teacher,Set.of("TEACHER")),defaultGroup,previous)).getStatusCode());
+        mvc.perform(post("/api/v1/groups/"+defaultGroup+"/code/rotate").header("Authorization",authorization).contentType("application/json").content(db.json(Map.of("currentCode",previous)))).andExpect(status().isForbidden());
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(outsider.getEmail(),"password123")).token();
+        mvc.perform(post("/api/v1/groups/"+defaultGroup+"/code/rotate").header("Authorization",bearer).contentType("application/json").content(db.json(Map.of("currentCode",previous)))).andExpect(status().isForbidden());
+        String owner="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        mvc.perform(post("/api/v1/groups/"+defaultGroup+"/code/rotate").header("Authorization",owner).contentType("application/json").content("{}")).andExpect(status().isBadRequest());
+        assertEquals(previous,organizations.groupAccess(teaching,defaultGroup).get("join_code"));
+        organizations.deleteGroup(teaching,defaultGroup);assertEquals(HttpStatus.NOT_FOUND,assertThrows(WorkspaceError.class,()->organizations.rotateGroupCode(teaching,defaultGroup,previous)).getStatusCode());
     }
     @Test void groupCodesLetIndependentStudentsJoinWithoutExposingCodesOrChangingAssignedRecipients() throws Exception {
         String groupCode=string(organizations.groupAccess(teaching,defaultGroup),"join_code");assertTrue(groupCode.matches("[A-HJ-NP-Z2-9]{8}"));

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Plus, UserPlus, Trash2, ArrowLeft, Save, Pencil, Copy } from 'lucide-react'
+import { Plus, UserPlus, Trash2, ArrowLeft, Save, Pencil, Copy, RefreshCw } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
 import type { Group, Member } from './types'
@@ -16,9 +16,10 @@ export function GroupsPanel({ api, teacher }: { api: WorkspaceApi; teacher: bool
   const [message, setMessage] = useState('')
   const selectedId = selected?.id
   useEffect(() => { if (selectedId) window.scrollTo({ top: 0 }) }, [selectedId])
-  if (selected && teacher) return <GroupEditor key={selected.id} api={api} group={selected} back={() => setSelected(null)} saved={async () => {
+  if (selected && teacher) return <GroupEditor key={selected.id} api={api} group={selected} back={() => setSelected(null)} saved={async code => {
+    if (code) setSelected({ ...selected, join_code: code })
     const refreshed = await groups.reload()
-    setSelected(refreshed.find(group => group.id === selected.id) ?? selected)
+    setSelected(refreshed.find(group => group.id === selected.id) ?? (code ? { ...selected, join_code: code } : selected))
   }} />
   if (selected && !teacher) return <GroupSummary api={api} group={selected} back={() => setSelected(null)} />
   return <section className="ws-section"><SectionHead title="Групи">{teacher && <button type="button" className="primary command-button" onClick={() => { setMessage(''); setCreating(true) }}><Plus size={17} /> Създай група</button>}</SectionHead><Feedback error={groups.error} message={message} busy={groups.loading} />
@@ -87,10 +88,22 @@ function GroupCreateDialog({ api, close, created }: { api: WorkspaceApi; close: 
   </dialog>
 }
 
-function GroupEditor({ api, group, back, saved }: { api: WorkspaceApi; group: Group; back: () => void; saved: () => Promise<void> }) {
+function GroupEditor({ api, group, back, saved }: { api: WorkspaceApi; group: Group; back: () => void; saved: (code?: string) => Promise<void> }) {
   const formId = useId()
   const action = useAction()
   const [editing, setEditing] = useState(group)
+  const code = group.join_code
+  const rotating = useRef(false)
+  async function rotateCode() {
+    if (!code || rotating.current) return
+    rotating.current = true
+    try {
+      await action.run(async () => {
+        const result = await api.post<{ code: string }>(`/groups/${group.id}/code/rotate`, { currentCode: code })
+        await saved(result.code)
+      }, 'Кодът е променен. Старият код вече не е валиден.')
+    } finally { rotating.current = false }
+  }
   return <section className="ws-section" aria-label="Редактиране на група">
     <SectionHead title={group.name}>
       <button className="icon-button" title="Към групите" disabled={action.busy} onClick={back}><ArrowLeft size={18} /></button>
@@ -112,7 +125,7 @@ function GroupEditor({ api, group, back, saved }: { api: WorkspaceApi; group: Gr
         <label>Описание<textarea maxLength={4000} value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })} /></label>
       </fieldset>
     </form>
-    <section className="ws-section" aria-label="Код за присъединяване към групата"><h3>Код за присъединяване</h3><GroupCode code={group.join_code} /><p className="ws-muted">Споделете кода с учениците. Те могат да го въведат в „Групи“, за да се присъединят сами.</p></section>
+    <section className="ws-section" aria-label="Код за присъединяване към групата"><h3>Код за присъединяване</h3><div className="ws-actions"><GroupCode key={code} code={code} /><button type="button" className="command-button" disabled={action.busy || !code} onClick={() => void rotateCode()}><RefreshCw size={17} /> Нов код</button></div><p className="ws-muted">Споделете кода с учениците. „Нов код“ заменя стария код за присъединяване. Учениците, които вече са в групата, остават в нея.</p></section>
     <GroupMembers api={api} group={group} />
   </section>
 }
@@ -129,6 +142,7 @@ function GroupMembers({ api, group }: { api: WorkspaceApi; group: Group }) {
   const directory = useRemote<Member[]>(api, '/members', [])
   const action = useAction()
   const [userIds, setUserIds] = useState<number[]>([])
+  const [pickerVersion, setPickerVersion] = useState(0)
   const adding = useRef(false)
   const [removing, setRemoving] = useState<Member | null>(null)
   const [message, setMessage] = useState('')
@@ -152,6 +166,7 @@ function GroupMembers({ api, group }: { api: WorkspaceApi; group: Group }) {
             added.push(userId)
             setUserIds(ids => ids.filter(id => id !== userId))
           }
+          setPickerVersion(version => version + 1)
         } finally {
           if (added.length) {
             setMessage(added.length === 1 ? 'Ученикът е добавен в групата.' : `Добавени ученици: ${added.length}.`)
@@ -160,7 +175,7 @@ function GroupMembers({ api, group }: { api: WorkspaceApi; group: Group }) {
         }
       }).finally(() => { adding.current = false })
     }}>
-      <RecipientPicker title="Ученици" searchLabel="Търси ученици" placeholder="Търси по име или имейл" emptyMessage="Няма налични ученици." options={available.map(member => ({ id: member.user_id, name: member.name, detail: member.email }))} selected={selected} toggle={id => setUserIds(ids => ids.includes(id) ? ids.filter(value => value !== id) : [...ids, id])} disabled={disabled} loading={directory.loading || members.loading} keepOpenOnSelect />
+      <RecipientPicker key={pickerVersion} title="Ученици" searchLabel="Търси ученици" placeholder="Търси по име или имейл" emptyMessage="Няма налични ученици." options={available.map(member => ({ id: member.user_id, name: member.name, detail: member.email }))} selected={selected} toggle={id => setUserIds(ids => ids.includes(id) ? ids.filter(value => value !== id) : [...ids, id])} disabled={disabled} loading={directory.loading || members.loading} keepOpenOnSelect />
       <button type="submit" className="primary command-button" disabled={!selected.length || disabled}><UserPlus size={17} /> Добави</button>
     </form>
     <div className="ws-table-wrap"><table className="ws-table" aria-label="Участници в групата">

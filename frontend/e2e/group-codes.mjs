@@ -8,7 +8,8 @@ const teacher = { token: 'group-code-teacher', user: { id: 101, name: 'Teacher',
 const student = { token: 'group-code-student', user: { id: 102, name: 'Student', email: 'student@example.test', role: 'STUDENT', active: true } }
 const artifacts = new URL('../../.artifacts/', import.meta.url), errors = []
 await mkdir(artifacts, { recursive: true })
-let created = false, joined = false
+let created = false, joined = false, failRotation = true, rotations = 0, releaseRotation
+const rotationGate = new Promise(resolve => { releaseRotation = resolve })
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined), headless: true })
 const button = (page, name) => page.getByRole('button', { name, exact: true })
 async function pageFor(auth) {
@@ -33,6 +34,12 @@ async function pageFor(auth) {
     if (method === 'POST') {
       const body = request.postDataJSON()
       if (path === '/api/v1/groups' && teaching) { assert.deepEqual(body, { name: group.name, subject: group.subject, description: group.description });created = true;return respond(group) }
+      if (path === '/api/v1/groups/201/code/rotate' && teaching) {
+        rotations++
+        if (failRotation) return respond({ detail: 'Неуспешна смяна на кода.' }, 503)
+        assert.equal(body.currentCode, group.join_code)
+        await rotationGate;group.join_code = 'EFGH6789';return respond({ code: group.join_code })
+      }
       if (path === '/api/v1/groups/join' && !teaching) {
         if (body.code !== group.join_code) return respond({ detail: 'Невалиден код за група или групата е премахната.' }, 400)
         const alreadyMember = joined;joined = true;return respond({ id: group.id, name: group.name, alreadyMember })
@@ -58,13 +65,34 @@ try {
   await teacherPage.getByRole('heading', { name: 'Код за присъединяване', exact: true }).waitFor()
   await button(teacherPage, 'Копирай кода за групата').click()
   assert.equal(await teacherPage.evaluate(() => window.copiedGroupCode), group.join_code)
+  const previous = group.join_code, rotate = button(teacherPage, 'Нов код')
+  await teacherPage.getByLabel('Име', { exact: true }).fill('Незаписана промяна')
+  await rotate.click()
+  await teacherPage.getByRole('alert').getByText('Неуспешна смяна на кода.', { exact: true }).waitFor()
+  assert.equal(await code.textContent(), previous)
+  failRotation = false
+  const requested = teacherPage.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/v1/groups/201/code/rotate')
+  await rotate.click();await requested
+  assert.equal(await rotate.isDisabled(), true)
+  await rotate.evaluate(element => element.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+  assert.equal(rotations, 2)
+  releaseRotation()
+  await teacherPage.getByText('Кодът е променен. Старият код вече не е валиден.', { exact: true }).waitFor()
+  assert.equal(await code.textContent(), group.join_code)
+  assert.notEqual(group.join_code, previous)
+  assert.equal(await teacherPage.getByLabel('Име', { exact: true }).inputValue(), 'Незаписана промяна')
+  await teacherPage.getByLabel('Име', { exact: true }).fill(group.name)
+  await button(teacherPage, 'Копирай кода за групата').click()
+  assert.equal(await teacherPage.evaluate(() => window.copiedGroupCode), group.join_code)
   await teacherPage.screenshot({ path: new URL('group-code-teacher.png', artifacts).pathname, fullPage: true })
   const page = await pageFor(student), input = page.getByLabel('Код за група', { exact: true }), submit = button(page, 'Присъедини се')
   assert.equal(await submit.isDisabled(), true)
   await input.fill('BADCODE1');await submit.click()
   await page.getByRole('alert').getByText('Невалиден код за група или групата е премахната.', { exact: true }).waitFor()
   assert.equal(await input.inputValue(), 'BADCODE1')
-  await input.fill('abcd2345');assert.equal(await input.inputValue(), group.join_code)
+  await input.fill(previous);await submit.click()
+  await page.getByRole('alert').getByText('Невалиден код за група или групата е премахната.', { exact: true }).waitFor()
+  await input.fill(group.join_code.toLowerCase());assert.equal(await input.inputValue(), group.join_code)
   await submit.click();await button(page, group.name).waitFor()
   await input.fill(group.join_code);await submit.click()
   await page.getByText(`Вече си в групата „${group.name}“.`, { exact: true }).waitFor()
@@ -72,6 +100,7 @@ try {
   assert.equal(await input.inputValue(), '')
   assert.equal(await page.getByLabel('Код за присъединяване', { exact: true }).count(), 0)
   assert.equal(await button(page, 'Създай група').count(), 0)
+  assert.equal(await button(page, 'Нов код').count(), 0)
   for (const [theme, width] of [['light', 1440], ['dark', 390], ['light', 320]]) {
     await page.setViewportSize({ width, height: 900 })
     if (await page.locator('html').getAttribute('data-theme') !== theme) await button(page, theme === 'dark' ? 'Тъмна тема' : 'Светла тема').click()
@@ -84,5 +113,5 @@ try {
   await button(teacherPage, 'Към групите').click();await button(teacherPage, group.name).click()
   await teacherPage.getByRole('cell', { name: student.user.email, exact: true }).waitFor()
   assert.deepEqual(errors, [])
-  console.log('Passed: generated group code display and copy after creation, teacher editor code, student code entry, invalid code retry, uppercase input, idempotent membership, persistence after refresh, teacher participant list, student read-only access, responsive light/dark layouts. API fixtures only.')
-} finally { await browser.close() }
+  console.log('Passed: group code generation and copy, teacher code rotation with failure/retry and duplicate guard, unsaved fields preserved, copying the replacement code, old-code rejection, student code entry, uppercase input, idempotent membership, persistence after refresh, teacher participant list, student read-only access, responsive light/dark layouts. API fixtures only.')
+} finally { releaseRotation();await browser.close() }

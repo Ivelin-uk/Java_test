@@ -5,7 +5,13 @@ import { chromium } from 'playwright'
 const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173', base = process.env.E2E_API_URL ?? 'http://localhost:8080'
 const auth = { token: 'learner-results-fixture', user: { id: 101, name: 'Student', email: 'student@example.test', role: 'STUDENT', active: true, passwordChangeRequired: false } }
 const title = 'Средно ниво тест по C# програмиране'
-const assignments = [301, 302].map(id => ({ id, title, starts_at: new Date(Date.now() - 60000).toISOString(), ends_at: new Date(Date.now() + 3600000).toISOString(), max_attempts: 6, canceled: false }))
+const now = Date.parse('2026-10-19T14:00:00Z')
+const assignments = [
+  { id: 301, title, teacher_name: 'Г-жа Мария Николова', starts_at: new Date(now - 60000).toISOString(), ends_at: new Date(now + 3600000).toISOString(), max_attempts: 6, canceled: false },
+  { id: 302, title, teacher_name: 'Г-н Георги Петров', starts_at: new Date(now - 3600000).toISOString(), ends_at: new Date(now).toISOString(), max_attempts: 6, canceled: false },
+  { id: 303, title: 'Предстоящ тест', starts_at: new Date(now + 60000).toISOString(), ends_at: new Date(now + 120000).toISOString(), max_attempts: 1, canceled: false },
+  { id: 304, title: 'Отменен тест', starts_at: new Date(now - 60000).toISOString(), ends_at: new Date(now + 3600000).toISOString(), max_attempts: 1, canceled: true },
+]
 const artifacts = new URL('../../.artifacts/', import.meta.url)
 await mkdir(artifacts, { recursive: true })
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined), headless: true })
@@ -15,6 +21,7 @@ try {
     const context = await browser.newContext({ viewport, colorScheme: viewport.theme })
     await context.addInitScript(auth => localStorage.setItem('quicktest.auth', JSON.stringify(auth)), auth)
     const page = await context.newPage()
+    await page.clock.install({ time: new Date(now) });await page.clock.pauseAt(new Date(now + 1000))
     page.on('pageerror', error => errors.push(error.message))
     const attempts = Array.from({ length: 7 }, (_, i) => ({ id: 401 + i, assignment_id: i === 6 ? 302 : 301, title, attempt_number: i === 6 ? 1 : i + 1, status: ['finalized', 'finalized', 'finalized', 'in_progress', 'pending_review', 'voided', 'finalized'][i], submitted_at: i === 3 ? null : new Date(Date.now() - i * 60000).toISOString() })).reverse()
     const result = (id, percentage, grade, revision = 1) => {
@@ -51,6 +58,28 @@ try {
       const row = (assignment, number) => table.getByRole('row').filter({ has: page.getByRole('cell', { name: String(number), exact: true }) }).filter({ hasText: assignment === 302 ? '95.00%' : '' })
       await primary.getByText('85.00%', { exact: true }).waitFor()
       await secondary.getByText('95.00%', { exact: true }).waitFor()
+      const assigned = page.getByRole('table', { name: 'Възложени тестове', exact: true })
+      const availability = assigned.locator('tbody tr')
+      for (const position of [0, 1]) {
+        const firstCell = availability.nth(position).getByRole('cell').first()
+        assert.equal(await firstCell.getByText(title, { exact: true }).count(), 1)
+        assert.equal(await firstCell.getByText(`Възложил: ${assignments[position].teacher_name}`, { exact: true }).count(), 1)
+      }
+      assert.equal(await availability.nth(2).locator('.ws-assignment-teacher').count(), 0)
+      for (const [position, status, token] of [[0, 'Активен', 'success'], [1, 'Срокът е изтекъл', 'danger'], [2, 'Предстоящ', 'warning'], [3, 'Отменен', 'muted']]) {
+        const assignment = availability.nth(position)
+        assert.equal(await assignment.getByText(status, { exact: true }).count(), 1)
+        const colorsMatch = () => assignment.evaluate((element, token) => {
+          const sample = document.createElement('span');sample.style.backgroundColor = `var(--${token === 'muted' ? 'subtle' : token + '-bg'})`;sample.style.color = `var(--${token})`;document.body.append(sample)
+          const expected = getComputedStyle(sample), cell = getComputedStyle(element.querySelector('td')), status = getComputedStyle(element.querySelector('.ws-assignment-availability'))
+          const matches = cell.backgroundColor === expected.backgroundColor && status.color === expected.color
+          sample.remove();return matches
+        }, token)
+        assert.equal(await colorsMatch(), true)
+        await assignment.hover();assert.equal(await colorsMatch(), true)
+      }
+      assert.equal(await availability.nth(1).getByRole('button').isDisabled(), true)
+      assert.equal(await availability.nth(3).getByRole('button').isDisabled(), true)
       assert.equal(await table.getByRole('row').count(), 8)
       assert.equal(await page.getByRole('table').count(), 2)
       assert.equal(await page.getByRole('heading', { name: 'Публикувани резултати', exact: true }).count(), 0)
@@ -160,11 +189,21 @@ try {
       await best.getByText('Няма публикувани резултати.', { exact: true }).waitFor()
       await page.getByText('Няма започнати опити.', { exact: true }).waitFor()
       assert.equal(await table.getByRole('row').count(), 1)
+      const scheduled = availability.nth(2)
+      await page.clock.runFor(58000)
+      assert.equal(await scheduled.getByText('Предстоящ', { exact: true }).count(), 1)
+      await page.clock.runFor(1000)
+      await scheduled.getByText('Активен', { exact: true }).waitFor()
+      await page.clock.runFor(59000)
+      assert.equal(await scheduled.getByText('Активен', { exact: true }).count(), 1)
+      await page.clock.runFor(1000)
+      await scheduled.getByText('Срокът е изтекъл', { exact: true }).waitFor()
+      assert.equal(await scheduled.getByRole('button').isDisabled(), true)
     } catch (error) {
       await page.screenshot({ path: new URL(`learner-results-${viewport.theme}-${viewport.width}-failure.png`, artifacts).pathname, fullPage: true })
       throw error
     } finally { await context.close() }
   }
   assert.deepEqual(errors, [])
-  console.log('Passed: single attempt/result table, best percentage per assignment, numeric ordering, latest corrections, pending and voided exclusion, tie breaking, refresh and empty states, result previews and release policy, pending/failed/passed colors and icons, outcome overrides, failed best score, hover preservation, accessible contrast, desktop/mobile and light/dark themes. API fixtures only.')
+  console.log('Passed: active/expired/upcoming/canceled assignment colors and labels, automatic transitions at start/deadline without reload, single attempt/result table, best percentage per assignment, numeric ordering, latest corrections, pending and voided exclusion, tie breaking, refresh and empty states, result previews and release policy, pending/failed/passed colors and icons, outcome overrides, failed best score, hover preservation, accessible contrast, desktop/mobile and light/dark themes. API fixtures only.')
 } finally { await browser.close() }

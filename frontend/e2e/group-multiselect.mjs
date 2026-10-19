@@ -97,6 +97,9 @@ try {
       await region.getByText('Добавени ученици: 3.', { exact: true }).waitFor()
       await table.getByText(directory[2].email, { exact: true }).waitFor()
       await form.getByText('Избрани: 0', { exact: true }).waitFor()
+      await page.waitForFunction(() => document.querySelector('[role="combobox"][aria-label="Търси ученици"]')?.matches(':enabled'))
+      assert.equal(await picker.getAttribute('aria-expanded'), 'false')
+      assert.equal(await options.count(), 0)
       assert.equal(await table.locator('tbody tr').count(), 4)
       assert.equal(await add.isDisabled(), true)
       assert.deepEqual(mutations.map(body => body.userId), [504, 502, 503])
@@ -117,6 +120,9 @@ try {
       await region.getByText('Добавени ученици: 2.', { exact: true }).waitFor()
       await table.getByText(directory[6].email, { exact: true }).waitFor()
       await form.getByText('Избрани: 0', { exact: true }).waitFor()
+      await page.waitForFunction(() => document.querySelector('[role="combobox"][aria-label="Търси ученици"]')?.matches(':enabled'))
+      assert.equal(await picker.getAttribute('aria-expanded'), 'false')
+      assert.equal(await options.count(), 0)
       assert.deepEqual(mutations.map(body => body.userId), [504, 502, 503, 505, 506, 506, 507])
       assert.equal(await table.locator('tbody tr').count(), 7)
       assert.equal(await description.inputValue(), 'Незаписано описание')
@@ -135,5 +141,5 @@ try {
     } finally { releaseAdd(); await context.close() }
   }
   assert.deepEqual(errors, [])
-  console.log('Passed: multi-select, search by name/email, keyboard and mouse selection, deselection, open list and selected count, exclusion of existing/inactive/teacher accounts, batch add, duplicate-submit guard, partial failure and retry without duplicate additions, unsaved group fields, reload persistence, desktop/mobile and both themes. API fixtures only.')
+  console.log('Passed: multi-select, search by name/email, keyboard and mouse selection, deselection, open list and selected count, exclusion of existing/inactive/teacher accounts, batch add closes dropdown, duplicate-submit guard, partial failure and retry without duplicate additions, successful retry closes dropdown, unsaved group fields, reload persistence, desktop/mobile and both themes. API fixtures only.')
 } finally { await browser.close() }

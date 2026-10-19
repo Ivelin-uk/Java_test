@@ -150,6 +150,10 @@ public class OrganizationRepository {
         return store.count("SELECT COUNT(*) FROM learning_groups WHERE join_code=?",code)>0;
     }
 
+    public int updateGroupCode(long org,long group,String code) {
+        return store.update("UPDATE learning_groups SET join_code=? WHERE organization_id=? AND id=? AND deleted_at IS NULL",code,org,group);
+    }
+
     public int upsertGroupMember(long org,long group,long student) {
         return store.update("INSERT INTO group_members(organization_id,group_id,user_id) VALUES(?,?,?) ON DUPLICATE KEY UPDATE active=TRUE",org,group,student);
     }
@@ -167,7 +171,7 @@ public class OrganizationRepository {
     }
 
     public Map<String, Object> lockGroup(long org, long group) {
-        return store.one("SELECT id FROM learning_groups WHERE organization_id=? AND id=? AND deleted_at IS NULL FOR UPDATE", org, group);
+        return store.one("SELECT id,join_code FROM learning_groups WHERE organization_id=? AND id=? AND deleted_at IS NULL FOR UPDATE", org, group);
     }
 
     public int updateGroup(String name, String description, String subject, long org, long group) {
