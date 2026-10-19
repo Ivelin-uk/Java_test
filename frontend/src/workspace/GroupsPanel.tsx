@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Plus, UserPlus, Trash2, ArrowLeft, Save, Pencil } from 'lucide-react'
+import { Plus, UserPlus, Trash2, ArrowLeft, Save, Pencil, Copy } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
 import type { Group, Member } from './types'
@@ -22,10 +22,32 @@ export function GroupsPanel({ api, teacher }: { api: WorkspaceApi; teacher: bool
   }} />
   if (selected && !teacher) return <GroupSummary api={api} group={selected} back={() => setSelected(null)} />
   return <section className="ws-section"><SectionHead title="Групи">{teacher && <button type="button" className="primary command-button" onClick={() => { setMessage(''); setCreating(true) }}><Plus size={17} /> Създай група</button>}</SectionHead><Feedback error={groups.error} message={message} busy={groups.loading} />
-    <div className="ws-table-wrap"><table className="ws-table" aria-label="Групи"><thead><tr><th>Име</th><th>Дисциплина</th><th>Описание</th>{teacher && <th>Действия</th>}</tr></thead><tbody>{groups.data.map(group => <tr key={group.id}><td><button className="ws-text-button" onClick={() => setSelected(group)}>{group.name}</button></td><td>{group.subject}</td><td>{group.description}</td>{teacher && <td><div className="ws-actions"><button className="icon-button" title="Редактирай групата" onClick={() => setSelected(group)}><Pencil size={17} /></button><button className="icon-button danger" title="Изтрий групата" onClick={() => setDeleting(group)}><Trash2 size={17} /></button></div></td>}</tr>)}</tbody></table></div>{!groups.data.length && !groups.loading && <Empty />}
+    {!teacher && <JoinGroupForm api={api} joined={async result => { await groups.reload(); setMessage(result.alreadyMember ? `Вече си в групата „${result.name}“.` : `Присъедини се към групата „${result.name}“.`) }} />}
+    <div className="ws-table-wrap"><table className="ws-table" aria-label="Групи"><thead><tr><th>Име</th><th>Дисциплина</th><th>Описание</th>{teacher && <><th>Код за присъединяване</th><th>Действия</th></>}</tr></thead><tbody>{groups.data.map(group => <tr key={group.id}><td><button className="ws-text-button" onClick={() => setSelected(group)}>{group.name}</button></td><td>{group.subject}</td><td>{group.description}</td>{teacher && <><td><GroupCode code={group.join_code} /></td><td><div className="ws-actions"><button className="icon-button" title="Редактирай групата" onClick={() => setSelected(group)}><Pencil size={17} /></button><button className="icon-button danger" title="Изтрий групата" onClick={() => setDeleting(group)}><Trash2 size={17} /></button></div></td></>}</tr>)}</tbody></table></div>{!groups.data.length && !groups.loading && <Empty />}
     {deleting && <GroupDeleteDialog api={api} group={deleting} close={() => setDeleting(null)} saved={async () => { await groups.reload(); setMessage('Групата е изтрита.'); setDeleting(null) }} />}
-    {creating && <GroupCreateDialog api={api} close={() => setCreating(false)} created={async () => { await groups.reload(); setMessage('Групата е създадена.') }} />}
+    {creating && <GroupCreateDialog api={api} close={() => setCreating(false)} created={async () => { await groups.reload(); setMessage('Групата е създадена. Кодът за присъединяване е в таблицата.') }} />}
   </section>
+}
+
+function GroupCode({ code }: { code?: string }) {
+  const action = useAction()
+  return <div><div className="ws-group-code"><output aria-label="Код за присъединяване">{code ?? '—'}</output>{code && <button type="button" className="icon-button" aria-label="Копирай кода за групата" title="Копирай кода за групата" disabled={action.busy} onClick={() => void action.run(() => navigator.clipboard.writeText(code), 'Кодът е копиран.')}><Copy size={17} /></button>}</div><Feedback error={action.error} message={action.message} /></div>
+}
+
+interface GroupJoinResult { id: number; name: string; alreadyMember: boolean }
+function JoinGroupForm({ api, joined }: { api: WorkspaceApi; joined: (result: GroupJoinResult) => Promise<void> }) {
+  const [code, setCode] = useState('')
+  const action = useAction(), submitting = useRef(false)
+  return <section className="ws-section ws-group-join" aria-label="Присъединяване към група"><h3>Присъедини се с код</h3><p className="ws-muted">Въведи кода, който ти е дал учителят.</p><form className="ws-inline-form" onSubmit={event => {
+    event.preventDefault()
+    if (!code.trim() || submitting.current) return
+    submitting.current = true
+    void action.run(async () => {
+      const result = await api.post<GroupJoinResult>('/groups/join', { code: code.trim() })
+      await joined(result)
+      setCode('')
+    }).finally(() => { submitting.current = false })
+  }}><label>Код за група<input required maxLength={8} autoCapitalize="characters" autoComplete="off" spellCheck={false} value={code} disabled={action.busy} placeholder="Например ABCD2345" onChange={event => setCode(event.target.value.toUpperCase())} /></label><button type="submit" className="primary command-button" disabled={action.busy || !code.trim()}><UserPlus size={17} /> Присъедини се</button></form><Feedback error={action.error} busy={action.busy} /></section>
 }
 
 function GroupCreateDialog({ api, close, created }: { api: WorkspaceApi; close: () => void; created: () => Promise<void> }) {
@@ -90,6 +112,7 @@ function GroupEditor({ api, group, back, saved }: { api: WorkspaceApi; group: Gr
         <label>Описание<textarea maxLength={4000} value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })} /></label>
       </fieldset>
     </form>
+    <section className="ws-section" aria-label="Код за присъединяване към групата"><h3>Код за присъединяване</h3><GroupCode code={group.join_code} /><p className="ws-muted">Споделете кода с учениците. Те могат да го въведат в „Групи“, за да се присъединят сами.</p></section>
     <GroupMembers api={api} group={group} />
   </section>
 }

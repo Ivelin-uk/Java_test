@@ -1316,6 +1316,62 @@ class WorkspaceTests {
         List<String> invitations=new ArrayList<>();for(int i=0;i<4;i++) invitations.add(string(organizations.invite(teaching,new OrganizationService.InvitationRequest("quota-"+UUID.randomUUID()+"@example.test",List.of("TEACHER"),null)),"token"));
         assertThrows(WorkspaceError.class,()->organizations.invite(teaching,new OrganizationService.InvitationRequest("over-quota@example.test",List.of("TEACHER"),null)));assertEquals(4,invitations.size());
     }
+    @Test void groupCodesLetIndependentStudentsJoinWithoutExposingCodesOrChangingAssignedRecipients() throws Exception {
+        String groupCode=string(organizations.groupAccess(teaching,defaultGroup),"join_code");assertTrue(groupCode.matches("[A-HJ-NP-Z2-9]{8}"));
+        var learner=user(Role.STUDENT);String bearer="Bearer "+auth.login(new AuthService.LoginRequest(learner.getEmail(),"password123")).token();
+        mvc.perform(get("/api/v1/groups").header("Authorization",bearer)).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        var response=mvc.perform(post("/api/v1/groups/join").header("Authorization",bearer).contentType("application/json").content(db.json(Map.of("code"," "+groupCode.toLowerCase(Locale.ROOT)+" ","userId",teacher))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(defaultGroup)).andExpect(jsonPath("$.alreadyMember").value(false)).andExpect(jsonPath("$.join_code").doesNotExist());
+        mvc.perform(get("/api/v1/groups").header("Authorization",bearer)).andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(defaultGroup)).andExpect(jsonPath("$[0].join_code").doesNotExist());
+        mvc.perform(get("/api/v1/groups/"+defaultGroup+"/summary").header("Authorization",bearer)).andExpect(status().isOk()).andExpect(jsonPath("$.group.join_code").doesNotExist()).andExpect(jsonPath("$.assignments").isEmpty());
+        assertTrue(organizations.groupMembers(teaching,defaultGroup).stream().anyMatch(row->number(row,"user_id")==learner.getId() && flag(row,"active")));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM assignment_recipients WHERE assignment_id=? AND student_id=?",assignment,learner.getId()));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM group_members WHERE group_id=? AND user_id=?",defaultGroup,teacher));
+        mvc.perform(post("/api/v1/groups/join").header("Authorization",bearer).contentType("application/json").content(db.json(Map.of("code",groupCode)))).andExpect(status().isOk()).andExpect(jsonPath("$.alreadyMember").value(true));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_audit WHERE action='group.student_joined' AND resource_id=? AND actor_id=?",defaultGroup,learner.getId()));
+        assertFalse(string(db.one("SELECT detail_json FROM workspace_audit WHERE action='group.student_joined' AND resource_id=? AND actor_id=?",defaultGroup,learner.getId()),"detail_json").contains(groupCode));
+        var next=assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true));assertEquals(2,number(next,"recipients"));
+        organizations.updateGroup(teaching,defaultGroup,new OrganizationService.GroupRequest("Renamed","","Java"));assertEquals(groupCode,organizations.groupAccess(teaching,defaultGroup).get("join_code"));
+    }
+    @Test void groupCodeJoinsAreConcurrentIdempotentAndCanReactivateMembership() throws Exception {
+        var learner=user(Role.STUDENT);var scope=new OrgAccess.Scope(other,learner.getId(),Set.of("STUDENT"),true);
+        String groupCode=string(organizations.groupAccess(teaching,defaultGroup),"join_code");
+        try(var pool=Executors.newFixedThreadPool(4)) {
+            List<Callable<Map<String,Object>>> work=new ArrayList<>();for(int i=0;i<4;i++) work.add(()->organizations.joinGroup(scope,groupCode,"join-concurrent-"+org));
+            int joined=0;for(var result:pool.invokeAll(work)) if(!flag(result.get(15,TimeUnit.SECONDS),"alreadyMember")) joined++;assertEquals(1,joined);
+        }
+        assertEquals(1,db.count("SELECT COUNT(*) FROM group_members WHERE group_id=? AND user_id=? AND active=TRUE",defaultGroup,learner.getId()));
+        organizations.removeStudent(teaching,defaultGroup,learner.getId());assertFalse(flag(organizations.joinGroup(scope,groupCode,"join-reactivate-"+org),"alreadyMember"));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM group_members WHERE group_id=? AND user_id=?",defaultGroup,learner.getId()));
+    }
+    @Test void groupCodesRejectTeachersForeignScopesDeletedGroupsAndRateLimitGuesses() throws Exception {
+        var learner=user(Role.STUDENT);var scope=new OrgAccess.Scope(other,learner.getId(),Set.of("STUDENT"),true);
+        String groupCode=string(organizations.groupAccess(teaching,defaultGroup),"join_code"),ip="join-invalid-"+org;
+        assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->organizations.joinGroup(teaching,groupCode,ip)).getStatusCode());
+        assertThrows(WorkspaceError.class,()->organizations.joinGroup(new OrgAccess.Scope(other,learner.getId(),Set.of("STUDENT")),groupCode,ip));
+        for(int i=0;i<4;i++) assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->organizations.joinGroup(scope,"INVALID!",ip)).getStatusCode());
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS,assertThrows(WorkspaceError.class,()->organizations.joinGroup(scope,groupCode,ip)).getStatusCode());
+        assertEquals(0,db.count("SELECT COUNT(*) FROM group_members WHERE group_id=? AND user_id=?",defaultGroup,learner.getId()));
+        when(clock.instant()).thenReturn(now.plusSeconds(301));assertEquals(defaultGroup,number(organizations.joinGroup(scope,groupCode,ip),"id"));
+        organizations.deleteGroup(teaching,defaultGroup);assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->organizations.joinGroup(scope,groupCode,ip)).getStatusCode());
+        mvc.perform(post("/api/v1/groups/join").contentType("application/json").content(db.json(Map.of("code",groupCode)))).andExpect(status().isUnauthorized());
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        mvc.perform(post("/api/v1/groups/join").header("Authorization",bearer).contentType("application/json").content(db.json(Map.of("code",groupCode)))).andExpect(status().isForbidden());
+    }
+    @Test void gradingQueueUsesLatestPublishedOutcomeAndPreservesTeacherScope() throws Exception {
+        var request=startRequest();long id=number(start(request),"id");attempts.submit(learning,id,session(request));
+        assertNull(grading.queue(teaching).getFirst().get("result_outcome"));
+        grading.finalizeResult(teaching,id,new GradingService.Finalize("queue-failed-key","",null,null),false);
+        assertEquals("failed",grading.queue(teaching).getFirst().get("result_outcome"));
+        grading.finalizeResult(teaching,id,new GradingService.Finalize("queue-passed-correction","Teacher corrected the outcome",null,"passed"),true);
+        assertEquals(1,grading.queue(teaching).size());assertEquals("passed",grading.queue(teaching).getFirst().get("result_outcome"));
+        grading.finalizeResult(teaching,id,new GradingService.Finalize("queue-failed-correction","Teacher corrected the outcome again",null,"failed"),true);
+        assertEquals("failed",grading.queue(teaching).getFirst().get("result_outcome"));
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        mvc.perform(get("/api/v1/grading").header("Authorization",bearer).header("X-Organization-Id",org)).andExpect(status().isOk()).andExpect(jsonPath("$[0].result_outcome").value("failed"));
+        var outsider=new OrgAccess.Scope(org,user(Role.TEACHER).getId(),Set.of("TEACHER"));assertTrue(grading.queue(outsider).isEmpty());
+        mvc.perform(get("/api/v1/grading").header("Authorization",authorization)).andExpect(status().isForbidden());
+    }
     @Test void gradingQueueIncludesTeacherOnlyCodesAndRecipientAttemptLimits() throws Exception {
         var request=startRequest();long id=number(start(request),"id");attempts.submit(learning,id,session(request));
         var row=grading.queue(teaching).stream().filter(value->number(value,"id")==id).findFirst().orElseThrow();

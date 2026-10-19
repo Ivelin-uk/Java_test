@@ -15,6 +15,7 @@ public class GroupReportService {
         var profile=repository.requireGroup(scope.organizationId(), group);
         boolean teacher=scope.roles().contains("ORG_ADMIN") || scope.roles().contains("TEACHER") && repository.countGroupTeachers(scope.organizationId(), group, scope.userId())>0;
         if(!teacher && repository.countActiveGroupMembers(scope.organizationId(), group, scope.userId())==0) throw WorkspaceError.forbidden();
+        if(!teacher) profile.remove("join_code");
         var recipients=repository.findVisibleRecipients(scope.organizationId(), scope.platform(), scope.userId(), teacher);
         recipients=recipients.stream().filter(row->json.parse(row.get("source_groups_json"),List.class).stream().anyMatch(id->id.toString().equals(Long.toString(group)))).toList();
         for(var row:recipients) {

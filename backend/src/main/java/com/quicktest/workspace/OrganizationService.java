@@ -23,9 +23,10 @@ public class OrganizationService {
     private final NotificationService notifications;
     private final Clock clock;
     private final PersonalWorkspace personal;
+    private final CodeRateLimiter codeLimiter;
 
-    public OrganizationService(OrganizationRepository repository,WorkspaceJson json, WorkspaceCrypto crypto, WorkspaceAudit audit, NotificationService notifications, Clock clock, PersonalWorkspace personal) {
-        this.repository = repository;this.json=json; this.crypto = crypto; this.audit = audit; this.notifications = notifications; this.clock = clock; this.personal = personal;
+    public OrganizationService(OrganizationRepository repository,WorkspaceJson json, WorkspaceCrypto crypto, WorkspaceAudit audit, NotificationService notifications, Clock clock, PersonalWorkspace personal,CodeRateLimiter codeLimiter) {
+        this.repository = repository;this.json=json; this.crypto = crypto; this.audit = audit; this.notifications = notifications; this.clock = clock; this.personal = personal;this.codeLimiter=codeLimiter;
     }
     public List<Map<String, Object>> organizations(long user) {
         return repository.findOrganizations(user);
@@ -136,14 +137,38 @@ public class OrganizationService {
     }
     public List<Map<String,Object>> groups(OrgAccess.Scope scope) {
         if(scope.roles().contains("ORG_ADMIN")) return repository.findOrganizationGroups(scope.organizationId());
-        return repository.findVisibleGroups(scope.organizationId(), scope.platform(), scope.userId(), scope.userId());
+        var groups=repository.findVisibleGroups(scope.organizationId(), scope.platform(), scope.userId(), scope.userId());
+        if(!scope.roles().contains("TEACHER")) groups.forEach(group->group.remove("join_code"));
+        return groups;
     }
     @Transactional
     public Map<String,Object> createGroup(OrgAccess.Scope scope,GroupRequest request) {
-        long id=repository.insertGroup(scope.organizationId(), request.name(), request.description(), request.subject(), clock.instant());
+        String code;do {code=crypto.code();} while(repository.groupCodeExists(code));
+        long id=repository.insertGroup(scope.organizationId(), request.name(), request.description(), request.subject(),code, clock.instant());
         repository.insertGroupTeacher(scope.organizationId(), id, scope.userId());
         audit.write(scope.organizationId(),scope.userId(),"group.created",id,Map.of());
         return groupAccess(scope,id);
+    }
+    @Transactional
+    public Map<String,Object> joinGroup(OrgAccess.Scope scope,String code,String ip) {
+        if(!scope.roles().contains("STUDENT")) throw WorkspaceError.forbidden();
+        repository.requireActiveProfile(scope.userId(),"STUDENT");
+        String normalized=code==null?"":code.trim().toUpperCase(Locale.ROOT);
+        var found=normalized.matches("[A-Z2-9]{8}")?repository.findGroupByJoinCode(normalized):Optional.<Map<String,Object>>empty();
+        boolean valid=found.isPresent() && (scope.platform() || number(found.get(),"organization_id")==scope.organizationId());
+        if(!codeLimiter.checkGroupJoin(scope.userId(),ip,valid)) throw codeLimiter.limited();
+        if(!valid) throw WorkspaceError.validation("Невалиден код за група или групата е премахната.");
+        var group=found.orElseThrow();long org=number(group,"organization_id"),id=number(group,"id");
+        // Serialize joins with group deletion, then apply the existing membership workflow.
+        repository.lockGroup(org,id);
+        if(scope.platform()) personal.member(org,scope.userId(),"STUDENT");
+        else requireActiveMember(org,scope.userId(),"STUDENT");
+        boolean alreadyMember=repository.countActiveGroupMembers(org,id,scope.userId())>0;
+        if(!alreadyMember) {
+            repository.upsertGroupMember(org,id,scope.userId());
+            audit.write(org,scope.userId(),"group.student_joined",id,Map.of("student",scope.userId()));
+        }
+        return Map.of("id",id,"name",string(group,"name"),"alreadyMember",alreadyMember);
     }
     public List<Map<String,Object>> groupMembers(OrgAccess.Scope scope,long group) {
         groupAccess(scope,group);
@@ -174,8 +199,7 @@ public class OrganizationService {
         audit.write(scope.organizationId(),scope.userId(),"group.student_added",group,Map.of("student",student));
     }
     private void addStudentInternal(long org,long group,long student) {
-        if(repository.countGroupMemberships(org, group, student)==0) repository.insertGroupMember(org, group, student);
-        else repository.activateGroupMember(org, group, student);
+        repository.upsertGroupMember(org,group,student);
     }
     @Transactional
     public void removeStudent(OrgAccess.Scope scope,long group,long student) {

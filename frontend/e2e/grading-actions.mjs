@@ -8,13 +8,13 @@ const student = { token: 'grading-actions-student', user: { id: 102, name: 'Stud
 const activeUntil = new Date(Date.now() + 3600000).toISOString()
 const attempt = (id, date, patch = {}) => ({ id, assignment_id: 201, student_id: 1000 + id, student_name: `Ученик ${id}`, title: 'Биология', attempt_number: 1, status: 'finalized', submitted_at: date, access_code: 'ABCD1234', max_attempts: 1, attempts_used: 1, active_attempts: 0, recipient_canceled: false, group_assignment: true, assignment_ends_at: activeUntil, result_email_status: 'queued', ...patch })
 const attempts = [
-  attempt(401, '2026-10-14T21:00:00Z'), // Sofia: Oct 15 00:00
-  attempt(402, '2026-10-15T20:59:59Z', { max_attempts: 2 }), // Sofia: Oct 15 23:59
+  attempt(401, '2026-10-14T21:00:00Z', { result_outcome: 'failed', ai_status: 'completed' }), // Sofia: Oct 15 00:00
+  attempt(402, '2026-10-15T20:59:59Z', { max_attempts: 2, result_outcome: 'passed' }), // Sofia: Oct 15 23:59
   attempt(403, '2026-10-15T21:00:00Z', { active_attempts: 1 }), // Sofia: Oct 16 00:00
   attempt(404, '2026-10-16T10:00:00Z', { assignment_ends_at: '2026-10-17T00:00:00Z' }),
   attempt(405, '2026-10-16T11:00:00Z', { recipient_canceled: true, access_code: null }),
   attempt(406, '2026-10-16T12:00:00Z', { status: 'pending_review', group_assignment: false }),
-  attempt(407, null, { status: 'voided', group_assignment: false }),
+  attempt(407, null, { status: 'voided', group_assignment: false, result_outcome: 'passed' }),
 ]
 const errors = [], writes = []
 const artifacts = new URL('../../.artifacts/', import.meta.url)
@@ -55,6 +55,21 @@ try {
   const rows = table.locator('tbody tr'), row = id => rows.filter({ has: page.getByRole('button', { name: `Ученик ${id}`, exact: true }) })
   await row(407).waitFor()
   assert.equal(await rows.count(), 7)
+  assert.equal(await row(401).getAttribute('class'), 'ws-attempt-failed')
+  assert.equal(await row(401).getByText('Неуспешен', { exact: true }).count(), 1)
+  assert.equal(await row(402).getAttribute('class'), 'ws-attempt-finalized')
+  assert.equal(await row(402).getByText('Успешен', { exact: true }).count(), 1)
+  assert.equal(await row(403).getAttribute('class'), '') // No outcome supplied by an older API.
+  assert.equal(await row(406).getAttribute('class'), 'ws-attempt-pending')
+  assert.equal(await row(407).getAttribute('class'), '') // A voided result never shows success.
+  attempts[0].result_outcome = 'passed'
+  await page.getByRole('button', { name: 'Обнови проверките', exact: true }).click()
+  await row(401).getByText('Успешен', { exact: true }).waitFor()
+  assert.equal(await row(401).getAttribute('class'), 'ws-attempt-finalized')
+  attempts[0].result_outcome = 'failed'
+  await page.getByRole('button', { name: 'Обнови проверките', exact: true }).click()
+  await row(401).getByText('Неуспешен', { exact: true }).waitFor()
+  assert.equal(await row(401).getAttribute('class'), 'ws-attempt-failed')
   await page.getByLabel('Предадени от', { exact: true }).fill('2026-10-15')
   await page.getByLabel('Предадени до', { exact: true }).fill('2026-10-15')
   assert.equal(await rows.count(), 2);assert.equal(await row(401).count(), 1);assert.equal(await row(402).count(), 1)
@@ -93,6 +108,19 @@ try {
   for (const [theme, width] of [['light', 1440], ['dark', 390], ['light', 320]]) {
     await page.setViewportSize({ width, height: 1000 })
     if (await page.locator('html').getAttribute('data-theme') !== theme) await page.getByRole('button', { name: theme === 'dark' ? 'Тъмна тема' : 'Светла тема', exact: true }).click()
+    for (const [id, token] of [[401, 'danger'], [402, 'success'], [406, 'warning']]) {
+      assert.equal(await row(id).evaluate((element, token) => {
+        const sample = document.createElement('span'); sample.style.backgroundColor = `var(--${token}-bg)`; sample.style.color = `var(--${token})`; element.append(sample)
+        const expected = getComputedStyle(sample), cell = getComputedStyle(element.querySelector('td')), status = getComputedStyle(element.querySelector('.ws-attempt-status'))
+        const matches = cell.backgroundColor === expected.backgroundColor && status.color === expected.color
+        sample.remove(); return matches
+      }, token), true)
+    }
+    assert.equal(await row(401).locator('.ws-ai-graded').evaluate(element => {
+      const sample = document.createElement('span'); sample.style.color = 'var(--muted)'; element.append(sample)
+      const matches = getComputedStyle(element).color === getComputedStyle(sample).color
+      sample.remove(); return matches
+    }), true)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.screenshot({ path: new URL(`grading-actions-${theme}-${width}.png`, artifacts).pathname, fullPage: true })
   }
@@ -127,7 +155,7 @@ try {
     await learner.close()
   }
   assert.deepEqual(errors, [])
-  console.log('Passed: inclusive Sofia date filtering, clear/invalid/empty ranges, refresh retention, code display/copy, student-specific extra attempt and duplicate guard, expired/removed/active/remaining restrictions, email queued/sent/local/error states, password/Google result links and release policy, responsive themes. API fixtures only; no emails sent.')
+  console.log('Passed: latest passed/failed outcome colors, neutral unknown/voided results, pending warning and neutral AI label in both themes, corrected outcomes after refresh, inclusive Sofia date filtering, clear/invalid/empty ranges, refresh retention, code display/copy, student-specific extra attempt and duplicate guard, expired/removed/active/remaining restrictions, email queued/sent/local/error states, password/Google result links and release policy, responsive themes. API fixtures only; no emails sent.')
 } catch (error) {
   if (page && !page.isClosed()) await page.screenshot({ path: new URL('grading-actions-failure.png', artifacts).pathname, fullPage: true })
   throw error

@@ -21,6 +21,7 @@ public class OrganizationController {
     @GetMapping("/directory") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT) public Object directory() {return service.members(access.teacher());}
     @GetMapping("/groups") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT,student=true) public Object groups() {return service.groups(access.scope());}
     @PostMapping("/groups") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT) public Object createGroup(@Valid @RequestBody OrganizationService.GroupRequest request) {return service.createGroup(access.teacher(),request);}
+    @PostMapping("/groups/join") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT,teacher=false,student=true) public Object joinGroup(@Valid @RequestBody GroupCode request) {return service.joinGroup(access.student(),request.code(),access.remoteAddress());}
     @GetMapping("/groups/{group}/members") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT) public Object groupMembers(@PathVariable long group) {return service.groupMembers(access.scope(),group);}
     @PostMapping("/groups/{group}/members") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT) public void add(@PathVariable long group,@RequestBody UserId request) {service.addStudent(access.teacher(),group,request.userId());}
     @DeleteMapping("/groups/{group}/members/{user}") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT) public void remove(@PathVariable long group,@PathVariable long user) {service.removeStudent(access.teacher(),group,user);}
@@ -37,6 +38,7 @@ public class OrganizationController {
     @GetMapping("/profile/identities") public Object identities() {return identity.identities(access.user());}
     public record Token(@NotBlank @Size(max=100) String token) {}
     public record UserId(long userId) {}
+    public record GroupCode(@NotBlank @Size(max=32) String code) {}
     public record Csv(String csv) {}
     public record EmailChange(@Email @NotBlank @Size(max=190) String email,@NotBlank String password) {}
 }

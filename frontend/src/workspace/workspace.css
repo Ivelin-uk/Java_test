@@ -36,6 +36,11 @@
 .ws-test-picker-tools { position: absolute; top: 0; right: 4px; bottom: 0; display: flex; align-items: center; }
 .ws-test-picker-tools .icon-button { width: 30px; height: 30px; min-height: 30px; border: 0; background: transparent; }
 .ws-group-members { grid-template-columns: minmax(0, 1fr); }
+.ws-group-code { display: flex; align-items: center; gap: 8px; }
+.ws-group-code output { font: 700 18px ui-monospace, monospace; letter-spacing: .08em; user-select: all; white-space: nowrap; }
+.ws-group-join { padding: 16px 0; border-top: 1px solid var(--border); }
+.ws-group-join .ws-inline-form { margin: 0; padding: 0; border: 0; flex-wrap: wrap; }
+.ws-group-join label { min-width: 0; flex-basis: 220px; }
 .ws-group-members > * { min-width: 0; }
 .ws-group-add-members { display: grid; grid-template-columns: minmax(0, 520px) max-content; align-items: start; }
 .ws-group-add-members > .primary { margin-top: 22px; }
@@ -47,7 +52,7 @@
 .ws-table[aria-label="Проверка на опити"] th { white-space: nowrap; }
 .ws-table[aria-label="Проверка на опити"] th:last-child { width: 220px; min-width: 190px; }
 .ws-grading-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-.ws-ai-graded { display: block; color: var(--success); margin-top: 4px; }
+.ws-ai-graded { display: block; color: var(--muted); margin-top: 4px; }
 .ws-ai-error { max-width: 280px; margin: 8px 0 0; white-space: normal; color: var(--danger); overflow-wrap: anywhere; }
 .ws-spin { animation: ws-spin 1s linear infinite; }
 @keyframes ws-spin { to { transform: rotate(360deg); } }
@@ -71,8 +76,9 @@
 .ws-attempt-status { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
 .ws-attempt-status svg { flex-shrink: 0; }
 .ws-attempt-pending .ws-attempt-status { color: var(--warning); }
-.ws-attempt-finalized .ws-attempt-status { color: var(--success); }
+.ws-attempt-finalized .ws-attempt-status, .ws-attempt-finalized .ws-attempt-outcome { color: var(--success); }
 .ws-attempt-failed .ws-attempt-status, .ws-attempt-failed .ws-attempt-outcome { color: var(--danger); }
+small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-table-wrap > .ws-table[aria-label="Възлагания"] { min-width: 1240px; }
 .ws-table[aria-label="Възлагания"] th:nth-child(6) { white-space: nowrap; }
 .ws-assignment-code { display: flex; align-items: center; gap: 6px; white-space: nowrap; }

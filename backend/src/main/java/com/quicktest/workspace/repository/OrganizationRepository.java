@@ -138,8 +138,20 @@ public class OrganizationRepository {
         return store.rows("SELECT DISTINCT g.* FROM learning_groups g LEFT JOIN group_teachers t ON t.organization_id=g.organization_id AND t.group_id=g.id LEFT JOIN group_members m ON m.organization_id=g.organization_id AND m.group_id=g.id AND m.active=TRUE WHERE (g.organization_id=? OR ?) AND g.deleted_at IS NULL AND (t.user_id=? OR m.user_id=?) ORDER BY g.name", organizationId, platform, userId, userId2);
     }
 
-    public long insertGroup(long organizationId, String name, String description, String subject, Instant timestamp) {
-        return store.insert("INSERT INTO learning_groups(organization_id,name,description,subject,created_at) VALUES(?,?,?,?,?)", organizationId, name, description, subject, timestamp);
+    public long insertGroup(long organizationId, String name, String description, String subject, String code, Instant timestamp) {
+        return store.insert("INSERT INTO learning_groups(organization_id,name,description,subject,join_code,created_at) VALUES(?,?,?,?,?,?)", organizationId, name, description, subject, code, timestamp);
+    }
+
+    public Optional<Map<String,Object>> findGroupByJoinCode(String code) {
+        return store.optional("SELECT id,organization_id,name FROM learning_groups WHERE join_code=? AND deleted_at IS NULL",code);
+    }
+
+    public boolean groupCodeExists(String code) {
+        return store.count("SELECT COUNT(*) FROM learning_groups WHERE join_code=?",code)>0;
+    }
+
+    public int upsertGroupMember(long org,long group,long student) {
+        return store.update("INSERT INTO group_members(organization_id,group_id,user_id) VALUES(?,?,?) ON DUPLICATE KEY UPDATE active=TRUE",org,group,student);
     }
 
     public int insertGroupTeacher(long organizationId, long id, long userId) {

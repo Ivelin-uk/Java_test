@@ -18,6 +18,13 @@ public class CodeRateLimiter {
     @Transactional(propagation=Propagation.REQUIRES_NEW)
     public boolean check(long org,long assignment,long user,String ip,boolean correct) {
         List<String> keys=List.of("code:user:"+org+":"+assignment+":"+user,"code:ip:"+org+":"+assignment+":"+crypto.hash(ip));
+        return checkBuckets(keys,correct);
+    }
+    @Transactional(propagation=Propagation.REQUIRES_NEW)
+    public boolean checkGroupJoin(long user,String ip,boolean correct) {
+        return checkBuckets(List.of("group-code:user:"+user,"group-code:ip:"+crypto.hash(ip)),correct);
+    }
+    private boolean checkBuckets(List<String> keys,boolean correct) {
         boolean allowed=true;
         for(String key:keys.stream().sorted().toList()) {
             // Acquire an exclusive lock directly; catching duplicate inserts leaves shared

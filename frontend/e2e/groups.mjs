@@ -35,7 +35,7 @@ try {
   const original = `Group ${stamp}`, renamed = `Updated ${stamp}`
   await page.getByText('Няма записи.', { exact: true }).waitFor()
   const groupTable = page.getByRole('table', { name: 'Групи', exact: true })
-  assert.deepEqual(await groupTable.getByRole('columnheader').allTextContents(), ['Име', 'Дисциплина', 'Описание', 'Действия'])
+  assert.deepEqual(await groupTable.getByRole('columnheader').allTextContents(), ['Име', 'Дисциплина', 'Описание', 'Код за присъединяване', 'Действия'])
   assert.equal(await page.getByRole('textbox').count(), 0)
   const creation = page.getByRole('dialog', { name: 'Създаване на група', exact: true })
   await page.getByRole('button', { name: 'Създай група', exact: true }).click()
@@ -96,7 +96,7 @@ try {
   releaseCreation()
   await creation.waitFor({ state: 'detached' })
   assert.equal(createRequests, 2)
-  await page.getByText('Групата е създадена.', { exact: true }).waitFor()
+  await page.getByText('Групата е създадена. Кодът за присъединяване е в таблицата.', { exact: true }).waitFor()
   await page.getByRole('button', { name: original, exact: true }).waitFor()
   const group = (await request('/api/v1/groups', teacher)).data.find(g => g.name === original)
   assert.equal(group.subject, 'Java basics')

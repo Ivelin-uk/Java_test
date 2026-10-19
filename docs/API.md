@@ -36,10 +36,13 @@ New password registrations and first Google sign-ins without an explicit role re
 
 Paths below are relative to `/api/v1`. Teacher access means the explicit owner/shared teacher where applicable, not just a global role.
 
+Groups receive a unique eight-character `join_code` at creation; migration V21 also generates codes for existing groups. Only authorized teacher views include it. Student joins create/reactivate only their group membership, preserve assigned recipient snapshots and record an audit event without the code. Repeated/concurrent joins are idempotent. Invalid codes and deleted groups share a generic error; five failed guesses block further attempts for five minutes per user/IP. A code does not grant teacher rights, access to classmates' results or automatic access to previously assigned tests.
+
 | Method / path | Contract |
 |---|---|
 | GET `/members`, `/directory` | Active registered teachers and students; teacher access only |
 | GET/POST `/groups` | Scoped groups / `{name,description,subject}` |
+| POST `/groups/join` | Authenticated student only: `{code}`; returns `{id,name,alreadyMember}`. Case-insensitive, trimmed code; joins the caller, never a supplied user ID. |
 | PUT `/groups/{id}` | `{name,description,subject}` |
 | DELETE `/groups/{id}` | Assigned teacher only; removes the group from lists and future assignments, preserving historical assignments, recipients, attempts and results. Deleted group routes return 404. |
 | GET/POST `/groups/{id}/members` | Authorized teacher listing / `{userId}`; never creates a password |
@@ -133,7 +136,7 @@ Idempotency keys are 8-80 ASCII letters/digits/underscore/hyphen. Persist them a
 
 ### Grading actions
 
-`GET /grading` remains teacher-only and adds `student_id`, `access_code` (null when revoked), `assignment_ends_at`, recipient `max_attempts`, `attempts_used`, `active_attempts`, `recipient_canceled`, `group_assignment` and `result_email_status`. No code hash or exam session secret is returned. The UI filters `submitted_at` by inclusive local calendar dates and retains the filter during refresh.
+`GET /grading` remains teacher-only and adds `student_id`, `access_code` (null when revoked), `assignment_ends_at`, recipient `max_attempts`, `attempts_used`, `active_attempts`, `recipient_canceled`, `group_assignment`, `result_email_status` and `result_outcome` (`passed`/`failed` from the latest published revision, null before publication). No code hash or exam session secret is returned. The UI filters `submitted_at` by inclusive local calendar dates and retains the filter during refresh. Published results use green only when passed and red when failed; unknown outcomes remain neutral.
 
 `POST /assignments/{id}/recipients/{user}/extra-attempt` returns `{maxAttempts,remainingAttempts,granted}`. It requires the assignment's owner/shared teacher, an active assigned student still in a source group, a future deadline and no active attempt. It leaves at least one unused attempt; duplicate/concurrent requests cannot accumulate additional unused attempts. It changes only that recipient's allowance, records an audit entry and preserves all old attempts/results and the current access code.
 
