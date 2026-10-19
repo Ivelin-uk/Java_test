@@ -7,14 +7,15 @@ const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
 const profile = (token, role) => ({ token, user: { id: role === 'TEACHER' ? 101 : 102, name: 'Google account', email: 'google@example.test', role, active: true, passwordChangeRequired: false, roleSelectionRequired: false } })
 const teacher = profile('google-teacher-fixture', 'TEACHER'), student = profile('google-student-fixture', 'STUDENT')
 const local = { ...teacher, token: 'local-fixture' }
-const errors = [], exchanges = [], redirects = []
-let enabled = true, releaseExchange, exchangeGate = Promise.resolve()
+const errors = [], exchanges = [], redirects = [], links = []
+let enabled = true, releaseExchange, exchangeGate = Promise.resolve(), releaseLink, linkGate = Promise.resolve()
 const artifacts = new URL('../../.artifacts/', import.meta.url)
 await mkdir(artifacts, { recursive: true })
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined), headless: true })
 let page
 try {
   async function openContext(auth) {
+    let googleLinked = false, pendingLink = false
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
     if (auth) await context.addInitScript(value => localStorage.setItem('quicktest.auth', JSON.stringify(value)), auth)
     await context.route(`${base}/api/**`, async route => {
@@ -24,13 +25,25 @@ try {
       if (path === '/api/auth/google/config') return respond({ enabled, redirect: `${base}/api/auth/google/redirect` })
       if (path === '/api/auth/google/redirect') {
         redirects.push(new URL(request.url()))
+        pendingLink = new URL(request.url()).searchParams.has('link')
         return route.fulfill({ status: 200, contentType: 'text/html', body: '<title>OAuth redirect fixture</title>' })
       }
       if (path === '/api/auth/google/exchange') {
         const body = request.postDataJSON(); exchanges.push(body)
         await exchangeGate
         if (body.token === 'expired-fixture') return respond({ detail: 'Изтекла или използвана идентификация.' }, 410)
+        if (pendingLink) { googleLinked = true; pendingLink = false }
         return respond(body.token === 'student-fixture' ? student : teacher)
+      }
+      if (path === '/api/v1/profile/notification-email') return respond({ email: local.user.email, verified_at: new Date().toISOString() })
+      if (path === '/api/v1/profile/identities') return respond(googleLinked ? [{ provider: 'google', linked_at: new Date().toISOString() }] : [])
+      if (path === '/api/v1/profile/google/link') {
+        const body = request.postDataJSON(); links.push(body)
+        assert.deepEqual(Object.keys(body), ['password'])
+        assert.equal(request.headers().authorization, `Bearer ${local.token}`)
+        if (body.password !== 'password123') return respond({ detail: 'Текущата парола е неправилна.' }, 403)
+        await linkGate
+        return respond({ url: `${base}/api/auth/google/redirect?link=profile-link-fixture` })
       }
       if (path === '/api/auth/me') return respond(request.headers().authorization === `Bearer ${student.token}` ? student.user : teacher.user)
       if (path === '/api/auth/login') return respond(local)
@@ -106,6 +119,9 @@ try {
   await page.getByRole('alert').getByText(message, { exact: true }).waitFor()
   assert.equal(new URL(page.url()).hash, '')
   assert.equal(exchanges.length, 2)
+  await page.getByRole('button', { name: 'Забравена парола', exact: true }).click()
+  await page.getByRole('heading', { name: 'Възстановяване на достъпа', exact: true }).waitFor()
+  assert.equal(await page.getByRole('alert').count(), 0)
   // A provider callback loads a new document, not a same-page hash navigation.
   await page.goto('about:blank')
   await page.goto(`${frontend}/#google_handoff=expired-fixture`)
@@ -120,10 +136,41 @@ try {
   await failure.context.close()
 
   const linked = await openContext(local); page = linked.page
+  await page.goto(frontend)
+  await page.getByRole('button', { name: 'Профил', exact: true }).click()
+  const connection = page.getByRole('region', { name: 'Вход с Google', exact: true })
+  const linkForm = connection.getByRole('form', { name: 'Свързване с Google', exact: true })
+  const password = linkForm.getByLabel('Парола за ExamAI', { exact: true })
+  const link = linkForm.getByRole('button', { name: 'Свържи Google', exact: true })
+  await linkForm.waitFor()
+  assert.equal(await link.isDisabled(), true)
+  await password.fill('wrong-password')
+  await link.click()
+  await connection.getByRole('alert').getByText('Текущата парола е неправилна.', { exact: true }).waitFor()
+  assert.equal(links.length, 1)
+  for (const { theme, width } of [{ theme: 'light', width: 1440 }, { theme: 'dark', width: 390 }, { theme: 'light', width: 320 }]) {
+    await page.setViewportSize({ width, height: 1000 })
+    if (await page.locator('html').getAttribute('data-theme') !== theme) await page.getByRole('button', { name: theme === 'dark' ? 'Тъмна тема' : 'Светла тема', exact: true }).click()
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    await page.screenshot({ path: new URL(`google-profile-link-${theme}-${width}.png`, artifacts).pathname, fullPage: true })
+  }
+  await password.fill('password123')
+  linkGate = new Promise(resolve => { releaseLink = resolve })
+  const linkingRequest = page.waitForRequest(request => new URL(request.url()).pathname === '/api/v1/profile/google/link' && request.method() === 'POST')
+  await link.click(); await linkingRequest
+  for (const control of await page.locator('form input, form button').all()) assert.equal(await control.isDisabled(), true)
+  await linkForm.evaluate(form => form.requestSubmit())
+  assert.equal(links.length, 2)
+  releaseLink()
+  await page.waitForURL(`${base}/api/auth/google/redirect?link=profile-link-fixture`)
+  assert.equal(redirects.at(-1).searchParams.get('link'), 'profile-link-fixture')
   await page.goto(`${frontend}/#google_handoff=teacher-fixture`)
   await page.getByRole('button', { name: 'Тестове', exact: true }).waitFor()
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('quicktest.auth')).token), teacher.token)
   assert.equal(exchanges.filter(value => value.token === 'teacher-fixture').length, 2)
+  await page.getByRole('button', { name: 'Профил', exact: true }).click()
+  await connection.getByRole('status').getByText('Google е свързан с профила ви. Можете да влизате с „Влез с Google“.', { exact: true }).waitFor()
+  assert.equal(await linkForm.count(), 0)
   assert.deepEqual(errors, [])
   console.log('Passed: Google login/register redirects without default role, no local form requirement, single-use handoff under StrictMode, persisted sessions, profile linking, error/retry, disabled provider, official image and desktop/mobile themes. API fixtures only; no Google account contacted.')
 } catch (error) {
@@ -131,5 +178,6 @@ try {
   throw error
 } finally {
   releaseExchange?.()
+  releaseLink?.()
   await browser.close()
 }

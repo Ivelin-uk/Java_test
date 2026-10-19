@@ -42,7 +42,9 @@ class IntegrationAdapterTests {
     }
     @Test void googleMatchingEmailDoesNotMergeAndExplicitLinkRequiresReauthentication() {
         var user=user();String subject=UUID.randomUUID().toString();var oidc=oidc(subject,user.getEmail());
-        assertThrows(WorkspaceError.class,()->google.complete(oidc,null,null,Role.STUDENT));assertEquals(0,db.count("SELECT COUNT(*) FROM external_identities WHERE subject=?",subject));
+        var conflict=assertThrows(WorkspaceError.class,()->google.complete(oidc,null,null,Role.STUDENT));
+        assertTrue(conflict.getReason().contains("паролата си за ExamAI"));assertTrue(conflict.getReason().contains("Забравена парола"));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM external_identities WHERE subject=?",subject));
         String authorization="Bearer "+auth.login(new AuthService.LoginRequest(user.getEmail(),"password123")).token();
         assertThrows(WorkspaceError.class,()->google.linkingTicket(user,"wrong",authorization));
         String ticket=google.linkingTicket(user,"password123",authorization);var linked=google.consumeLink(ticket);assertThrows(WorkspaceError.class,()->google.consumeLink(ticket));
@@ -61,6 +63,37 @@ class IntegrationAdapterTests {
             assertEquals(first.user().id(),second.user().id());assertEquals(role.name(),second.user().role());
             assertEquals(1,db.count("SELECT COUNT(*) FROM external_identities WHERE subject=?",subject));
         }
+    }
+    @Test void googleLoginKeepsTheSameAccountAfterPasswordRecoveryAndChange() {
+        String subject=UUID.randomUUID().toString(),email=UUID.randomUUID()+"@example.test";
+        var first=google.exchange(google.complete(oidc(subject,email),null,null,Role.STUDENT));
+        long user=first.user().id();
+        identity.recover(email);
+        var notification=db.one("SELECT payload_json FROM notification_outbox WHERE user_id=? AND notification_type='password_recovery'",user);
+        String recovery=string(workspaceJson.object(notification.get("payload_json")),"token");
+        identity.reset(recovery,"recovered-password-123");
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,()->auth.requireUser("Bearer "+first.token()));
+        var afterRecovery=google.exchange(google.complete(oidc(subject,email),null,null,Role.TEACHER));
+        assertEquals(user,afterRecovery.user().id());
+        assertEquals("STUDENT",afterRecovery.user().role());
+        var changed=auth.changePassword(users.findById(user).orElseThrow(),new AuthService.ChangePasswordRequest("recovered-password-123","changed-password-456"));
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,()->auth.requireUser("Bearer "+afterRecovery.token()));
+        assertEquals(user,auth.requireUser("Bearer "+changed.token()).getId());
+        var afterChange=google.exchange(google.complete(oidc(subject,email),null,null,null));
+        assertEquals(user,afterChange.user().id());
+        assertEquals(1,db.count("SELECT COUNT(*) FROM external_identities WHERE user_id=? AND provider='google' AND subject=?",user,subject));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM users WHERE email=?",email));
+    }
+    @Test void googleLoginUsesTheStableSubjectAcrossFreshTokensAndChangedEmailClaims() {
+        String subject=UUID.randomUUID().toString(),email=UUID.randomUUID()+"@example.test";
+        var first=google.exchange(google.complete(oidc(subject,email),null,null,Role.TEACHER));
+        String changedEmail=UUID.randomUUID()+"@example.test";
+        var again=google.exchange(google.complete(oidc(subject,changedEmail),null,null,Role.STUDENT));
+        assertEquals(first.user().id(),again.user().id());
+        assertEquals("TEACHER",again.user().role());
+        assertEquals(email,again.user().email());
+        assertFalse(users.existsByEmailIgnoreCase(changedEmail));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM external_identities WHERE subject=?",subject));
     }
     @Test void googleRegistrationRejectsUnverifiedEmailInvalidIssuerAndAdminRole() {
         String subject=UUID.randomUUID().toString(),email=UUID.randomUUID()+"@example.test";

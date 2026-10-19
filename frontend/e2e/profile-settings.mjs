@@ -24,6 +24,8 @@ try {
       if (request.headers().authorization !== `Bearer ${auth.token}`) return respond({ detail: 'Невалидна сесия.' }, 401)
       if (method === 'GET') {
         if (path === '/api/auth/me') return respond(auth.user)
+        if (path === '/api/auth/google/config') return respond({ enabled: false, redirect: `${base}/api/auth/google/redirect` })
+        if (path === '/api/v1/profile/identities') return respond([])
         if (path === '/api/v1/profile/notification-email') return respond({ email: address, verified_at: new Date().toISOString() })
         if (['/api/v1/assignments', '/api/v1/groups', '/api/v1/grading', '/api/v1/results', '/api/admin/users', '/api/admin/permissions', '/api/admin/audit'].includes(path)) return respond([])
       }
@@ -70,7 +72,9 @@ try {
     await emailForm.getByText('notifications@example.test · Потвърден', { exact: true }).waitFor()
     assert.equal(await profile.getByRole('form').count(), 2)
     assert.equal(await profile.getByRole('table').count(), 0)
-    assert.equal(await profile.getByText(/Google|Изход от всички сесии|Локална тестова/).count(), 0)
+    await profile.getByText('Google входът не е конфигуриран.', { exact: true }).waitFor()
+    assert.equal(await profile.getByRole('button', { name: 'Свържи Google', exact: true }).count(), 0)
+    assert.equal(await profile.getByText(/Изход от всички сесии|Локална тестова/).count(), 0)
     assert.equal(await email.inputValue(), 'notifications@example.test')
     assert.equal(await oldPassword.getAttribute('autocomplete'), 'current-password')
     for (const input of [newPassword, confirm]) assert.equal(await input.getAttribute('autocomplete'), 'new-password')
@@ -143,12 +147,12 @@ try {
       assert.equal(await page.getByRole('button', { name: 'Потвърди имейла', exact: true }).count(), 0)
       await page.getByRole('button', { name: 'Към профила', exact: true }).click(); await passwordForm.waitFor()
     }
-    assert.equal(current.requests.some(request => ['/api/v1/profile/mailbox', '/api/v1/profile/identities', '/api/auth/google/config', '/api/v1/profile/google/link', '/api/auth/logout-all'].includes(request.path)), false)
+    assert.equal(current.requests.some(request => ['/api/v1/profile/mailbox', '/api/v1/profile/google/link', '/api/auth/logout-all'].includes(request.path)), false)
     current.releaseEmail(); current.releasePassword()
     await current.context.close()
   }
   assert.deepEqual(errors, [])
-  console.log('Passed: only password/email settings for all roles, independent credentials, validation/retry, pending and duplicate-submit guards, password token renewal/persistence, notification-email verification links/retry, removed sections not fetched, desktop/mobile and both themes. API fixtures only.')
+  console.log('Passed: password/email settings for all roles, disabled Google provider status, independent credentials, validation/retry, pending and duplicate-submit guards, password token renewal/persistence, notification-email verification links/retry, desktop/mobile and both themes. API fixtures only.')
 } catch (error) {
   if (page && !page.isClosed()) await page.screenshot({ path: new URL('profile-settings-failure.png', artifacts).pathname, fullPage: true })
   throw error

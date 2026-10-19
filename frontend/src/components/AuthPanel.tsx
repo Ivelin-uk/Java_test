@@ -6,7 +6,7 @@ import type { AuthResponse } from '../types/models'
 import googleLogo from '../assets/google-g.png'
 import { AuthLayout } from './AuthLayout'
 
-export function AuthPanel({ onAuth, googleError = '' }: { onAuth: (auth: AuthResponse) => void; googleError?: string }) {
+export function AuthPanel({ onAuth, googleError = '', clearGoogleError }: { onAuth: (auth: AuthResponse) => void; googleError?: string; clearGoogleError: () => void }) {
   const resetToken = new URLSearchParams(window.location.search).get('token')
   const [mode, setMode] = useState<'login' | 'register' | 'recover' | 'reset'>(() => window.location.pathname === '/reset-password' && resetToken ? 'reset' : 'login')
   const [name, setName] = useState('')
@@ -24,6 +24,7 @@ export function AuthPanel({ onAuth, googleError = '' }: { onAuth: (auth: AuthRes
 
   function googleSignIn() {
     if (!google?.enabled) return
+    clearGoogleError()
     setError('')
     setBusy(true)
     try {
@@ -39,6 +40,7 @@ export function AuthPanel({ onAuth, googleError = '' }: { onAuth: (auth: AuthRes
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    clearGoogleError()
     setError('')
     setBusy(true)
     try {
@@ -76,7 +78,7 @@ export function AuthPanel({ onAuth, googleError = '' }: { onAuth: (auth: AuthRes
         {(error || googleError) && <p className="error" role="alert">{error || googleError}</p>}
         {message && <p className="auth-message" role="status">{message}</p>}
         <button className="primary" type="submit" disabled={busy}>{busy ? <LoaderCircle size={18} className="auth-spinner" /> : null}<span>{busy ? 'Изчакване...' : mode === 'login' ? 'Влез' : mode === 'recover' ? 'Изпрати линк' : mode === 'reset' ? 'Смени паролата' : 'Създай профил'}</span>{!busy && <ArrowRight size={18} />}</button>
-        {mode === 'login' && <button className="auth-text-button" type="button" onClick={() => { setMode('recover'); setError(''); setMessage('') }}>Забравена парола</button>}
+        {mode === 'login' && <button className="auth-text-button" type="button" onClick={() => { setMode('recover'); setError(''); setMessage(''); clearGoogleError() }}>Забравена парола</button>}
         {(mode === 'recover' || mode === 'reset') && <button className="auth-text-button" type="button" onClick={() => { setMode('login'); setError(''); setMessage('') }}>Обратно към входа</button>}
       </form>
     </AuthLayout>

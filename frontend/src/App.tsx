@@ -55,7 +55,7 @@ function App() {
   }
   async function refreshProfile() { if (token) setAuth({ token, user: await api.me(token) }) }
   if (googlePending) return <main className="app-shell"><p role="status">Влизане с Google...</p></main>
-  if (!auth) return <AuthPanel onAuth={signedIn} googleError={googleError} />
+  if (!auth) return <AuthPanel onAuth={signedIn} googleError={googleError} clearGoogleError={() => setGoogleError('')} />
   if (!verified) return <main className="app-shell"><p role="status">{error || 'Проверка на сесията...'}</p><button onClick={() => void logout()}>Изход</button></main>
   if (auth.user.roleSelectionRequired) return <RoleSelectionPanel auth={auth} onAuth={signedIn} logout={logout} />
   return <>{(error || googleError) && <p className="error" role="alert">{error || googleError}</p>}<ExamWorkspace key={auth.token} auth={auth} onAuth={signedIn} logout={logout} refreshProfile={refreshProfile} /></>

@@ -47,7 +47,7 @@ public class GoogleIdentityService {
         else {
             if(!Boolean.TRUE.equals(oidc.getEmailVerified()) || oidc.getEmail()==null || oidc.getEmail().isBlank() || oidc.getEmail().length()>190) throw WorkspaceError.forbidden();
             String email=oidc.getEmail().strip().toLowerCase(Locale.ROOT);
-            if(users.existsByEmailIgnoreCase(email)) throw WorkspaceError.conflict("Влезте с парола и свържете Google от профила си.");
+            if(users.existsByEmailIgnoreCase(email)) throw WorkspaceError.conflict("Има профил с този имейл, но Google не е свързан с него. Влезте с паролата си за ExamAI или използвайте „Забравена парола“, след това свържете Google от „Профил“.");
             String name=oidc.getFullName();if(name==null || name.isBlank()) name=email;
             var profile=new AppUser();profile.setEmail(email);profile.setName(name.substring(0,Math.min(120,name.length())));profile.setRole(role);profile.setRoleSelectionRequired(registrationRole==null);profile.setPasswordHash(passwords.encode(crypto.token()));profile.setEmailVerifiedAt(clock.instant());users.saveAndFlush(profile);identity.initialize(profile);user=profile.getId();
         }
