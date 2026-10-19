@@ -132,6 +132,27 @@ public class AssignmentService {
         teacherAccess(scope,id,false);
         return repository.findMonitoringRows(scope.organizationId(), id);
     }
+    @Transactional
+    public Map<String,Object> allowExtraAttempt(OrgAccess.Scope scope,long id,long student) {
+        teacherAccess(scope,id,false);
+        // Use the same recipient -> assignment -> attempt lock order as exam start.
+        var recipient=repository.lockRecipient(scope.organizationId(),id,student);
+        var assignment=teacherAccess(scope,id,true);
+        if(flag(recipient,"canceled")) throw WorkspaceError.conflict("Възлагането за ученика е премахнато.");
+        if(!clock.instant().isBefore(time(assignment,"ends_at"))) throw WorkspaceError.expired("Срокът на теста е изтекъл. Допълнителен опит не може да бъде започнат.");
+        var groups=sourceGroupIds(List.of(recipient));
+        if(groups.isEmpty() || eligibleMembers(groups,student).isEmpty()) throw WorkspaceError.forbidden();
+        organizations.requireActiveMember(scope,student,"STUDENT");
+        var attempts=repository.lockStudentAttempts(scope.organizationId(),id,student);
+        if(attempts.stream().anyMatch(attempt->string(attempt,"status").equals("in_progress"))) throw WorkspaceError.conflict("Ученикът има активен опит. Изчакайте приключването му.");
+        long previous=number(recipient,"max_attempts"),allowed=Math.max(previous,attempts.size()+1L);
+        // Concurrent or repeated requests leave exactly one unused attempt.
+        if(allowed>previous) {
+            repository.setMaxAttempts(allowed,scope.organizationId(),id,student);
+            audit.write(scope.organizationId(),scope.userId(),"assignment.extra_attempt_allowed",id,Map.of("student",student,"maxAttempts",allowed));
+        }
+        return Map.of("maxAttempts",allowed,"remainingAttempts",allowed-attempts.size(),"granted",allowed>previous);
+    }
     public Map<String,Object> preflight(OrgAccess.Scope scope,long id) {
         var row=repository.findPreflight(scope.organizationId(), id, scope.userId());
         if(flag(row,"canceled")) throw WorkspaceError.forbidden();

@@ -21,7 +21,9 @@ public class GradingService {
         assignments.teacherAccess(scope,number(attempt,"assignment_id"),false);return attempt;
     }
     public List<Map<String,Object>> queue(OrgAccess.Scope scope) {
-        return repository.findTeacherQueue(scope.organizationId(), scope.platform(), scope.userId(), scope.userId());
+        var rows=repository.findTeacherQueue(scope.organizationId(), scope.platform(), scope.userId(), scope.userId());
+        for(var row:rows) row.put("group_assignment",json.parse(row.remove("source_groups_json"),Long[].class).length>0);
+        return rows;
     }
     public Map<String,Object> review(OrgAccess.Scope scope,long id) {
         var attempt=teacherAttempt(scope,id,false);Map<String,Object> result=new LinkedHashMap<>();result.put("attempt",attempt);
@@ -74,13 +76,31 @@ public class GradingService {
         Map<String,Object> snapshot=new LinkedHashMap<>();snapshot.put("questions",questions);snapshot.put("gradeOverridden",request.gradeOverride()!=null && !request.gradeOverride().isBlank());snapshot.put("outcomeOverridden",request.outcomeOverride()!=null && !request.outcomeOverride().isBlank());snapshot.put("gradingScale",definition.gradingScale());snapshot.put("passThreshold",definition.passThreshold());
         long revision=repository.insertRevision(scope.organizationId(), id, next, request.idempotencyKey(), scope.userId(), points, maximum, percent, grade, outcome, Objects.toString(request.reason(),""), json.write(snapshot), clock.instant());
         repository.markFinalized(scope.organizationId(), id);
-        long student=number(attempt,"student_id");String email=notifications.verifiedAddress(student);
-        var organization=repository.requireOrganizationName(scope.organizationId());var user=repository.requireStudentName(student);
-        Map<String,Object> message=new LinkedHashMap<>(Map.of("organization",scope.platform()?"ExamAI":string(organization,"name"),"test",string(assignment,"title"),"student",string(user,"name"),"attemptNumber",number(attempt,"attempt_number"),"points",points,"maximumPoints",maximum,"percentage",percent,"grade",grade,"outcome",outcome,"protectedPath","/results/"+id));
-        message.put("corrected",correction);message.put("publishedAt",clock.instant());
-        notifications.enqueue(scope.organizationId(),revision,student,"final_result",email,message);
+        long student=number(attempt,"student_id");
+        var saved=repository.requireRevision(scope.organizationId(),revision);
+        notifications.enqueue(scope.organizationId(),revision,student,"final_result",notifications.verifiedAddress(student),resultMessage(scope,attempt,assignment,saved));
         audit.write(scope.organizationId(),scope.userId(),correction?"result.corrected":"result.published",id,Map.of("revision",next,"reason",Objects.toString(request.reason(),"")));
         return publication(repository.requireRevision(scope.organizationId(), revision));
+    }
+    private Map<String,Object> resultMessage(OrgAccess.Scope scope,Map<String,Object> attempt,Map<String,Object> assignment,Map<String,Object> revision) {
+        var organization=repository.requireOrganizationName(scope.organizationId());
+        var user=repository.requireStudentName(number(attempt,"student_id"));
+        Map<String,Object> message=new LinkedHashMap<>();
+        message.put("organization",scope.platform()?"ExamAI":string(organization,"name"));message.put("test",string(assignment,"title"));message.put("student",string(user,"name"));
+        message.put("attemptNumber",number(attempt,"attempt_number"));message.put("points",revision.get("points"));message.put("maximumPoints",revision.get("maximum_points"));
+        message.put("percentage",revision.get("percentage"));message.put("grade",string(revision,"grade"));message.put("outcome",string(revision,"outcome"));
+        message.put("protectedPath","/results/"+number(attempt,"id"));message.put("corrected",number(revision,"revision_number")>1);message.put("publishedAt",time(revision,"published_at"));
+        return message;
+    }
+    @Transactional
+    public Map<String,Object> emailResult(OrgAccess.Scope scope,long id) {
+        var attempt=teacherAttempt(scope,id,true);
+        if(!string(attempt,"status").equals("finalized")) throw WorkspaceError.conflict("Първо публикувайте резултата от проверката.");
+        var revision=repository.requireLatestRevision(scope.organizationId(),id);
+        var assignment=assignments.teacherAccess(scope,number(attempt,"assignment_id"),false);
+        var delivery=notifications.ensureResultDelivery(scope.organizationId(),number(revision,"id"),number(attempt,"student_id"),resultMessage(scope,attempt,assignment,revision));
+        audit.write(scope.organizationId(),scope.userId(),"result.email_requested",id,Map.of("revision",number(revision,"revision_number"),"notification",delivery.get("id")));
+        return delivery;
     }
     public static String bulgarianGrade(BigDecimal points,BigDecimal maximum) {
         for(int[] band:new int[][]{{90,6},{75,5},{60,4},{50,3}}) if(points.multiply(new BigDecimal("100")).compareTo(maximum.multiply(BigDecimal.valueOf(band[0])))>=0) return Integer.toString(band[1]);

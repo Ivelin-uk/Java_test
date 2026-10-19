@@ -165,6 +165,10 @@ public class AssignmentRepository {
         return store.update("UPDATE assignment_recipients SET canceled=FALSE,max_attempts=? WHERE organization_id=? AND assignment_id=? AND student_id=?", maxAttempts, organizationId, id, student);
     }
 
+    public int setMaxAttempts(long maxAttempts,long organizationId,long id,long student) {
+        return store.update("UPDATE assignment_recipients SET max_attempts=? WHERE organization_id=? AND assignment_id=? AND student_id=?",maxAttempts,organizationId,id,student);
+    }
+
     public int insertRecipient(long organizationId, long id, long student, String jsonValue, long maxAttempts) {
         return store.update("INSERT INTO assignment_recipients(organization_id,assignment_id,student_id,source_groups_json,individually_assigned,max_attempts) VALUES(?,?,?,?,FALSE,?)", organizationId, id, student, jsonValue, maxAttempts);
     }

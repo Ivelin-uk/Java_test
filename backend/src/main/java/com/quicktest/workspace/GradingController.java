@@ -18,6 +18,7 @@ public class GradingController {
     @PatchMapping("/attempts/{id}/grading") public void grade(@PathVariable long id,@RequestBody GradingService.GradeRequest request) {service.grade(access.teacher(),id,request);}
     @PostMapping("/attempts/{id}/finalize") public Object publish(@PathVariable long id,@RequestBody GradingService.Finalize request) {return service.finalizeResult(access.teacher(),id,request,false);}
     @PostMapping("/attempts/{id}/result-revisions") public Object correct(@PathVariable long id,@RequestBody GradingService.Finalize request) {return service.finalizeResult(access.teacher(),id,request,true);}
+    @PostMapping("/attempts/{id}/result-email") public Object emailResult(@PathVariable long id) {return service.emailResult(access.teacher(),id);}
     @PostMapping("/attempts/{id}/void") public void voidAttempt(@PathVariable long id,@RequestBody Reason request) {service.voidAttempt(access.teacher(),id,request.reason());}
     @GetMapping("/results") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT,teacher=false,student=true) public Object results() {return service.results(access.student());}
     @GetMapping("/assignment-results") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT,teacher=false,student=true) public Object assignmentResults() {return service.assignmentResults(access.student());}

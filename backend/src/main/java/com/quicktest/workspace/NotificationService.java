@@ -32,6 +32,21 @@ public class NotificationService {
         if(address.get("verified_at")==null) throw WorkspaceError.conflict("Потвърдете имейла за известия преди начало на изпит.");
         return string(address,"email");
     }
+    @Transactional
+    public Map<String,Object> ensureResultDelivery(long org,long revision,long user,Map<String,Object> payload) {
+        String email=verifiedAddress(user);
+        var existing=repository.lockResultDelivery(org,revision,user);
+        long id;String status;
+        if(existing.isEmpty()) {id=enqueue(org,revision,user,"final_result",email,payload);status="queued";}
+        else {
+            var row=existing.get();id=number(row,"id");status=string(row,"status");
+            if(status.equals("uncertain")) throw WorkspaceError.conflict("Статусът на предишното изпращане е неясен. Проверете доставката при имейл услугата преди повторение.");
+            if(!email.equalsIgnoreCase(string(row,"recipient_email"))) throw WorkspaceError.conflict("Имейлът за известия е променен след публикуването. Предишното писмо не може да бъде повторено към друг адрес.");
+            boolean localOnly=status.equals("sent") && !adapter.equals("local") && string(row,"provider_message_id").equals("local-"+id);
+            if(status.equals("failed") || localOnly) {repository.requeueDelivery(clock.instant(),org,id);status="queued";}
+        }
+        return Map.of("id",id,"status",status,"adapter",adapter);
+    }
     public List<Map<String,Object>> localInbox(long user) {
         if(!adapter.equals("local")) throw WorkspaceError.notFound();
         var address=repository.findVerifiedAddress(user);return repository.findInbox(user, address.map(row->string(row,"email")).orElse(""));
@@ -49,7 +64,7 @@ public class NotificationService {
             try {
                 String receipt=gateway.send(id,string(row,"recipient_email"),json.object(row.get("payload_json")));
                 repository.markSent(clock.instant(), receipt, id);
-            } catch(org.springframework.mail.MailAuthenticationException safeFailure) {
+            } catch(org.springframework.mail.MailAuthenticationException | MailDeliveryRejected safeFailure) {
                 long attempted=number(row,"attempts")+1;
                 repository.markRetryableFailure(attempted<3?"queued":"failed", clock.instant().plusSeconds(10*attempted), id);
             } catch(Exception unknown) {

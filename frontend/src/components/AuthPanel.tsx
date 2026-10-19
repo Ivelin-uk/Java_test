@@ -28,6 +28,8 @@ export function AuthPanel({ onAuth, googleError = '' }: { onAuth: (auth: AuthRes
     setBusy(true)
     try {
       const target = new URL(google.redirect)
+      if (/^\/results\/[1-9][0-9]{0,17}$/.test(window.location.pathname)) sessionStorage.setItem('examai.resultReturn', window.location.pathname)
+      else sessionStorage.removeItem('examai.resultReturn')
       window.location.assign(target.href)
     } catch {
       setError('Неуспешно свързване с Google. Опитайте отново.')

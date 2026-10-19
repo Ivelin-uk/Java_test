@@ -19,8 +19,10 @@ function App() {
     const fragment = new URLSearchParams(window.location.hash.slice(1))
     const handoff = fragment.get('google_handoff'), failure = fragment.get('google_error')
     if (!handoff && !failure) return
+    const resultReturn = sessionStorage.getItem('examai.resultReturn')
+    sessionStorage.removeItem('examai.resultReturn')
     // Clear the one-use handoff before React can run this effect again.
-    history.replaceState(null, '', window.location.pathname + window.location.search)
+    history.replaceState(null, '', resultReturn && /^\/results\/[1-9][0-9]{0,17}$/.test(resultReturn) ? resultReturn : window.location.pathname + window.location.search)
     if (handoff) {
       void api.googleExchange(handoff).then(next => { setAuth(next); setVerified(true); setError(''); setGoogleError('') })
         .catch(cause => setGoogleError(cause instanceof Error ? cause.message : 'Неуспешен вход с Google.'))

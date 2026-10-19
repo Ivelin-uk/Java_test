@@ -58,6 +58,7 @@ class WorkspaceTests {
     @Autowired RetentionService retention;
     @Autowired WorkspaceCrypto crypto;
     @Autowired NotificationService notifications;
+    @Autowired com.quicktest.workspace.repository.NotificationRepository notificationRepository;
     @Autowired CodeRateLimiter codeLimiter;
     @Autowired WorkspaceAudit audit;
     @Autowired ProfileExamMutex mutex;
@@ -1315,4 +1316,68 @@ class WorkspaceTests {
         List<String> invitations=new ArrayList<>();for(int i=0;i<4;i++) invitations.add(string(organizations.invite(teaching,new OrganizationService.InvitationRequest("quota-"+UUID.randomUUID()+"@example.test",List.of("TEACHER"),null)),"token"));
         assertThrows(WorkspaceError.class,()->organizations.invite(teaching,new OrganizationService.InvitationRequest("over-quota@example.test",List.of("TEACHER"),null)));assertEquals(4,invitations.size());
     }
+    @Test void gradingQueueIncludesTeacherOnlyCodesAndRecipientAttemptLimits() throws Exception {
+        var request=startRequest();long id=number(start(request),"id");attempts.submit(learning,id,session(request));
+        var row=grading.queue(teaching).stream().filter(value->number(value,"id")==id).findFirst().orElseThrow();
+        assertEquals(code,string(row,"access_code"));assertEquals(student,number(row,"student_id"));assertEquals(1,number(row,"attempts_used"));assertEquals(1,number(row,"max_attempts"));assertTrue(flag(row,"group_assignment"));
+        assertFalse(row.containsKey("session_hash"));assertFalse(row.containsKey("code_hash"));
+        mvc.perform(get("/api/v1/grading").header("Authorization",authorization)).andExpect(status().isForbidden());
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        mvc.perform(post("/api/v1/assignments/"+assignment+"/recipients/"+student+"/extra-attempt").header("Authorization",bearer)).andExpect(status().isOk());
+        assignments.revoke(teaching,assignment);assertNull(grading.queue(teaching).getFirst().get("access_code"));
+    }
+    @Test void extraAttemptIsStudentScopedConcurrentIdempotentAndPreservesResults() throws Exception {
+        var peer=enrolledStudent();organizations.addStudent(teaching,defaultGroup,peer.getId());assignments.addRecipient(teaching,assignment,peer.getId());
+        var request=startRequest();long id=number(start(request),"id");attempts.submit(learning,id,session(request));grading.finalizeResult(teaching,id,new GradingService.Finalize("extra-published-key","",null,null),false);
+        var original=db.rows("SELECT * FROM result_revisions WHERE attempt_id=?",id);
+        try(var pool=Executors.newFixedThreadPool(4)) {
+            List<Callable<Map<String,Object>>> work=new ArrayList<>();for(int n=0;n<4;n++) work.add(()->assignments.allowExtraAttempt(teaching,assignment,student));
+            int granted=0;for(var future:pool.invokeAll(work)) if(flag(future.get(15,TimeUnit.SECONDS),"granted")) granted++;
+            assertEquals(1,granted);
+        }
+        assertEquals(2,number(assignments.preflight(learning,assignment),"max_attempts"));
+        assertEquals(1,number(db.one("SELECT max_attempts FROM assignment_recipients WHERE assignment_id=? AND student_id=?",assignment,peer.getId()),"max_attempts"));
+        assertEquals(original,db.rows("SELECT * FROM result_revisions WHERE attempt_id=?",id));assertEquals(1,number(db.one("SELECT max_attempts FROM exam_assignments WHERE id=?",assignment),"max_attempts"));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_audit WHERE resource_id=? AND action='assignment.extra_attempt_allowed'",assignment));
+        long next=number(start(startRequest()),"id");assertNotEquals(id,next);
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->assignments.allowExtraAttempt(teaching,assignment,student)).getStatusCode());
+    }
+    @Test void extraAttemptRejectsForeignTeachersRemovedRecipientsExpiredAssignmentsAndFormerMembers() throws Exception {
+        var outsider=new OrgAccess.Scope(org,number(db.one("SELECT user_id FROM memberships WHERE organization_id=? AND roles_json LIKE '%TEACHER%' LIMIT 1",other),"user_id"),Set.of("TEACHER"));
+        assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->assignments.allowExtraAttempt(outsider,assignment,student)).getStatusCode());
+        mvc.perform(post("/api/v1/assignments/"+assignment+"/recipients/"+student+"/extra-attempt").header("Authorization",authorization)).andExpect(status().isForbidden());
+        assignments.removeRecipient(teaching,assignment,student);assertThrows(WorkspaceError.class,()->assignments.allowExtraAttempt(teaching,assignment,student));
+        assignments.addRecipient(teaching,assignment,student);organizations.removeStudent(teaching,defaultGroup,student);assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->assignments.allowExtraAttempt(teaching,assignment,student)).getStatusCode());
+        organizations.addStudent(teaching,defaultGroup,student);when(clock.instant()).thenReturn(now.plusSeconds(3600));
+        assertEquals(HttpStatus.GONE,assertThrows(WorkspaceError.class,()->assignments.allowExtraAttempt(teaching,assignment,student)).getStatusCode());
+    }
+    @Test void resultEmailReusesLatestPublicationOnlyRetriesKnownFailuresAndProtectsResults() throws Exception {
+        var request=startRequest();long id=number(start(request),"id");attempts.submit(learning,id,session(request));
+        assertThrows(WorkspaceError.class,()->grading.emailResult(teaching,id));
+        grading.finalizeResult(teaching,id,new GradingService.Finalize("email-publish-key","",null,null),false);
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        mvc.perform(post("/api/v1/attempts/"+id+"/result-email").header("Authorization",bearer)).andExpect(status().isOk()).andExpect(jsonPath("$.adapter").value("local"));
+        assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->grading.emailResult(new OrgAccess.Scope(org,user(Role.TEACHER).getId(),Set.of("TEACHER")),id)).getStatusCode());
+        var original=db.one("SELECT * FROM notification_outbox WHERE revision_id=(SELECT id FROM result_revisions WHERE attempt_id=?)",id);
+        long notification=number(original,"id");
+        for(int n=0;n<3;n++) assertEquals(notification,number(grading.emailResult(teaching,id),"id"));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM notification_outbox WHERE revision_id=(SELECT id FROM result_revisions WHERE attempt_id=?)",id));
+        var payload=workspaceJson.object(original.get("payload_json"));assertEquals("/results/"+id,string(payload,"protectedPath"));assertTrue(payload.containsKey("grade"));assertFalse(payload.containsKey("questions"));
+        assertFalse(grading.studentResult(learning,id).containsKey("details"));
+        var another=enrolledStudent();assertThrows(WorkspaceError.class,()->grading.studentResult(new OrgAccess.Scope(org,another.getId(),Set.of("STUDENT")),id));
+        mvc.perform(post("/api/v1/attempts/"+id+"/result-email").header("Authorization",authorization)).andExpect(status().isForbidden());
+        db.update("UPDATE notification_outbox SET status='failed' WHERE id=?",notification);assertEquals("queued",string(grading.emailResult(teaching,id),"status"));
+        db.update("UPDATE notification_outbox SET status='sent' WHERE id=?",notification);assertEquals("sent",string(grading.emailResult(teaching,id),"status"));
+        db.update("UPDATE notification_outbox SET provider_message_id=? WHERE id=?","local-"+notification,notification);
+        var realMail=new NotificationService(notificationRepository,workspaceJson,clock,transactions,(delivery,recipient,content)->"fixture",false,"resend");
+        long revision=number(original,"revision_id");
+        var migrated=transactions.execute(tx->realMail.ensureResultDelivery(org,revision,student,payload));assertEquals("queued",string(migrated,"status"));
+        db.update("UPDATE notification_outbox SET status='sent',provider_message_id='provider-real-receipt' WHERE id=?",notification);
+        assertEquals("sent",string(transactions.execute(tx->realMail.ensureResultDelivery(org,revision,student,payload)),"status"));
+        db.update("UPDATE notification_outbox SET status='uncertain' WHERE id=?",notification);assertThrows(WorkspaceError.class,()->grading.emailResult(teaching,id));assertEquals("uncertain",string(db.one("SELECT status FROM notification_outbox WHERE id=?",notification),"status"));
+        grading.finalizeResult(teaching,id,new GradingService.Finalize("email-correction-key","Correction","4",null),true);
+        assertNotEquals(notification,number(grading.emailResult(teaching,id),"id"));
+        assertEquals(2,db.count("SELECT COUNT(*) FROM notification_outbox WHERE revision_id IN (SELECT id FROM result_revisions WHERE attempt_id=?)",id));
+    }
+
 }

@@ -39,7 +39,8 @@
     "test:grading-answers": "node e2e/grading-answers.mjs",
     "test:ai-grading": "node e2e/ai-grading.mjs",
     "test:deletions": "node e2e/deletion-confirmations.mjs",
-    "test:rich-text": "node e2e/rich-text.mjs"
+    "test:rich-text": "node e2e/rich-text.mjs",
+    "test:grading-actions": "node e2e/grading-actions.mjs"
   },
   "dependencies": {
     "@tiptap/core": "^3.32.0",

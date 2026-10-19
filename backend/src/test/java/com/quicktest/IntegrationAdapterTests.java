@@ -103,4 +103,13 @@ class IntegrationAdapterTests {
         var worker=new NotificationService(notificationRepository,workspaceJson,clock,transactions,(notification,email,payload)->{throw new IllegalStateException("simulated timeout");},true,"local");worker.deliver();worker.deliver();
         var result=db.one("SELECT status,attempts FROM notification_outbox WHERE id=?",id);assertEquals("uncertain",string(result,"status"));assertEquals(1,number(result,"attempts"));
     }
+    @Test void rejectedHttpsMailRetriesBoundedlyWithoutDuplicatingTheMessage() {
+        var user=user();long id=db.insert("INSERT INTO notification_outbox(user_id,notification_type,recipient_email,payload_json,available_at,created_at) VALUES(?,'final_result',?,'{}',?,?)",user.getId(),user.getEmail(),Instant.now(),Instant.now());
+        var worker=new NotificationService(notificationRepository,workspaceJson,clock,transactions,(notification,email,payload)->{throw new MailDeliveryRejected();},true,"resend");
+        for(int attempt=1;attempt<=3;attempt++) {
+            db.update("UPDATE notification_outbox SET available_at=? WHERE id=?",Instant.now().minusSeconds(1),id);worker.deliver();
+            var result=db.one("SELECT status,attempts FROM notification_outbox WHERE id=?",id);assertEquals(attempt,number(result,"attempts"));assertEquals(attempt<3?"queued":"failed",string(result,"status"));
+        }
+        worker.deliver();assertEquals(3,number(db.one("SELECT attempts FROM notification_outbox WHERE id=?",id),"attempts"));
+    }
 }

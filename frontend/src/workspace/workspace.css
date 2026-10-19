@@ -229,6 +229,13 @@
 .ws-review-details > p, .ws-review-details > pre { margin-top: 12px; }
 .ws-review-question > form { padding-top: 16px; border-top: 1px solid var(--border); }
 .ws-review-question > form button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.ws-grading-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; }
+.ws-grading-filters label { flex: 0 1 210px; min-width: 0; }
+.ws-grading-filters > button { display: inline-flex; align-items: center; gap: 6px; padding: 10px 12px; }
+.ws-grading-code { display: flex; align-items: center; gap: 7px; }
+.ws-grading-code code { user-select: all; font-size: 15px; font-weight: 700; letter-spacing: .08em; white-space: nowrap; }
+.ws-grading-code .icon-button { width: 30px; height: 30px; min-height: 30px; flex: 0 0 30px; }
+.ws-grading-actions { flex-wrap: wrap; }
 .ws-grading-points { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: center; gap: 10px; min-width: 0; }
 .ws-grading-points input { min-width: 0; }
 .ws-grading-maximum { color: var(--muted); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }

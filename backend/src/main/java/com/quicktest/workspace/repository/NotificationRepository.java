@@ -22,6 +22,10 @@ public class NotificationRepository {
         return store.one("SELECT email,verified_at FROM notification_addresses WHERE user_id=?", user);
     }
 
+    public Optional<Map<String,Object>> lockResultDelivery(long organizationId,long revision,long user) {
+        return store.optional("SELECT id,status,recipient_email,provider_message_id FROM notification_outbox WHERE organization_id=? AND revision_id=? AND user_id=? AND notification_type='final_result' FOR UPDATE",organizationId,revision,user);
+    }
+
     public Optional<Map<String, Object>> findVerifiedAddress(long user) {
         return store.optional("SELECT email FROM notification_addresses WHERE user_id=? AND verified_at IS NOT NULL", user);
     }
@@ -47,7 +51,7 @@ public class NotificationRepository {
     }
 
     public int markRetryableFailure(Object value, Instant value2, long id) {
-        return store.update("UPDATE notification_outbox SET status=?,available_at=?,last_error='SMTP authentication or recipient allowlist failed' WHERE id=? AND status='processing'", value, value2, id);
+        return store.update("UPDATE notification_outbox SET status=?,available_at=?,last_error='Mail provider rejected the request or recipient domain' WHERE id=? AND status='processing'", value, value2, id);
     }
 
     public int markUncertain(long id) {
