@@ -1,5 +1,7 @@
 package com.quicktest.workspace;
 
+import com.fasterxml.jackson.annotation.JsonSetter;
+import com.fasterxml.jackson.annotation.Nulls;
 import com.quicktest.workspace.repository.WorkspaceAiRepository;
 
 import com.quicktest.ai.AiProvider;
@@ -123,7 +125,7 @@ public class WorkspaceAiService {
             repository.settleQuota(error==null?1:0, org);
         });
     }
-    public record Generate(String requestKey,String topic,String subject,String level,String language,int questionCount,String difficulty,String sourceText,List<String> questionTypes,Map<String,Integer> difficultyCounts,String additionalInformation,int imageCount,boolean sourceOnly) {
+    public record Generate(String requestKey,String topic,String subject,String level,String language,int questionCount,String difficulty,String sourceText,List<String> questionTypes,Map<String,Integer> difficultyCounts,String additionalInformation,@JsonSetter(nulls=Nulls.AS_EMPTY) int imageCount,@JsonSetter(nulls=Nulls.AS_EMPTY) boolean sourceOnly) {
         public Generate(String requestKey,String topic,String subject,String level,String language,int questionCount,String difficulty,String sourceText,List<String> questionTypes,Map<String,Integer> difficultyCounts,String additionalInformation,int imageCount) {this(requestKey,topic,subject,level,language,questionCount,difficulty,sourceText,questionTypes,difficultyCounts,additionalInformation,imageCount,false);}
         public Generate(String requestKey,String topic,String subject,String level,String language,int questionCount,String difficulty,String sourceText,List<String> questionTypes,Map<String,Integer> difficultyCounts,String additionalInformation) {this(requestKey,topic,subject,level,language,questionCount,difficulty,sourceText,questionTypes,difficultyCounts,additionalInformation,0);}
         public Generate(String requestKey,String topic,String subject,String level,String language,int questionCount,String difficulty,String sourceText,List<String> questionTypes,Map<String,Integer> difficultyCounts) {this(requestKey,topic,subject,level,language,questionCount,difficulty,sourceText,questionTypes,difficultyCounts,null);}

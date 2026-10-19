@@ -23,7 +23,7 @@ export function newAiSettings(definition?: Definition, count = 5): AiSettings {
   const selectedTypes = [...new Set(definition?.questions.map(q => q.type))]
   const difficulty = definition?.questions.at(-1)?.difficulty ?? 'MEDIUM'
   return {
-    topic: definition?.title ?? 'Основи на Java', subject: definition?.subject ?? '', questionCount: count,
+    topic: definition?.title ?? '', subject: definition?.subject ?? '', questionCount: count,
     difficulty, questionTypes: selectedTypes.length ? selectedTypes : ['SINGLE_CHOICE'],
     difficultyCounts: definition ? { EASY: 0, MEDIUM: 0, HARD: 0, VERY_HARD: 0, [difficulty]: count } : { EASY: 2, MEDIUM: 2, HARD: 1, VERY_HARD: 0 },
     includeImages: false, imageCount: 1, additionalInformation: definition?.additionalInformation ?? '',
@@ -49,6 +49,7 @@ export function generationPayload(settings: AiSettings) {
     questionCount: settings.questionCount, difficulty: settings.difficulty, questionTypes: settings.questionTypes,
     difficultyCounts: settings.difficulty === 'MIXED' ? settings.difficultyCounts : { [settings.difficulty]: settings.questionCount },
     additionalInformation: settings.additionalInformation.trim(), imageCount: requestedImages(settings),
-    ...(settings.useSourceMaterial && settings.sourceMaterial ? { sourceText: settings.sourceMaterial.sourceText, sourceOnly: true } : {}),
+    sourceOnly: !!(settings.useSourceMaterial && settings.sourceMaterial),
+    ...(settings.useSourceMaterial && settings.sourceMaterial ? { sourceText: settings.sourceMaterial.sourceText } : {}),
   }
 }

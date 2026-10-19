@@ -131,11 +131,11 @@ public class OrganizationRepository {
     }
 
     public List<Map<String, Object>> findOrganizationGroups(long organizationId) {
-        return store.rows("SELECT * FROM learning_groups WHERE organization_id=? AND deleted_at IS NULL ORDER BY name", organizationId);
+        return store.rows("SELECT g.*,(SELECT COUNT(*) FROM group_members participants WHERE participants.organization_id=g.organization_id AND participants.group_id=g.id AND participants.active=TRUE) participant_count FROM learning_groups g WHERE g.organization_id=? AND g.deleted_at IS NULL ORDER BY g.name", organizationId);
     }
 
     public List<Map<String, Object>> findVisibleGroups(long organizationId, boolean platform, long userId, long userId2) {
-        return store.rows("SELECT DISTINCT g.* FROM learning_groups g LEFT JOIN group_teachers t ON t.organization_id=g.organization_id AND t.group_id=g.id LEFT JOIN group_members m ON m.organization_id=g.organization_id AND m.group_id=g.id AND m.active=TRUE WHERE (g.organization_id=? OR ?) AND g.deleted_at IS NULL AND (t.user_id=? OR m.user_id=?) ORDER BY g.name", organizationId, platform, userId, userId2);
+        return store.rows("SELECT DISTINCT g.*,(SELECT COUNT(*) FROM group_members participants WHERE participants.organization_id=g.organization_id AND participants.group_id=g.id AND participants.active=TRUE) participant_count FROM learning_groups g LEFT JOIN group_teachers t ON t.organization_id=g.organization_id AND t.group_id=g.id LEFT JOIN group_members m ON m.organization_id=g.organization_id AND m.group_id=g.id AND m.active=TRUE WHERE (g.organization_id=? OR ?) AND g.deleted_at IS NULL AND (t.user_id=? OR m.user_id=?) ORDER BY g.name", organizationId, platform, userId, userId2);
     }
 
     public long insertGroup(long organizationId, String name, String description, String subject, String code, Instant timestamp) {

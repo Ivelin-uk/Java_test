@@ -10,21 +10,23 @@ import { RecipientPicker } from './RecipientPicker'
 
 export function GroupsPanel({ api, teacher }: { api: WorkspaceApi; teacher: boolean }) {
   const groups = useRemote<Group[]>(api, '/groups', [])
+  const refresh = useAction()
   const [creating, setCreating] = useState(false)
   const [selected, setSelected] = useState<Group | null>(null)
   const [deleting, setDeleting] = useState<Group | null>(null)
   const [message, setMessage] = useState('')
   const selectedId = selected?.id
   useEffect(() => { if (selectedId) window.scrollTo({ top: 0 }) }, [selectedId])
-  if (selected && teacher) return <GroupEditor key={selected.id} api={api} group={selected} back={() => setSelected(null)} saved={async code => {
+  function backToGroups() { setSelected(null); void refresh.run(groups.reload) }
+  if (selected && teacher) return <GroupEditor key={selected.id} api={api} group={selected} back={backToGroups} saved={async code => {
     if (code) setSelected({ ...selected, join_code: code })
     const refreshed = await groups.reload()
     setSelected(refreshed.find(group => group.id === selected.id) ?? (code ? { ...selected, join_code: code } : selected))
   }} />
-  if (selected && !teacher) return <GroupSummary api={api} group={selected} back={() => setSelected(null)} />
-  return <section className="ws-section"><SectionHead title="Групи">{teacher && <button type="button" className="primary command-button" onClick={() => { setMessage(''); setCreating(true) }}><Plus size={17} /> Създай група</button>}</SectionHead><Feedback error={groups.error} message={message} busy={groups.loading} />
+  if (selected && !teacher) return <GroupSummary api={api} group={selected} back={backToGroups} />
+  return <section className="ws-section"><SectionHead title="Групи">{teacher && <button type="button" className="primary command-button" onClick={() => { setMessage(''); setCreating(true) }}><Plus size={17} /> Създай група</button>}</SectionHead><Feedback error={groups.error || refresh.error} message={message} busy={groups.loading || refresh.busy} />
     {!teacher && <JoinGroupForm api={api} joined={async result => { await groups.reload(); setMessage(result.alreadyMember ? `Вече си в групата „${result.name}“.` : `Присъедини се към групата „${result.name}“.`) }} />}
-    <div className="ws-table-wrap"><table className="ws-table" aria-label="Групи"><thead><tr><th>Име</th><th>Дисциплина</th><th>Описание</th>{teacher && <><th>Код за присъединяване</th><th>Действия</th></>}</tr></thead><tbody>{groups.data.map(group => <tr key={group.id}><td><button className="ws-text-button" onClick={() => setSelected(group)}>{group.name}</button></td><td>{group.subject}</td><td>{group.description}</td>{teacher && <><td><GroupCode code={group.join_code} /></td><td><div className="ws-actions"><button className="icon-button" title="Редактирай групата" onClick={() => setSelected(group)}><Pencil size={17} /></button><button className="icon-button danger" title="Изтрий групата" onClick={() => setDeleting(group)}><Trash2 size={17} /></button></div></td></>}</tr>)}</tbody></table></div>{!groups.data.length && !groups.loading && <Empty />}
+    <div className="ws-table-wrap"><table className="ws-table" aria-label="Групи"><thead><tr><th>Име</th><th>Дисциплина</th><th>Описание</th><th>Участници</th>{teacher && <><th>Код за присъединяване</th><th>Действия</th></>}</tr></thead><tbody>{groups.data.map(group => <tr key={group.id}><td><button className="ws-text-button" onClick={() => setSelected(group)}>{group.name}</button></td><td>{group.subject}</td><td>{group.description}</td><td>{group.participant_count ?? '—'}</td>{teacher && <><td><GroupCode code={group.join_code} /></td><td><div className="ws-actions"><button className="icon-button" title="Редактирай групата" onClick={() => setSelected(group)}><Pencil size={17} /></button><button className="icon-button danger" title="Изтрий групата" onClick={() => setDeleting(group)}><Trash2 size={17} /></button></div></td></>}</tr>)}</tbody></table></div>{!groups.data.length && !groups.loading && <Empty />}
     {deleting && <GroupDeleteDialog api={api} group={deleting} close={() => setDeleting(null)} saved={async () => { await groups.reload(); setMessage('Групата е изтрита.'); setDeleting(null) }} />}
     {creating && <GroupCreateDialog api={api} close={() => setCreating(false)} created={async () => { await groups.reload(); setMessage('Групата е създадена. Кодът за присъединяване е в таблицата.') }} />}
   </section>

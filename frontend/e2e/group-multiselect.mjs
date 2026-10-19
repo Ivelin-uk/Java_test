@@ -26,7 +26,7 @@ try {
       const respond = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) })
       if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'Access-Control-Allow-Origin': new URL(frontend).origin, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' } })
       if (method === 'GET') {
-        const data = { '/api/auth/me': auth.user, '/api/v1/groups': [group], '/api/v1/assignments': [], '/api/v1/grading': [], '/api/v1/members': directory, [`/api/v1/groups/${group.id}/members`]: members }
+        const data = { '/api/auth/me': auth.user, '/api/v1/groups': [{ ...group, participant_count: members.filter(member => member.active).length }], '/api/v1/assignments': [], '/api/v1/grading': [], '/api/v1/members': directory, [`/api/v1/groups/${group.id}/members`]: members }
         if (Object.hasOwn(data, path)) return respond(data[path])
       }
       if (method === 'POST' && path === `/api/v1/groups/${group.id}/members`) {
@@ -46,7 +46,10 @@ try {
     try {
       await page.goto(frontend)
       await page.getByRole('button', { name: 'Групи', exact: true }).click()
-      await page.getByRole('table', { name: 'Групи', exact: true }).getByRole('button', { name: group.name, exact: true }).click()
+      const groupsTable = page.getByRole('table', { name: 'Групи', exact: true })
+      await groupsTable.getByRole('columnheader', { name: 'Участници', exact: true }).waitFor()
+      await groupsTable.getByRole('cell', { name: '1', exact: true }).waitFor()
+      await groupsTable.getByRole('button', { name: group.name, exact: true }).click()
       const region = page.getByRole('region', { name: 'Участници в групата', exact: true })
       const form = region.getByRole('form', { name: 'Добавяне на ученици', exact: true })
       const picker = form.getByRole('combobox', { name: 'Търси ученици', exact: true })
@@ -130,6 +133,10 @@ try {
       await picker.fill(''); await picker.click()
       await options.getByText('Няма налични ученици.', { exact: true }).waitFor()
       await page.keyboard.press('Escape')
+      await page.getByRole('button', { name: 'Към групите', exact: true }).click()
+      await groupsTable.getByRole('cell', { name: '7', exact: true }).waitFor()
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+      await page.screenshot({ path: new URL(`group-participant-count-${viewport.theme}-${viewport.width}.png`, artifacts).pathname })
       await page.reload()
       await page.getByRole('button', { name: 'Групи', exact: true }).click()
       await page.getByRole('table', { name: 'Групи', exact: true }).getByRole('button', { name: group.name, exact: true }).click()

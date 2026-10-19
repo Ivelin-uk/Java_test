@@ -142,6 +142,7 @@ try {
   assert.equal(payload.level, '')
   assert.equal(payload.language, 'bg')
   assert.equal(Object.hasOwn(payload, 'sourceText'), false)
+  assert.equal(payload.sourceOnly, false)
   assert.equal(payload.additionalInformation, additionalInformation)
   assert.equal(payload.imageCount, 1)
   assert.deepEqual(payload.questionTypes, ['SINGLE_CHOICE', 'SHORT_ANSWER'])

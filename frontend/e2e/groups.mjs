@@ -35,7 +35,7 @@ try {
   const original = `Group ${stamp}`, renamed = `Updated ${stamp}`
   await page.getByText('Няма записи.', { exact: true }).waitFor()
   const groupTable = page.getByRole('table', { name: 'Групи', exact: true })
-  assert.deepEqual(await groupTable.getByRole('columnheader').allTextContents(), ['Име', 'Дисциплина', 'Описание', 'Код за присъединяване', 'Действия'])
+  assert.deepEqual(await groupTable.getByRole('columnheader').allTextContents(), ['Име', 'Дисциплина', 'Описание', 'Участници', 'Код за присъединяване', 'Действия'])
   assert.equal(await page.getByRole('textbox').count(), 0)
   const creation = page.getByRole('dialog', { name: 'Създаване на група', exact: true })
   await page.getByRole('button', { name: 'Създай група', exact: true }).click()

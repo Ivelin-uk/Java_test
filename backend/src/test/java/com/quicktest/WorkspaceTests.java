@@ -100,6 +100,36 @@ class WorkspaceTests {
         assertEquals(1,db.count("SELECT COUNT(*) FROM group_teachers WHERE group_id=?",group));
         assertEquals(1,db.count("SELECT COUNT(*) FROM group_members WHERE group_id=? AND user_id=? AND active=TRUE",group,student));
     }
+    @Test void groupListCountsActiveStudentsAndPreservesGroupVisibility() throws Exception {
+        long empty=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Empty group","","")),"id");
+        var second=user(Role.STUDENT);
+        db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,second.getId(),"[\"STUDENT\"]",now);
+        organizations.addStudent(teaching,defaultGroup,second.getId());
+        organizations.addStudent(teaching,defaultGroup,second.getId());
+        var teacherOnly=new OrgAccess.Scope(org,teacher,Set.of("TEACHER"));
+        for(var scope:List.of(teaching,teacherOnly,learning)) {
+            var listed=organizations.groups(scope);
+            assertEquals(2,number(listed.stream().filter(group->number(group,"id")==defaultGroup).findFirst().orElseThrow(),"participant_count"));
+        }
+        for(var scope:List.of(teaching,teacherOnly)) {
+            assertEquals(0,number(organizations.groups(scope).stream().filter(group->number(group,"id")==empty).findFirst().orElseThrow(),"participant_count"));
+        }
+        assertTrue(organizations.groups(learning).stream().noneMatch(group->number(group,"id")==empty));
+        mvc.perform(get("/api/v1/groups").header("Authorization",authorization).header("X-Organization-Id",org))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(defaultGroup)).andExpect(jsonPath("$[0].participant_count").value(2));
+        var colleague=user(Role.TEACHER);
+        db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,colleague.getId(),"[\"TEACHER\"]",now);
+        long privateGroup=number(organizations.createGroup(new OrgAccess.Scope(org,colleague.getId(),Set.of("TEACHER")),new OrganizationService.GroupRequest("Private group","","")),"id");
+        assertTrue(organizations.groups(teacherOnly).stream().noneMatch(group->number(group,"id")==privateGroup));
+        assertTrue(organizations.groups(learning).stream().noneMatch(group->number(group,"id")==privateGroup));
+        organizations.removeStudent(teaching,defaultGroup,second.getId());
+        assertEquals(1,number(organizations.groups(teacherOnly).stream().filter(group->number(group,"id")==defaultGroup).findFirst().orElseThrow(),"participant_count"));
+        organizations.removeStudent(teaching,defaultGroup,student);
+        assertEquals(0,number(organizations.groups(teaching).stream().filter(group->number(group,"id")==defaultGroup).findFirst().orElseThrow(),"participant_count"));
+        assertTrue(organizations.groups(learning).stream().noneMatch(group->number(group,"id")==defaultGroup));
+        organizations.addStudent(teaching,defaultGroup,student);
+        assertEquals(1,number(organizations.groups(learning).getFirst(),"participant_count"));
+    }
     @Test void assessmentListIncludesQuestionCountAndTotalTime() {
         var saved=assessments.save(teaching,null,definition(true));
         var row=assessments.list(teaching).stream().filter(value->number(value,"id")==number(saved,"id")).findFirst().orElseThrow();
@@ -615,6 +645,42 @@ class WorkspaceTests {
         assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->ai.enqueue(teaching,changed)).getStatusCode());
         assertEquals(1,number(organizations.subscription(org),"ai_reserved"));
         assertFalse(new WorkspaceAiService.Generate("ai-source-legacy","Java","","","bg",1,"EASY",material).sourceOnly());
+    }
+    @Test void aiGenerationWithoutSourceMaterialAcceptsTheBrowserPayload() throws Exception {
+        String body="""
+                {"requestKey":"ai-browser-no-source","topic":"ООП","subject":"Програмиране","level":"","language":"bg",
+                 "questionCount":8,"difficulty":"MEDIUM","questionTypes":["SINGLE_CHOICE","MULTIPLE_CHOICE","TRUE_FALSE"],
+                 "difficultyCounts":{"MEDIUM":8},"additionalInformation":"","imageCount":0}
+                """;
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        var result=mvc.perform(post("/api/v1/ai/test-generations").header("Authorization",bearer).header("X-Organization-Id",org).contentType("application/json").content(body)).andReturn();
+        assertEquals(200,result.getResponse().getStatus(),()->String.valueOf(result.getResolvedException()));
+        var saved=workspaceJson.parse(workspaceJson.object(result.getResponse().getContentAsString()).get("request_json"),WorkspaceAiService.Generate.class);
+        assertFalse(saved.sourceOnly());
+        assertNull(saved.sourceText());
+        assertEquals(8,saved.questionCount());
+        assertEquals(0,saved.imageCount());
+        mvc.perform(post("/api/v1/ai/test-generations").header("Authorization",bearer).header("X-Organization-Id",org).contentType("application/json").content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(number(workspaceJson.object(result.getResponse().getContentAsString()),"id")));
+        assertEquals(1,number(organizations.subscription(org),"ai_reserved"));
+    }
+    @Test void aiGenerationOptionalDefaultsPreserveLegacyJobsAndRejectInvalidTypes() throws Exception {
+        var request=new WorkspaceAiService.Generate("ai-optional-defaults","Java","Java","","bg",1,"EASY",null);
+        long id=number(ai.enqueue(teaching,request),"id");
+        var legacy=workspaceJson.object(workspaceJson.write(request));
+        legacy.remove("imageCount");legacy.remove("sourceOnly");
+        db.update("UPDATE workspace_ai_jobs SET request_json=? WHERE id=?",workspaceJson.write(legacy),id);
+        assertEquals(id,number(ai.enqueue(teaching,request),"id"));
+        legacy.put("imageCount",null);legacy.put("sourceOnly",null);
+        assertEquals(request,workspaceJson.parse(workspaceJson.write(legacy),WorkspaceAiService.Generate.class));
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        for(String field:List.of("sourceOnly","imageCount","questionCount")) {
+            var invalid=workspaceJson.object(workspaceJson.write(request));invalid.put(field,Map.of("invalid",true));
+            mvc.perform(post("/api/v1/ai/test-generations").header("Authorization",bearer).header("X-Organization-Id",org).contentType("application/json").content(workspaceJson.write(invalid)))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("validation"));
+        }
+        assertEquals(1,number(organizations.subscription(org),"ai_reserved"));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_ai_jobs WHERE organization_id=?",org));
     }
     @Test void additionalInformationHttpContractIsTeacherOnlyAndReturnsValidationErrors() throws Exception {
         var request=new WorkspaceAiService.Generate("ai-extra-http","Boolean","Java","","bg",1,"EASY",null,null,null,"Use practical examples");
