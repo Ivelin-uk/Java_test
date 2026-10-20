@@ -803,11 +803,56 @@ class WorkspaceTests {
             assertFalse(row.containsKey("email"));assertFalse(row.containsKey("teacher_email"));assertFalse(row.containsKey("access_code"));assertFalse(row.containsKey("code_hash"));
         }
         assertEquals(Map.of(assignment,teacherName,assigned,colleagueName),names);
+        for(var scope:List.of(teaching,learning)) {
+            var owners=new HashMap<Long,String>();
+            for(var groupRow:organizations.groups(scope)) {
+                owners.put(number(groupRow,"id"),string(groupRow,"teacher_name"));
+                assertFalse(groupRow.containsKey("teacher_email"));assertFalse(groupRow.containsKey("password_hash"));
+            }
+            assertEquals(Map.of(defaultGroup,teacherName,group,colleagueName),owners);
+        }
         mvc.perform(get("/api/v1/assignments").header("Authorization",authorization)).andExpect(status().isOk()).andExpect(jsonPath("$[0].teacher_name").value(colleagueName)).andExpect(jsonPath("$[*].teacher_email").isEmpty());
         var stranger=user(Role.STUDENT);String bearer="Bearer "+auth.login(new AuthService.LoginRequest(stranger.getEmail(),"password123")).token();
         mvc.perform(get("/api/v1/assignments").header("Authorization",bearer)).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
         assertTrue(assignments.list(new OrgAccess.Scope(other,student,Set.of("STUDENT"))).isEmpty());
         assignments.removeRecipient(teaching,assignment,student);assertEquals(1,assignments.list(learning).size());assertEquals(colleagueName,assignments.list(learning).getFirst().get("teacher_name"));
+    }
+    @Test void studentGroupAssignmentsContainOnlyOwnGroupRecipientSnapshots() throws Exception {
+        long second=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Second group","","")),"id");
+        organizations.addStudent(teaching,second,student);
+        long secondAssignment=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(second),List.of(),now,now.plusSeconds(7200),2,false,false,true)),"id");
+        long shared=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup,second),List.of(),now,now.plusSeconds(10800),3,false,false,true)),"id");
+        long individual=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(second),List.of(),now,now.plusSeconds(14400),1,false,false,true)),"id");
+        db.update("UPDATE assignment_recipients SET source_groups_json='[]',individually_assigned=TRUE WHERE assignment_id=? AND student_id=?",individual,student);
+        db.update("UPDATE exam_assignments SET ends_at=? WHERE id=?",now.minusSeconds(1),assignment);
+        assertEquals(Set.of(assignment,shared),assignments.listStudentGroup(learning,defaultGroup).stream().map(row->number(row,"id")).collect(java.util.stream.Collectors.toSet()));
+        assertEquals(Set.of(secondAssignment,shared),assignments.listStudentGroup(learning,second).stream().map(row->number(row,"id")).collect(java.util.stream.Collectors.toSet()));
+        assertEquals(4,assignments.list(learning).size());
+        for(var row:assignments.listStudentGroup(learning,defaultGroup)) {
+            assertNotNull(row.get("teacher_name"));assertNotNull(row.get("starts_at"));assertNotNull(row.get("ends_at"));
+            for(String hidden:List.of("source_groups_json","access_code","code_hash","definition_json","teacher_email","student_id")) assertFalse(row.containsKey(hidden));
+        }
+        mvc.perform(get("/api/v1/groups/"+defaultGroup+"/assignments").header("Authorization",authorization))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2)).andExpect(jsonPath("$[0].id").value(shared)).andExpect(jsonPath("$[0].max_attempts").value(3))
+                .andExpect(jsonPath("$[1].id").value(assignment)).andExpect(jsonPath("$[*].source_groups_json").isEmpty()).andExpect(jsonPath("$[*].access_code").isEmpty());
+        assignments.removeRecipient(teaching,secondAssignment,student);
+        assertEquals(List.of(shared),assignments.listStudentGroup(learning,second).stream().map(row->number(row,"id")).toList());
+    }
+    @Test void studentGroupAssignmentsRequireCurrentMembershipAndKeepNewJoinsUnassigned() throws Exception {
+        var newcomer=user(Role.STUDENT);var personalScope=new OrgAccess.Scope(other,newcomer.getId(),Set.of("STUDENT"),true);
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(newcomer.getEmail(),"password123")).token();
+        String path="/api/v1/groups/"+defaultGroup+"/assignments";
+        mvc.perform(get(path)).andExpect(status().isUnauthorized());
+        mvc.perform(get(path).header("Authorization",bearer)).andExpect(status().isForbidden());
+        String owner="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        mvc.perform(get(path).header("Authorization",owner)).andExpect(status().isForbidden());
+        assertEquals(HttpStatus.NOT_FOUND,assertThrows(WorkspaceError.class,()->assignments.listStudentGroup(new OrgAccess.Scope(other,student,Set.of("STUDENT")),defaultGroup)).getStatusCode());
+        organizations.joinGroup(personalScope,string(organizations.groupAccess(teaching,defaultGroup),"join_code"),"group-tests-"+org);
+        mvc.perform(get(path).header("Authorization",bearer)).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        organizations.removeStudent(teaching,defaultGroup,student);
+        mvc.perform(get(path).header("Authorization",authorization)).andExpect(status().isForbidden());
+        organizations.deleteGroup(teaching,defaultGroup);
+        mvc.perform(get(path).header("Authorization",bearer)).andExpect(status().isNotFound());
     }
     @Test void assignmentCodesAreOnlyVisibleToAuthorizedTeachers() throws Exception {
         var colleague=user(Role.TEACHER);

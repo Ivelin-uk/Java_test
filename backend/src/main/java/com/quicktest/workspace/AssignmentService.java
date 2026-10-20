@@ -29,6 +29,13 @@ public class AssignmentService {
         if(scope.roles().contains("TEACHER")) return teacherList(scope);
         return repository.findStudentAssignments(scope.organizationId(), scope.platform(), scope.userId());
     }
+    @Transactional(readOnly=true)
+    public List<Map<String,Object>> listStudentGroup(OrgAccess.Scope scope,long group) {
+        organizations.requireStudentGroup(scope,group);
+        var assignments=repository.findStudentAssignments(scope.organizationId(),scope.platform(),scope.userId(),true);
+        return assignments.stream().filter(row->Arrays.asList(json.parse(row.get("source_groups_json"),Long[].class)).contains(group))
+                .peek(row->row.remove("source_groups_json")).toList();
+    }
     private List<Map<String,Object>> teacherList(OrgAccess.Scope scope) {
         var assignments=repository.findTeacherAssignments(scope.organizationId(), scope.platform(), scope.userId(), scope.userId());
         if(assignments.isEmpty()) return assignments;

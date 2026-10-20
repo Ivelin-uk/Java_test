@@ -3,19 +3,22 @@ import { Plus, UserPlus, Trash2, ArrowLeft, Save, Pencil, Copy, RefreshCw } from
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
 import type { Group, Member } from './types'
-import { roles, date, label } from './types'
+import { roles } from './types'
 import { Empty, Feedback, SectionHead } from './ui'
 import { DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
 import { RecipientPicker } from './RecipientPicker'
+import { LearnerPanel } from './StudentPanel'
 
-export function GroupsPanel({ api, teacher }: { api: WorkspaceApi; teacher: boolean }) {
+export function GroupsPanel({ api, teacher, selected, setSelected, begin }: { api: WorkspaceApi; teacher: boolean; selected: Group | null; setSelected: (group: Group | null) => void; begin: (assignment: number, attempt?: number) => void }) {
   const groups = useRemote<Group[]>(api, '/groups', [])
   const refresh = useAction()
   const [creating, setCreating] = useState(false)
-  const [selected, setSelected] = useState<Group | null>(null)
+  const [search, setSearch] = useState('')
   const [deleting, setDeleting] = useState<Group | null>(null)
   const [message, setMessage] = useState('')
   const selectedId = selected?.id
+  const query = search.trim().normalize('NFC').toLocaleLowerCase('bg-BG')
+  const filtered = groups.data.filter(group => group.name.normalize('NFC').toLocaleLowerCase('bg-BG').includes(query))
   useEffect(() => { if (selectedId) window.scrollTo({ top: 0 }) }, [selectedId])
   function backToGroups() { setSelected(null); void refresh.run(groups.reload) }
   if (selected && teacher) return <GroupEditor key={selected.id} api={api} group={selected} back={backToGroups} saved={async code => {
@@ -23,10 +26,11 @@ export function GroupsPanel({ api, teacher }: { api: WorkspaceApi; teacher: bool
     const refreshed = await groups.reload()
     setSelected(refreshed.find(group => group.id === selected.id) ?? (code ? { ...selected, join_code: code } : selected))
   }} />
-  if (selected && !teacher) return <GroupSummary api={api} group={selected} back={backToGroups} />
+  if (selected && !teacher) return <GroupTests api={api} group={selected} back={backToGroups} begin={begin} />
   return <section className="ws-section"><SectionHead title="Групи">{teacher && <button type="button" className="primary command-button" onClick={() => { setMessage(''); setCreating(true) }}><Plus size={17} /> Създай група</button>}</SectionHead><Feedback error={groups.error || refresh.error} message={message} busy={groups.loading || refresh.busy} />
     {!teacher && <JoinGroupForm api={api} joined={async result => { await groups.reload(); setMessage(result.alreadyMember ? `Вече си в групата „${result.name}“.` : `Присъедини се към групата „${result.name}“.`) }} />}
-    <div className="ws-table-wrap"><table className="ws-table" aria-label="Групи"><thead><tr><th>Име</th><th>Дисциплина</th><th>Описание</th><th>Участници</th>{teacher && <><th>Код за присъединяване</th><th>Действия</th></>}</tr></thead><tbody>{groups.data.map(group => <tr key={group.id}><td><button className="ws-text-button" onClick={() => setSelected(group)}>{group.name}</button></td><td>{group.subject}</td><td>{group.description}</td><td>{group.participant_count ?? '—'}</td>{teacher && <><td><GroupCode code={group.join_code} /></td><td><div className="ws-actions"><button className="icon-button" title="Редактирай групата" onClick={() => setSelected(group)}><Pencil size={17} /></button><button className="icon-button danger" title="Изтрий групата" onClick={() => setDeleting(group)}><Trash2 size={17} /></button></div></td></>}</tr>)}</tbody></table></div>{!groups.data.length && !groups.loading && <Empty />}
+    <div className="ws-group-search"><label>Търси група<input type="search" placeholder="Име на група" value={search} onChange={event => setSearch(event.target.value)} /></label>{!groups.loading && <span className="ws-muted" role="status">{filtered.length} от {groups.data.length} групи</span>}</div>
+    <div className="ws-table-wrap"><table className="ws-table" aria-label="Групи"><thead><tr><th>Име</th><th>Учител</th><th>Дисциплина</th><th>Описание</th><th>Участници</th>{teacher && <><th>Код за присъединяване</th><th>Действия</th></>}</tr></thead><tbody>{filtered.map(group => <tr key={group.id}><td><button className="ws-text-button" onClick={() => setSelected(group)}>{group.name}</button></td><td>{group.teacher_name ?? '—'}</td><td>{group.subject}</td><td>{group.description}</td><td>{group.participant_count ?? '—'}</td>{teacher && <><td><GroupCode code={group.join_code} /></td><td><div className="ws-actions"><button className="icon-button" title="Редактирай групата" onClick={() => setSelected(group)}><Pencil size={17} /></button><button className="icon-button danger" title="Изтрий групата" onClick={() => setDeleting(group)}><Trash2 size={17} /></button></div></td></>}</tr>)}</tbody></table></div>{!filtered.length && !groups.loading && <Empty>{groups.data.length ? 'Няма групи с това име.' : 'Няма записи.'}</Empty>}
     {deleting && <GroupDeleteDialog api={api} group={deleting} close={() => setDeleting(null)} saved={async () => { await groups.reload(); setMessage('Групата е изтрита.'); setDeleting(null) }} />}
     {creating && <GroupCreateDialog api={api} close={() => setCreating(false)} created={async () => { await groups.reload(); setMessage('Групата е създадена. Кодът за присъединяване е в таблицата.') }} />}
   </section>
@@ -196,8 +200,6 @@ function GroupMembers({ api, group }: { api: WorkspaceApi; group: Group }) {
   </section>
 }
 
-type GroupSummaryData = { group: Group; teachers: { name: string }[]; assignments: { assignment_id: number; student_id: number; student_name: string; title: string; ends_at: string; attempts: { id: number; attempt_number: number; status: string; grade: string | null; outcome: string | null }[] }[] }
-function GroupSummary({ api, group, embedded = false, back }: { api: WorkspaceApi; group: Group; embedded?: boolean; back?: () => void }) {
-  const data = useRemote<GroupSummaryData | null>(api, `/groups/${group.id}/summary`, null)
-  return <section className={embedded ? 'ws-group-report' : 'ws-section'}><SectionHead title={embedded ? 'Възлагания и резултати' : group.name}>{back && <button className="icon-button" title="Към групите" onClick={back}><ArrowLeft size={17} /></button>}</SectionHead><p className="ws-muted">Обобщена оценка: последният публикуван, неанулиран опит по пореден номер.</p><Feedback error={data.error} busy={data.loading} /><p>{group.subject}</p><p>{group.description}</p><p>{data.data?.teachers.map(t => t.name).join(' · ')}</p><div className="ws-table-wrap"><table className="ws-table"><thead><tr><th>Тест</th><th>Обучаем</th><th>Срок</th><th>Обобщена оценка</th><th>Всички опити</th></tr></thead><tbody>{data.data?.assignments.map(a => <tr key={`${a.assignment_id}-${a.student_id}`}><td>{a.title}</td><td>{a.student_name}</td><td>{date(a.ends_at)}</td><td>{a.attempts.find(x => x.status === 'finalized')?.grade ?? '-'}</td><td>{a.attempts.length ? a.attempts.map(x => <div key={x.id}>#{x.attempt_number} · {label(x.status)}{x.grade ? ` · ${x.grade} · ${label(x.outcome ?? '')}` : ''}</div>) : 'Не е започнал'}</td></tr>)}</tbody></table></div></section>
+function GroupTests({ api, group, back, begin }: { api: WorkspaceApi; group: Group; back: () => void; begin: (assignment: number, attempt?: number) => void }) {
+  return <section className="ws-section" aria-label="Тестове на групата"><SectionHead title={group.name}><button className="icon-button" title="Към групите" onClick={back}><ArrowLeft size={17} /></button></SectionHead><p className="ws-muted">Учител: {group.teacher_name ?? '—'}</p>{group.subject && <p>{group.subject}</p>}{group.description && <p>{group.description}</p>}<LearnerPanel key={group.id} api={api} begin={begin} groupId={group.id} /></section>
 }

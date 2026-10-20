@@ -35,7 +35,7 @@ try {
   const original = `Group ${stamp}`, renamed = `Updated ${stamp}`
   await page.getByText('Няма записи.', { exact: true }).waitFor()
   const groupTable = page.getByRole('table', { name: 'Групи', exact: true })
-  assert.deepEqual(await groupTable.getByRole('columnheader').allTextContents(), ['Име', 'Дисциплина', 'Описание', 'Участници', 'Код за присъединяване', 'Действия'])
+  assert.deepEqual(await groupTable.getByRole('columnheader').allTextContents(), ['Име', 'Учител', 'Дисциплина', 'Описание', 'Участници', 'Код за присъединяване', 'Действия'])
   assert.equal(await page.getByRole('textbox').count(), 0)
   const creation = page.getByRole('dialog', { name: 'Създаване на група', exact: true })
   await page.getByRole('button', { name: 'Създай група', exact: true }).click()
@@ -279,7 +279,7 @@ try {
   const studentPage = await studentContext.newPage()
   await studentPage.goto(frontend)
   await studentPage.getByRole('button', { name: 'Групи', exact: true }).click()
-  assert.deepEqual(await studentPage.getByRole('table', { name: 'Групи', exact: true }).getByRole('columnheader').allTextContents(), ['Име', 'Дисциплина', 'Описание'])
+  assert.deepEqual(await studentPage.getByRole('table', { name: 'Групи', exact: true }).getByRole('columnheader').allTextContents(), ['Име', 'Учител', 'Дисциплина', 'Описание', 'Участници'])
   await studentPage.getByRole('button', { name: renamed, exact: true }).click()
   await studentPage.getByRole('heading', { name: renamed, exact: true }).waitFor()
   assert.equal(await studentPage.getByRole('button', { name: 'Запази', exact: true }).count(), 0)

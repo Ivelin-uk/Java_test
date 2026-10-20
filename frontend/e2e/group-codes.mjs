@@ -29,7 +29,7 @@ async function pageFor(auth) {
       if (path === '/api/v1/groups') return respond(teaching ? created ? [group] : [] : joined ? [studentGroup] : [])
       if (['/api/v1/assignments', '/api/v1/grading', '/api/v1/results', '/api/v1/attempts', '/api/v1/members'].includes(path)) return respond([])
       if (path === '/api/v1/groups/201/members') return respond(joined ? [{ user_id: student.user.id, name: student.user.name, email: student.user.email, active: true }] : [])
-      if (path === '/api/v1/groups/201/summary') return respond({ group: studentGroup, teachers: [{ name: teacher.user.name }], assignments: [] })
+      if (path === '/api/v1/groups/201/assignments') return respond([])
     }
     if (method === 'POST') {
       const body = request.postDataJSON()

@@ -141,6 +141,11 @@ public class OrganizationService {
         if(!scope.roles().contains("TEACHER")) groups.forEach(group->group.remove("join_code"));
         return groups;
     }
+    public void requireStudentGroup(OrgAccess.Scope scope,long group) {
+        if(!scope.roles().contains("STUDENT")) throw WorkspaceError.forbidden();
+        var row=repository.requireGroup(scope.organizationId(),scope.platform(),group);
+        if(repository.countActiveGroupMembers(number(row,"organization_id"),group,scope.userId())==0) throw WorkspaceError.forbidden();
+    }
     @Transactional
     public Map<String,Object> createGroup(OrgAccess.Scope scope,GroupRequest request) {
         String code;do {code=crypto.code();} while(repository.groupCodeExists(code));

@@ -178,6 +178,9 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-profile-form { display: grid; gap: 20px; min-width: 0; }
 .ws-profile-form p { overflow-wrap: anywhere; }
 .ws-profile-form .primary { justify-self: start; }
+.ws-group-search { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; margin: 24px 0; }
+.ws-group-search label { width: min(100%, 440px); }
+.ws-group-search .ws-muted { padding-bottom: 12px; }
 .ws-assignment-form { display: grid; gap: 18px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
 .ws-assignment-form input[type="datetime-local"][aria-invalid="true"] { border-color: var(--danger); }
 .ws-recipient-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
