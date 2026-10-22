@@ -1,6 +1,9 @@
 package com.quicktest.workspace;
 
 import com.quicktest.access.EndpointPolicy;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,6 +24,9 @@ public class AssessmentController {
     @PostMapping("/tests/{id}/duplicate") public Object duplicate(@PathVariable long id) {return assessments.duplicate(access.teacher(),id);}
     @PutMapping("/tests/{id}/sharing") public void sharing(@PathVariable long id,@RequestBody Sharing request) {assessments.share(access.teacher(),id,request.shared());}
     @GetMapping("/assignments") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT,student=true) public Object assignments() {return assignments.list(access.scope());}
+    @PostMapping("/assignments/resolve-code") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT,teacher=false,student=true)
+    public Object resolveCode(@Valid @RequestBody ResolveCode request) {return assignments.resolveCode(access.student(),request.code(),access.remoteAddress());}
+    public record ResolveCode(@NotBlank @Pattern(regexp="[A-Za-z0-9]{8}") String code) {}
     @PostMapping("/assignments") public Object assign(@RequestBody AssignmentService.AssignmentRequest request) {return assignments.create(access.version(request.versionId()),request);}
     @DeleteMapping("/assignments/{id}") public void removeAssignment(@PathVariable long id) {assignments.remove(access.teacher(),id);}
     @PostMapping("/assignments/{id}/recipients") public void addRecipient(@PathVariable long id,@RequestBody OrganizationController.UserId request) {assignments.addRecipient(access.teacher(),id,request.userId());}

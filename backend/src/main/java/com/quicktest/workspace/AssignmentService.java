@@ -17,8 +17,9 @@ public class AssignmentService {
     private final OrganizationService organizations;
     private final WorkspaceCrypto crypto;
     private final WorkspaceAudit audit;
+    private final CodeRateLimiter codeLimiter;
     private final Clock clock;private final NotificationService notifications;private final boolean mobileValidated;
-    public AssignmentService(AssignmentRepository repository,WorkspaceJson json,OrganizationService organizations,WorkspaceCrypto crypto,WorkspaceAudit audit,Clock clock,NotificationService notifications,@org.springframework.beans.factory.annotation.Value("${app.exam.mobile-validated:false}") boolean mobileValidated) {this.repository=repository;this.json=json;this.organizations=organizations;this.crypto=crypto;this.audit=audit;this.clock=clock;this.notifications=notifications;this.mobileValidated=mobileValidated;}
+    public AssignmentService(AssignmentRepository repository,WorkspaceJson json,OrganizationService organizations,WorkspaceCrypto crypto,WorkspaceAudit audit,Clock clock,NotificationService notifications,CodeRateLimiter codeLimiter,@org.springframework.beans.factory.annotation.Value("${app.exam.mobile-validated:false}") boolean mobileValidated) {this.repository=repository;this.json=json;this.organizations=organizations;this.crypto=crypto;this.audit=audit;this.clock=clock;this.notifications=notifications;this.codeLimiter=codeLimiter;this.mobileValidated=mobileValidated;}
     public Map<String,Object> teacherAccess(OrgAccess.Scope scope,long id,boolean lock) {
         var assignment=repository.findAssignment(scope.organizationId(), id, lock);
         if(number(assignment,"teacher_id")!=scope.userId() && repository.countSharedTeacher(scope.organizationId(), id, scope.userId())==0) throw WorkspaceError.forbidden();
@@ -28,6 +29,19 @@ public class AssignmentService {
     public List<Map<String,Object>> list(OrgAccess.Scope scope) {
         if(scope.roles().contains("TEACHER")) return teacherList(scope);
         return repository.findStudentAssignments(scope.organizationId(), scope.platform(), scope.userId());
+    }
+    public Map<String,Object> resolveCode(OrgAccess.Scope scope,String code,String ip) {
+        if(!scope.roles().contains("STUDENT")) throw WorkspaceError.forbidden();
+        String normalized=code==null?"":code.strip().toUpperCase(Locale.ROOT);
+        if(!normalized.matches("[A-Z0-9]{8}")) throw WorkspaceError.validation("Невалиден или отменен код.");
+        var matches=repository.findStudentCodeCandidates(scope.organizationId(),scope.platform(),scope.userId()).stream()
+                .filter(row->crypto.matches(number(row,"organization_id")+":"+number(row,"id")+":"+normalized,string(row,"code_hash"))).toList();
+        // Commit guess accounting independently, just as exam start does.
+        if(!codeLimiter.checkAssignmentLookup(scope.userId(),ip,!matches.isEmpty())) throw codeLimiter.limited();
+        if(matches.isEmpty()) throw WorkspaceError.validation("Невалиден или отменен код.");
+        if(matches.size()>1) throw WorkspaceError.conflict("Кодът съвпада с повече от едно възлагане. Поискайте отделен код от учителя.");
+        var match=matches.getFirst();
+        return Map.of("id",number(match,"id"),"title",string(match,"title"));
     }
     @Transactional(readOnly=true)
     public List<Map<String,Object>> listStudentGroup(OrgAccess.Scope scope,long group) {

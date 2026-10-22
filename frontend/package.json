@@ -22,6 +22,7 @@
     "test:themes": "node e2e/themes.mjs",
     "test:assignments": "node e2e/assignment-picker.mjs",
     "test:codes": "node e2e/assignment-codes.mjs",
+    "test:assignment-selection": "node e2e/assignment-selection.mjs",
     "test:google": "node e2e/google-auth.mjs",
     "test:roles": "node e2e/role-selection.mjs",
     "test:admin-roles": "node e2e/admin-roles.mjs",

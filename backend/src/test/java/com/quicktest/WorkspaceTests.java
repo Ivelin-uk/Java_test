@@ -765,6 +765,69 @@ class WorkspaceTests {
         assertEquals(2,number(row,"recipients"));
         assertTrue(organizations.groups(teaching).stream().noneMatch(value->number(value,"id")==group));
     }
+    @Test void assignmentCodeLookupFindsTheMatchingAssignedTestWithoutStartingAnAttempt() throws Exception {
+        var second=assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now.minusSeconds(1),now.plusSeconds(3600),1,false,false,true));
+        long target=number(second,"id");String targetCode=string(second,"code");
+        var match=assignments.resolveCode(learning,targetCode.toLowerCase(Locale.ROOT),"lookup-"+UUID.randomUUID());
+        assertEquals(Map.of("id",target,"title","Test"),match);
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE student_id=?",student));
+        mvc.perform(post("/api/v1/assignments/resolve-code").header("Authorization",authorization).contentType("application/json").content(db.json(Map.of("code",targetCode))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(target)).andExpect(jsonPath("$.title").value("Test"))
+                .andExpect(jsonPath("$.code_hash").doesNotExist()).andExpect(jsonPath("$.organization_id").doesNotExist());
+        var request=new AttemptService.StartRequest(targetCode,UUID.randomUUID().toString(),UUID.randomUUID().toString(),"b".repeat(43),true,true,true);
+        assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->start(request)).getStatusCode());
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE student_id=?",student));
+        var started=attempts.start(learning,target,request,authorization,"start-"+UUID.randomUUID());
+        assertEquals(target,number(started,"assignment_id"));assertEquals("in_progress",string(started,"status"));
+    }
+    @Test void assignmentCodeLookupEnforcesRecipientTenantAndRevocationChecks() {
+        String ip="lookup-"+UUID.randomUUID();
+        assertEquals(assignment,number(assignments.resolveCode(new OrgAccess.Scope(other,student,Set.of("STUDENT"),true),code,ip),"id"));
+        assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->assignments.resolveCode(new OrgAccess.Scope(other,student,Set.of("STUDENT")),code,ip)).getStatusCode());
+        var stranger=user(Role.STUDENT);
+        assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->assignments.resolveCode(new OrgAccess.Scope(org,stranger.getId(),Set.of("STUDENT"),true),code,ip)).getStatusCode());
+        assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->assignments.resolveCode(teaching,code,ip)).getStatusCode());
+        db.update("UPDATE assignment_recipients SET canceled=TRUE WHERE assignment_id=? AND student_id=?",assignment,student);
+        assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->assignments.resolveCode(learning,code,ip)).getStatusCode());
+        db.update("UPDATE assignment_recipients SET canceled=FALSE WHERE assignment_id=? AND student_id=?",assignment,student);
+        assignments.revoke(teaching,assignment);
+        assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->assignments.resolveCode(learning,code,ip)).getStatusCode());
+    }
+    @Test void assignmentCodeLookupSupportsLegacyHashesAndRejectsOldRotatedCodes() {
+        String ip="lookup-"+UUID.randomUUID();
+        db.update("UPDATE exam_assignments SET access_code=NULL WHERE id=?",assignment);
+        assertEquals(assignment,number(assignments.resolveCode(learning,code,ip),"id"));
+        String next=string(assignments.rotate(teaching,assignment),"code");
+        assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->assignments.resolveCode(learning,code,ip)).getStatusCode());
+        assertEquals(assignment,number(assignments.resolveCode(learning,next,ip),"id"));
+    }
+    @Test void assignmentCodeLookupLimitsGuessesEvenWhenTheCallerRollsBack() {
+        String ip="lookup-"+UUID.randomUUID(),wrong=code.equals("ZZZZZZZZ")?"XXXXXXXX":"ZZZZZZZZ";
+        for(int i=0;i<5;i++) transactions.execute(tx->{
+            assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->assignments.resolveCode(learning,wrong,ip)).getStatusCode());
+            tx.setRollbackOnly();return null;
+        });
+        var error=assertThrows(WorkspaceError.class,()->assignments.resolveCode(learning,code,ip));
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS,error.getStatusCode());assertEquals("rate_limit",error.code());
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE student_id=?",student));
+    }
+    @Test void assignmentCodeLookupRejectsAmbiguousCodesInsteadOfChoosingAnAssignment() {
+        long second=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now.minusSeconds(1),now.plusSeconds(3600),1,false,false,true)),"id");
+        db.update("UPDATE exam_assignments SET code_hash=? WHERE id=?",assignments.codeHash(org,second,code),second);
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->assignments.resolveCode(learning,code,"lookup-"+UUID.randomUUID())).getStatusCode());
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE student_id=?",student));
+    }
+    @Test void assignmentCodeLookupHttpRequiresAnAuthenticatedStudentAndValidInput() throws Exception {
+        mvc.perform(post("/api/v1/assignments/resolve-code").contentType("application/json").content(db.json(Map.of("code",code)))).andExpect(status().isUnauthorized());
+        String teacherToken="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        mvc.perform(post("/api/v1/assignments/resolve-code").header("Authorization",teacherToken).contentType("application/json").content(db.json(Map.of("code",code)))).andExpect(status().isForbidden());
+        for(String invalid:List.of("", "short", "<script>"))
+            mvc.perform(post("/api/v1/assignments/resolve-code").header("Authorization",authorization).contentType("application/json").content(db.json(Map.of("code",invalid)))).andExpect(status().isBadRequest());
+        var stranger=user(Role.STUDENT);String strangerToken="Bearer "+auth.login(new AuthService.LoginRequest(stranger.getEmail(),"password123")).token();
+        mvc.perform(post("/api/v1/assignments/resolve-code").header("Authorization",strangerToken).contentType("application/json").content(db.json(Map.of("code",code))))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("Невалиден или отменен код."))
+                .andExpect(jsonPath("$.id").doesNotExist()).andExpect(jsonPath("$.code_hash").doesNotExist());
+    }
     @Test void assignmentCodesPersistThroughRotationAndRevocation() {
         assertEquals(code,assignments.list(teaching).getFirst().get("access_code"));
         String rotated=string(assignments.rotate(teaching,assignment),"code");

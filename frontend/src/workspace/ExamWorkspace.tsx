@@ -48,7 +48,7 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
     setScreen({ view: next, participants })
     window.scrollTo({ top: 0 })
   }
-  const [exam, setExam] = useState<{ assignment: number; attempt?: number } | null>(null)
+  const [exam, setExam] = useState<{ assignment: number; attempt?: number; code?: string } | null>(null)
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null)
   const available: { key: View; name: string; icon: typeof Users }[] = [
     ...(!admin ? [{ key: 'dashboard' as View, name: 'Табло', icon: LayoutDashboard }, { key: 'groups' as View, name: 'Групи', icon: Users }] : []),
@@ -59,7 +59,7 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
   ]
   const actualView = available.some(item => item.key === view) ? view : 'profile'
   if (auth.user.passwordChangeRequired) return <main className="app-shell"><h1>Смяна на временната парола</h1><ProfilePanel auth={auth} onAuth={onAuth} /></main>
-  if (exam) return <ExamScreen key={exam.assignment} api={api} user={auth.user.id} assignment={exam.assignment} resume={exam.attempt} back={() => { setExam(null); if (view !== 'groups') navigate('learner') }} />
+  if (exam) return <ExamScreen key={exam.assignment} api={api} user={auth.user.id} assignment={exam.assignment} resume={exam.attempt} initialCode={exam.code} openAssignment={(assignment, code) => setExam({ assignment, code })} back={() => { setExam(null); if (view !== 'groups') navigate('learner') }} />
   return <main className="ws-shell">
     <header className="ws-topbar"><a className="ws-brand" href="/">ExamAI</a><div className="ws-account"><strong>{auth.user.name}</strong><span>{roleLabels[auth.user.role]}</span></div><ThemeToggle /><button className="icon-button" title="Изход" aria-label="Изход" onClick={() => void logout()}><LogOut size={18} /></button></header>
     <nav className="ws-nav" aria-label="Основна навигация">{available.map(({ key, name, icon: Icon }) => <button key={key} className={actualView === key ? 'active' : ''} onClick={() => navigate(key)}><Icon size={17} />{name}</button>)}</nav>

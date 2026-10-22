@@ -101,7 +101,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
     <div className="ws-table-wrap"><table className="ws-table" aria-label="Възлагания">
       <thead><tr><th>Тест</th><th>Начало</th><th>Краен срок</th><th>Възложено на</th><th>Получатели</th><th>Код за достъп</th><th>Действия</th></tr></thead>
       <tbody>{assignments.data.map(a => <tr key={a.id}>
-        <td>{a.title}</td><td>{date(a.starts_at)}</td><td>{date(a.ends_at)}</td><td><AssignmentAudience assignment={a} /></td><td><button type="button" className="ws-text-button" title={`Участници във възлагане №${a.id}`} aria-label={`Участници във възлагане №${a.id}`} onClick={() => openParticipants(a.id)}>{a.recipients}</button></td>
+        <td><div>{a.title}</div><small className="ws-assignment-reference">Възлагане №{a.id}</small></td><td>{date(a.starts_at)}</td><td>{date(a.ends_at)}</td><td><AssignmentAudience assignment={a} /></td><td><button type="button" className="ws-text-button" title={`Участници във възлагане №${a.id}`} aria-label={`Участници във възлагане №${a.id}`} onClick={() => openParticipants(a.id)}>{a.recipients}</button></td>
         <td><div className="ws-assignment-code">
           <output aria-label={`Код за възлагане №${a.id}`}>{a.access_code || '-'}</output>
           <button className="icon-button" title={a.access_code ? 'Генерирай нов код' : 'Генерирай код'} aria-label={a.access_code ? 'Генерирай нов код' : 'Генерирай код'} disabled={action.busy} onClick={() => void action.run(async () => {
