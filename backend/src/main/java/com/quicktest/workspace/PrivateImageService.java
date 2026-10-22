@@ -54,7 +54,7 @@ public class PrivateImageService {
             var row=repository.requireAttemptAccess(scope.organizationId(), scope.platform(), attempt, scope.userId());
             boolean active=string(row,"status").equals("in_progress") && session.token()!=null && session.authorization()!=null && session.browserId()!=null;
             if(active) active=crypto.matches(session.token(),string(row,"session_hash")) && crypto.matches(session.authorization(),string(row,"auth_session_hash")) && session.browserId().equals(string(row,"browser_id"));
-            boolean released=string(row,"status").equals("finalized") && (!flag(row,"answers_after_deadline") || !clock.instant().isBefore(time(row,"ends_at")));
+            boolean released=string(row,"status").equals("finalized") && flag(row,"student_review_allowed");
             if(active || released) for(var q:repository.findAttemptQuestions(number(row,"organization_id"), attempt)) {
                 if(active && (!string(q,"status").equals("open") || number(q,"position_index")!=number(row,"current_position") || !clock.instant().isBefore(time(q,"deadline_at")))) continue;
                 var question=json.parse(json.write(json.object(q.get("definition_json")).get("question")),AssessmentService.Question.class);if(Objects.equals(question.imageId(),id)) allowed=true;

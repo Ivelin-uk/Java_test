@@ -6,14 +6,14 @@ const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173', base =
 const teacher = { token: 'grading-actions-teacher', user: { id: 101, name: 'Teacher', email: 'teacher@example.test', role: 'TEACHER', active: true } }
 const student = { token: 'grading-actions-student', user: { id: 102, name: 'Student', email: 'student@example.test', role: 'STUDENT', active: true } }
 const activeUntil = new Date(Date.now() + 3600000).toISOString()
-const attempt = (id, date, patch = {}) => ({ id, assignment_id: 201, student_id: 1000 + id, student_name: `Ученик ${id}`, title: 'Биология', attempt_number: 1, status: 'finalized', submitted_at: date, access_code: 'ABCD1234', max_attempts: 1, attempts_used: 1, active_attempts: 0, recipient_canceled: false, group_assignment: true, assignment_ends_at: activeUntil, result_email_status: 'queued', ...patch })
+const attempt = (id, date, patch = {}) => ({ id, assignment_id: 201, student_id: 1000 + id, student_name: `Ученик ${id}`, title: 'Биология', attempt_number: 1, status: 'finalized', groups: [{ id: id % 2 ? 501 : 502, name: id % 2 ? '12А' : '12Б' }], result_correct_answers: 3, result_question_count: 10, result_percentage: 30, submitted_at: date, access_code: 'ABCD1234', max_attempts: 1, attempts_used: 1, active_attempts: 0, recipient_canceled: false, group_assignment: true, assignment_ends_at: activeUntil, result_email_status: 'queued', ...patch })
 const attempts = [
-  attempt(401, '2026-10-14T21:00:00Z', { result_outcome: 'failed', ai_status: 'completed' }), // Sofia: Oct 15 00:00
+  attempt(401, '2026-10-14T21:00:00Z', { result_outcome: 'failed', ai_status: 'completed', groups: [{ id: 501, name: '12А' }, { id: 502, name: '12Б' }] }), // Sofia: Oct 15 00:00
   attempt(402, '2026-10-15T20:59:59Z', { max_attempts: 2, result_outcome: 'passed' }), // Sofia: Oct 15 23:59
   attempt(403, '2026-10-15T21:00:00Z', { active_attempts: 1 }), // Sofia: Oct 16 00:00
   attempt(404, '2026-10-16T10:00:00Z', { assignment_ends_at: '2026-10-17T00:00:00Z' }),
   attempt(405, '2026-10-16T11:00:00Z', { recipient_canceled: true, access_code: null }),
-  attempt(406, '2026-10-16T12:00:00Z', { status: 'pending_review', group_assignment: false }),
+  attempt(406, '2026-10-16T12:00:00Z', { status: 'pending_review', group_assignment: false, groups: [] }),
   attempt(407, null, { status: 'voided', group_assignment: false, result_outcome: 'passed' }),
 ]
 const errors = [], writes = []
@@ -53,6 +53,33 @@ try {
   await page.getByRole('button', { name: 'Проверка', exact: true }).click()
   const table = page.getByRole('table', { name: 'Проверка на опити', exact: true })
   const rows = table.locator('tbody tr'), row = id => rows.filter({ has: page.getByRole('button', { name: `Ученик ${id}`, exact: true }) })
+  await row(401).waitFor()
+  const nameSearch = page.getByLabel('Име на ученик', { exact: true }), groupSearch = page.getByLabel('Група', { exact: true })
+  assert.equal(await row(401).getByText('3 от 10 верни', { exact: true }).count(), 1)
+  assert.equal(await row(401).getByText('30.00%', { exact: true }).count(), 1)
+  assert.equal(await row(406).locator('.ws-grading-score').count(), 0)
+  await nameSearch.fill('  УЧЕНИК   401 ')
+  await page.getByText('1 от 7 опита', { exact: true }).waitFor()
+  await groupSearch.fill('12б')
+  assert.equal(await rows.count(), 1)
+  await row(401).getByText('Групи: 12А, 12Б', { exact: true }).waitFor()
+  await groupSearch.fill('Несъществуваща група')
+  await page.getByText('Няма опити за зададеното търсене.', { exact: true }).waitFor()
+  await nameSearch.fill('');await groupSearch.fill('12б')
+  await page.getByText('3 от 7 опита', { exact: true }).waitFor()
+  await nameSearch.fill('401')
+  await page.getByLabel('Предадени от').fill('2026-10-16');await page.getByLabel('Предадени до').fill('2026-10-16')
+  await page.getByText('0 от 7 опита', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Изчисти филтъра', exact: true }).click()
+  assert.equal(await nameSearch.inputValue(), '');assert.equal(await groupSearch.inputValue(), '')
+  await page.getByText('7 от 7 опита', { exact: true }).waitFor()
+  await nameSearch.fill('401');attempts[0].result_correct_answers = 4;attempts[0].result_percentage = 40
+  await page.getByRole('button', { name: 'Обнови проверките', exact: true }).click()
+  await row(401).getByText('4 от 10 верни', { exact: true }).waitFor()
+  assert.equal(await nameSearch.inputValue(), '401')
+  assert.equal(await row(401).getByText('40.00%', { exact: true }).count(), 1)
+  await page.getByRole('button', { name: 'Изчисти филтъра', exact: true }).click()
+
   await row(407).waitFor()
   assert.equal(await rows.count(), 7)
   assert.equal(await row(401).getAttribute('class'), 'ws-attempt-failed')
@@ -151,7 +178,7 @@ try {
     }
     await page.getByRole('heading', { name: 'Оценка 5 · Успешен', exact: true }).waitFor()
     assert.equal(new URL(page.url()).pathname, '/results/401')
-    await page.getByText('Подробните отговори ще бъдат достъпни след края на разрешения период.', { exact: true }).waitFor()
+    await page.getByText('Учителят не е разрешил преглед на теста и отговорите за този опит.', { exact: true }).waitFor()
     await learner.close()
   }
   assert.deepEqual(errors, [])

@@ -20,11 +20,16 @@ public class GradingRepository {
     }
 
     public List<Map<String, Object>> findTeacherQueue(long organizationId, boolean platform, long userId, long userId2) {
-        return store.rows("SELECT a.id,a.assignment_id,a.attempt_number,a.status,a.expired,a.submitted_at,a.student_id,(SELECT rv.outcome FROM result_revisions rv WHERE rv.organization_id=a.organization_id AND rv.attempt_id=a.id ORDER BY rv.revision_number DESC LIMIT 1) result_outcome,s.access_code,s.ends_at assignment_ends_at,r.max_attempts,r.canceled recipient_canceled,r.source_groups_json,(SELECT COUNT(*) FROM exam_attempts used WHERE used.organization_id=a.organization_id AND used.assignment_id=a.assignment_id AND used.student_id=a.student_id) attempts_used,(SELECT COUNT(*) FROM exam_attempts active WHERE active.organization_id=a.organization_id AND active.assignment_id=a.assignment_id AND active.student_id=a.student_id AND active.status='in_progress') active_attempts,(SELECT n.status FROM notification_outbox n JOIN result_revisions rv ON rv.organization_id=n.organization_id AND rv.id=n.revision_id WHERE rv.organization_id=a.organization_id AND rv.attempt_id=a.id AND n.notification_type='final_result' ORDER BY rv.revision_number DESC LIMIT 1) result_email_status,u.name student_name,v.title,j.status ai_status,j.attempts ai_attempts,j.error_message ai_error FROM exam_attempts a JOIN exam_assignments s ON s.organization_id=a.organization_id AND s.id=a.assignment_id JOIN assessment_versions v ON v.organization_id=s.organization_id AND v.id=s.version_id JOIN users u ON u.id=a.student_id JOIN assignment_recipients r ON r.organization_id=a.organization_id AND r.assignment_id=a.assignment_id AND r.student_id=a.student_id LEFT JOIN workspace_ai_grading_jobs j ON j.organization_id=a.organization_id AND j.attempt_id=a.id WHERE (a.organization_id=? OR ?) AND (s.teacher_id=? OR EXISTS (SELECT 1 FROM assignment_teachers t WHERE t.organization_id=s.organization_id AND t.assignment_id=s.id AND t.teacher_id=?)) AND a.status IN ('pending_review','finalized','voided') ORDER BY a.id DESC", organizationId, platform, userId, userId2);
+        return store.rows("SELECT a.id,a.assignment_id,a.attempt_number,a.status,a.student_review_allowed,a.expired,a.submitted_at,a.student_id,latest.outcome result_outcome,latest.percentage result_percentage,latest.snapshot_json result_snapshot_json,s.access_code,s.ends_at assignment_ends_at,r.max_attempts,r.canceled recipient_canceled,r.source_groups_json,(SELECT COUNT(*) FROM exam_attempts used WHERE used.organization_id=a.organization_id AND used.assignment_id=a.assignment_id AND used.student_id=a.student_id) attempts_used,(SELECT COUNT(*) FROM exam_attempts active WHERE active.organization_id=a.organization_id AND active.assignment_id=a.assignment_id AND active.student_id=a.student_id AND active.status='in_progress') active_attempts,(SELECT n.status FROM notification_outbox n JOIN result_revisions rv ON rv.organization_id=n.organization_id AND rv.id=n.revision_id WHERE rv.organization_id=a.organization_id AND rv.attempt_id=a.id AND n.notification_type='final_result' ORDER BY rv.revision_number DESC LIMIT 1) result_email_status,u.name student_name,v.title,j.status ai_status,j.attempts ai_attempts,j.error_message ai_error FROM exam_attempts a JOIN exam_assignments s ON s.organization_id=a.organization_id AND s.id=a.assignment_id JOIN assessment_versions v ON v.organization_id=s.organization_id AND v.id=s.version_id JOIN users u ON u.id=a.student_id JOIN assignment_recipients r ON r.organization_id=a.organization_id AND r.assignment_id=a.assignment_id AND r.student_id=a.student_id LEFT JOIN workspace_ai_grading_jobs j ON j.organization_id=a.organization_id AND j.attempt_id=a.id LEFT JOIN result_revisions latest ON latest.organization_id=a.organization_id AND latest.attempt_id=a.id AND latest.revision_number=(SELECT MAX(rv.revision_number) FROM result_revisions rv WHERE rv.organization_id=a.organization_id AND rv.attempt_id=a.id) WHERE (a.organization_id=? OR ?) AND (s.teacher_id=? OR EXISTS (SELECT 1 FROM assignment_teachers t WHERE t.organization_id=s.organization_id AND t.assignment_id=s.id AND t.teacher_id=?)) AND a.status IN ('pending_review','finalized','voided') ORDER BY a.id DESC", organizationId, platform, userId, userId2);
     }
 
     public Map<String, Object> requireStudent(long studentId) {
         return store.one("SELECT id,name,email FROM users WHERE id=?", studentId);
+    }
+
+    public List<Map<String,Object>> findQueueGroups(List<Long> groupIds) {
+        String placeholders=String.join(",",Collections.nCopies(groupIds.size(),"?"));
+        return store.rows("SELECT id,name FROM learning_groups WHERE id IN ("+placeholders+")",groupIds.toArray());
     }
 
     public List<Map<String, Object>> findQuestions(long organizationId, long id) {
@@ -67,6 +72,10 @@ public class GradingRepository {
         return store.update("UPDATE exam_attempts SET status='finalized' WHERE organization_id=? AND id=?", organizationId, id);
     }
 
+    public int setStudentReview(long organizationId,long id,boolean allowed) {
+        return store.update("UPDATE exam_attempts SET student_review_allowed=? WHERE organization_id=? AND id=?",allowed,organizationId,id);
+    }
+
     public Map<String, Object> requireOrganizationName(long organizationId) {
         return store.one("SELECT name FROM organizations WHERE id=?", organizationId);
     }
@@ -80,7 +89,7 @@ public class GradingRepository {
     }
 
     public List<Map<String, Object>> findStudentResults(long organizationId, boolean platform, long userId) {
-        return store.rows("SELECT r.id,r.attempt_id,r.revision_number,r.points,r.maximum_points,r.percentage,r.grade,r.outcome,r.published_at,a.assignment_id,a.attempt_number,v.title FROM result_revisions r JOIN exam_attempts a ON a.organization_id=r.organization_id AND a.id=r.attempt_id JOIN exam_assignments s ON s.organization_id=a.organization_id AND s.id=a.assignment_id JOIN assessment_versions v ON v.organization_id=s.organization_id AND v.id=s.version_id WHERE (r.organization_id=? OR ?) AND a.student_id=? AND a.status='finalized' AND r.revision_number=(SELECT MAX(rr.revision_number) FROM result_revisions rr WHERE rr.organization_id=r.organization_id AND rr.attempt_id=r.attempt_id) ORDER BY a.attempt_number DESC,r.published_at DESC", organizationId, platform, userId);
+        return store.rows("SELECT r.id,r.attempt_id,r.revision_number,r.points,r.maximum_points,r.percentage,r.grade,r.outcome,r.published_at,a.assignment_id,a.attempt_number,a.student_review_allowed review_available,v.title FROM result_revisions r JOIN exam_attempts a ON a.organization_id=r.organization_id AND a.id=r.attempt_id JOIN exam_assignments s ON s.organization_id=a.organization_id AND s.id=a.assignment_id JOIN assessment_versions v ON v.organization_id=s.organization_id AND v.id=s.version_id WHERE (r.organization_id=? OR ?) AND a.student_id=? AND a.status='finalized' AND r.revision_number=(SELECT MAX(rr.revision_number) FROM result_revisions rr WHERE rr.organization_id=r.organization_id AND rr.attempt_id=r.attempt_id) ORDER BY a.attempt_number DESC,r.published_at DESC", organizationId, platform, userId);
     }
 
     public Map<String, Object> requireFinalizedStudentAttempt(long organizationId, long id, long userId) {

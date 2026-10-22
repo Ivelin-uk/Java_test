@@ -1,6 +1,7 @@
 package com.quicktest.workspace;
 
 import com.quicktest.workspace.repository.GradingRepository;
+import jakarta.validation.constraints.NotNull;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,9 +21,28 @@ public class GradingService {
         var attempt=repository.findAttempt(scope.organizationId(), id, lock);
         assignments.teacherAccess(scope,number(attempt,"assignment_id"),false);return attempt;
     }
+    @SuppressWarnings("unchecked")
     public List<Map<String,Object>> queue(OrgAccess.Scope scope) {
         var rows=repository.findTeacherQueue(scope.organizationId(), scope.platform(), scope.userId(), scope.userId());
-        for(var row:rows) row.put("group_assignment",json.parse(row.remove("source_groups_json"),Long[].class).length>0);
+        Map<Long,List<Long>> sources=new HashMap<>();Set<Long> groupIds=new LinkedHashSet<>();
+        for(var row:rows) {
+            var groups=Arrays.asList(json.parse(row.remove("source_groups_json"),Long[].class));
+            sources.put(number(row,"id"),groups);groupIds.addAll(groups);row.put("group_assignment",!groups.isEmpty());
+            Object snapshot=row.remove("result_snapshot_json");
+            row.put("result_correct_answers",null);row.put("result_question_count",null);
+            if(snapshot!=null && string(row,"status").equals("finalized")) {
+                // Use the published revision, so an unpublished correction cannot
+                // silently change the result shown in the queue.
+                var questions=(List<Map<String,Object>>)json.object(snapshot).get("questions");
+                long correct=questions.stream().filter(q->q.get("final_points")!=null && decimal(q,"maximum_points").signum()>0 && decimal(q,"final_points").compareTo(decimal(q,"maximum_points"))==0).count();
+                row.put("result_correct_answers",correct);row.put("result_question_count",questions.size());
+            } else row.put("result_percentage",null);
+        }
+        Map<Long,Map<String,Object>> groupsById=new HashMap<>();
+        if(!groupIds.isEmpty()) for(var group:repository.findQueueGroups(new ArrayList<>(groupIds))) groupsById.put(number(group,"id"),group);
+        for(var row:rows) row.put("groups",sources.get(number(row,"id")).stream()
+                .map(id->groupsById.getOrDefault(id,Map.of("id",id,"name","Група #"+id)))
+                .sorted(Comparator.comparing(group->string(group,"name"),String.CASE_INSENSITIVE_ORDER)).toList());
         return rows;
     }
     public Map<String,Object> review(OrgAccess.Scope scope,long id) {
@@ -34,6 +54,16 @@ public class GradingService {
         result.put("events",repository.findEvents(scope.organizationId(), id));
         result.put("revisions",repository.findRevisions(scope.organizationId(), id));
         return result;
+    }
+    public record ReviewPermission(@NotNull Boolean allowed) {}
+    @Transactional
+    public void setStudentReview(OrgAccess.Scope scope,long id,ReviewPermission request) {
+        var attempt=teacherAttempt(scope,id,true);
+        if(request.allowed()==null) throw WorkspaceError.validation("Изберете дали ученикът може да преглежда опита.");
+        if(!Set.of("pending_review","finalized").contains(string(attempt,"status"))) throw WorkspaceError.conflict("Прегледът се разрешава само за приключен опит.");
+        if(flag(attempt,"student_review_allowed")==request.allowed()) return;
+        repository.setStudentReview(scope.organizationId(),id,request.allowed());
+        audit.write(scope.organizationId(),scope.userId(),"result.review_permission_changed",id,Map.of("student",number(attempt,"student_id"),"allowed",request.allowed()));
     }
     @Transactional
     public void grade(OrgAccess.Scope scope,long id,GradeRequest request) {
@@ -122,8 +152,33 @@ public class GradingService {
         var attempt=repository.requireFinalizedStudentAttempt(scope.organizationId(), id, scope.userId());
         var revision=repository.requireLatestRevision(scope.organizationId(), id);
         var result=publication(revision);var assignment=repository.requireReleasePolicy(scope.organizationId(), number(attempt,"assignment_id"));
-        if(!flag(assignment,"answers_after_deadline") || !clock.instant().isBefore(time(assignment,"ends_at"))) result.put("details",json.object(revision.get("snapshot_json")));
+        boolean allowed=flag(attempt,"student_review_allowed");
+        result.put("review_available",allowed);
+        if(allowed) {
+            boolean solutionsVisible=!flag(assignment,"answers_after_deadline") || !clock.instant().isBefore(time(assignment,"ends_at"));
+            result.put("details",studentDetails(revision.get("snapshot_json"),solutionsVisible));
+        }
         return result;
+    }
+    @SuppressWarnings("unchecked")
+    private Map<String,Object> studentDetails(Object snapshot,boolean solutionsVisible) {
+        var details=json.object(snapshot);
+        details.put("correctAnswersVisible",solutionsVisible);
+        for(var row:(List<Map<String,Object>>)details.get("questions")) {
+            row.remove("draft_json");row.remove("override_reason");
+            if(solutionsVisible) continue;
+            // The definition contains solutions both on the question and on the
+            // shuffled options. Neither may leak before the assignment deadline.
+            var definition=json.object(row.get("definition_json"));
+            var question=(Map<String,Object>)definition.get("question");
+            question.put("acceptedAnswers",List.of());question.put("criteria","");question.put("explanation","");
+            hideCorrectOptions(question.get("options"));hideCorrectOptions(definition.get("options"));
+            row.put("definition_json",json.write(definition));row.put("teacher_comment",null);
+        }
+        return details;
+    }
+    private void hideCorrectOptions(Object value) {
+        if(value instanceof List<?> options) for(var option:options) ((Map<?,?>)option).remove("correct");
     }
     @Transactional
     public void voidAttempt(OrgAccess.Scope scope,long id,String reason) {

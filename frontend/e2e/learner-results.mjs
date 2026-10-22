@@ -26,7 +26,7 @@ try {
     const attempts = Array.from({ length: 7 }, (_, i) => ({ id: 401 + i, assignment_id: i === 6 ? 302 : 301, title, attempt_number: i === 6 ? 1 : i + 1, status: ['finalized', 'finalized', 'finalized', 'in_progress', 'pending_review', 'voided', 'finalized'][i], submitted_at: i === 3 ? null : new Date(Date.now() - i * 60000).toISOString() })).reverse()
     const result = (id, percentage, grade, revision = 1) => {
       const attempt = attempts.find(a => a.id === id)
-      return { id: id * 10 + revision, attempt_id: id, assignment_id: attempt.assignment_id, title, attempt_number: attempt.attempt_number, revision_number: revision, points: Number(percentage), maximum_points: 100, percentage, grade, outcome: Number(percentage) >= 50 ? 'passed' : 'failed', published_at: new Date().toISOString() }
+      return { review_available: true, id: id * 10 + revision, attempt_id: id, assignment_id: attempt.assignment_id, title, attempt_number: attempt.attempt_number, revision_number: revision, points: Number(percentage), maximum_points: 100, percentage, grade, outcome: Number(percentage) >= 50 ? 'passed' : 'failed', published_at: new Date().toISOString() }
     }
     let results = [result(403, '9.00', '6'), result(401, '100.00', '6'), result(402, '80.00', '3'), result(401, '85.00', '5', 2), result(407, '95.00', '6'), result(406, '100.00', '6'), result(405, '99.00', '6'), result(404, '99.00', '6')]
     let empty = false
@@ -42,7 +42,7 @@ try {
         if (match) {
           const id = Number(match[1]), value = results.filter(r => r.attempt_id === id).sort((a, b) => b.revision_number - a.revision_number)[0]
           previews.push(id)
-          return respond({ ...value, ...(id === 407 ? { details: { gradeOverridden: false, outcomeOverridden: false, questions: [{ id: 501, status: 'answered', final_points: 1, maximum_points: 1, answer_json: JSON.stringify({ optionIds: [], text: 'Обектът е инстанция на клас.' }), definition_json: JSON.stringify({ question: { text: 'Какво е обект?', acceptedAnswers: ['Инстанция на клас.'], criteria: '', explanation: 'Обектите се създават от класове.' }, options: [] }) }] } } : {}) })
+          return respond({ ...value, ...(id === 407 ? { details: { correctAnswersVisible: true, gradeOverridden: false, outcomeOverridden: false, questions: [{ id: 501, status: 'answered', final_points: 1, maximum_points: 1, answer_json: JSON.stringify({ optionIds: [], text: 'Обектът е инстанция на клас.' }), definition_json: JSON.stringify({ question: { text: 'Какво е обект?', acceptedAnswers: ['Инстанция на клас.'], criteria: '', explanation: 'Обектите се създават от класове.' }, options: [] }) }] } } : {}) })
         }
       }
       errors.push(`Unexpected API: ${request.method()} ${path}`)
@@ -146,7 +146,7 @@ try {
       assert(score.x >= box.x && score.x + score.width <= box.x + box.width + 1)
       await page.screenshot({ path: new URL(`learner-results-${viewport.theme}-${viewport.width}.png`, artifacts).pathname, fullPage: true })
       await first.getByRole('button', { name: 'Преглед на резултата', exact: true }).click()
-      await page.getByText('Подробните отговори ще бъдат достъпни след края на разрешения период.', { exact: true }).waitFor()
+      await page.getByText('Учителят не е разрешил преглед на теста и отговорите за този опит.', { exact: true }).waitFor()
       await page.getByRole('button', { name: 'Затвори резултата', exact: true }).click()
       await row(302, 1).getByRole('button', { name: 'Преглед на резултата', exact: true }).click()
       await page.getByText('Обектът е инстанция на клас.', { exact: true }).waitFor()

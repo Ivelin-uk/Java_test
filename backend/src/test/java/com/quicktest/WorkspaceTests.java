@@ -525,6 +525,12 @@ class WorkspaceTests {
         assertThrows(WorkspaceError.class,()->images.download(learning,image,null,session(startRequest())));
         var r=startRequest();var state=start(r);assertEquals(image,number(question(state),"imageId"));assertEquals("image/png",images.download(learning,image,number(state,"id"),session(r)).mime());
         attempts.answer(learning,number(state,"id"),number(question(state),"id"),session(r),new AttemptService.AnswerRequest("image-answer-key",string(question(state),"open_instance"),correct(question(state))));assertThrows(WorkspaceError.class,()->images.download(learning,image,number(state,"id"),session(r)));
+        long id=number(state,"id");grading.finalizeResult(teaching,id,new GradingService.Finalize("image-review-result","",null,null),false);
+        assertThrows(WorkspaceError.class,()->images.download(learning,image,id,new AttemptService.Session(null,null,null)));
+        grading.setStudentReview(teaching,id,new GradingService.ReviewPermission(true));
+        assertEquals("image/png",images.download(learning,image,id,new AttemptService.Session(null,null,null)).mime());
+        grading.setStudentReview(teaching,id,new GradingService.ReviewPermission(false));
+        assertThrows(WorkspaceError.class,()->images.download(learning,image,id,new AttemptService.Session(null,null,null)));
     }
     @Test void approvedRetentionDeletesOldContentButNeverResetsAttemptLimits() {
         var r=startRequest();var state=start(r);long id=number(state,"id");var q=question(state);attempts.answer(learning,id,number(q,"id"),session(r),new AttemptService.AnswerRequest("retention-answer",string(q,"open_instance"),correct(q)));grading.finalizeResult(teaching,id,new GradingService.Finalize("retention-final","","",""),false);
@@ -1198,6 +1204,87 @@ class WorkspaceTests {
         grading.grade(teaching,id,new GradingService.GradeRequest(number(q,"id"),BigDecimal.ZERO,"Correction","Incorrect explanation"));grading.finalizeResult(teaching,id,new GradingService.Finalize("correction-key-123","Corrected review",null,null),true);
         assertEquals(2,db.count("SELECT COUNT(*) FROM result_revisions WHERE attempt_id=?",id));assertEquals(2,db.count("SELECT COUNT(*) FROM notification_outbox WHERE organization_id=?",org));assertFalse(grading.studentResult(learning,id).containsKey("details"));
     }
+    @Test void studentReviewIsHiddenByDefaultEvenAfterDeadlineWhileGradesRemainVisible() throws Exception {
+        var request=startRequest();long id=number(start(request),"id");attempts.submit(learning,id,session(request));
+        grading.finalizeResult(teaching,id,new GradingService.Finalize("review-default-result","",null,null),false);
+        when(clock.instant()).thenReturn(now.plusSeconds(3601));
+        var result=grading.studentResult(learning,id);
+        assertFalse(flag(result,"review_available"));assertFalse(result.containsKey("details"));assertTrue(result.containsKey("grade"));
+        assertFalse(flag(grading.results(learning).getFirst(),"review_available"));
+        mvc.perform(get("/api/v1/results/"+id).header("Authorization",authorization)).andExpect(status().isOk()).andExpect(jsonPath("$.review_available").value(false)).andExpect(jsonPath("$.details").doesNotExist()).andExpect(jsonPath("$.snapshot_json").doesNotExist());
+    }
+    @Test void studentReviewShowsOwnTestButWithholdsAllSolutionsUntilTheirRelease() throws Exception {
+        var request=startRequest();var state=start(request);long id=number(state,"id");var q=question(state);
+        attempts.answer(learning,id,number(q,"id"),session(request),new AttemptService.AnswerRequest("review-own-answer",string(q,"open_instance"),correct(q)));
+        grading.setStudentReview(teaching,id,new GradingService.ReviewPermission(true));
+        assertThrows(WorkspaceError.class,()->grading.studentResult(learning,id));
+        grading.finalizeResult(teaching,id,new GradingService.Finalize("review-visible-result","",null,null),false);
+        var original=db.one("SELECT * FROM result_revisions WHERE attempt_id=?",id);
+        var result=grading.studentResult(learning,id);assertTrue(flag(result,"review_available"));
+        var details=workspaceJson.object(workspaceJson.write(result.get("details")));assertFalse(flag(details,"correctAnswersVisible"));
+        var questions=(List<Map<String,Object>>)details.get("questions");var first=questions.getFirst();
+        assertNotNull(first.get("answer_json"));assertFalse(first.containsKey("draft_json"));assertFalse(first.containsKey("override_reason"));
+        String definition=string(first,"definition_json");assertTrue(definition.contains("Which is correct?"));assertFalse(definition.contains("\"correct\""));assertFalse(definition.contains("Private explanation"));
+        assertTrue(flag(grading.results(learning).getFirst(),"review_available"));
+        when(clock.instant()).thenReturn(now.plusSeconds(3600));
+        String released=workspaceJson.write(grading.studentResult(learning,id).get("details"));
+        assertTrue(released.contains("Private explanation"));assertTrue(released.contains("correctAnswersVisible\":true"));
+        assertEquals(original,db.one("SELECT * FROM result_revisions WHERE attempt_id=?",id));
+        grading.setStudentReview(teaching,id,new GradingService.ReviewPermission(false));
+        assertFalse(grading.studentResult(learning,id).containsKey("details"));assertFalse(flag(grading.results(learning).getFirst(),"review_available"));
+        assertEquals(original,db.one("SELECT * FROM result_revisions WHERE attempt_id=?",id));
+    }
+    @Test void studentReviewPermissionIsPerAttemptAndDoesNotLeakOtherStudentsAnswers() {
+        assignments.accommodate(teaching,assignment,student,new AssignmentService.Accommodation(false,BigDecimal.ONE,2,"Two attempts"));
+        List<Long> ids=new ArrayList<>();
+        for(int n=0;n<2;n++) {
+            var request=startRequest();long id=number(start(request),"id");ids.add(id);attempts.submit(learning,id,session(request));
+            grading.finalizeResult(teaching,id,new GradingService.Finalize("review-attempt-"+n,"",null,null),false);
+        }
+        grading.setStudentReview(teaching,ids.getFirst(),new GradingService.ReviewPermission(true));
+        assertTrue(grading.studentResult(learning,ids.getFirst()).containsKey("details"));assertFalse(grading.studentResult(learning,ids.getLast()).containsKey("details"));
+        var another=enrolledStudent();
+        assertThrows(WorkspaceError.class,()->grading.studentResult(new OrgAccess.Scope(org,another.getId(),Set.of("STUDENT")),ids.getFirst()));
+        assertTrue(grading.results(new OrgAccess.Scope(org,another.getId(),Set.of("STUDENT"))).isEmpty());
+        assertEquals(HttpStatus.NOT_FOUND,assertThrows(WorkspaceError.class,()->grading.studentResult(new OrgAccess.Scope(other,student,Set.of("STUDENT")),ids.getFirst())).getStatusCode());
+    }
+    @Test void studentReviewPermissionRequiresAuthorizedTeacherValidInputAndCompletedAttempt() throws Exception {
+        var request=startRequest();long id=number(start(request),"id");String path="/api/v1/attempts/"+id+"/student-review";
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        mvc.perform(put(path).contentType("application/json").content("{\"allowed\":true}")).andExpect(status().isUnauthorized());
+        mvc.perform(put(path).header("Authorization",authorization).contentType("application/json").content("{\"allowed\":true}")).andExpect(status().isForbidden());
+        for(String body:List.of("{}","{\"allowed\":null}")) mvc.perform(put(path).header("Authorization",bearer).contentType("application/json").content(body)).andExpect(status().isBadRequest());
+        mvc.perform(put(path).header("Authorization",bearer).contentType("application/json").content("{\"allowed\":true}")).andExpect(status().isConflict());
+        attempts.submit(learning,id,session(request));
+        var colleague=user(Role.TEACHER);db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,colleague.getId(),"[\"TEACHER\"]",now);
+        var scope=new OrgAccess.Scope(org,colleague.getId(),Set.of("TEACHER"));
+        assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->grading.setStudentReview(scope,id,new GradingService.ReviewPermission(true))).getStatusCode());
+        assertEquals(HttpStatus.NOT_FOUND,assertThrows(WorkspaceError.class,()->grading.setStudentReview(new OrgAccess.Scope(other,teacher,Set.of("TEACHER")),id,new GradingService.ReviewPermission(true))).getStatusCode());
+        assignments.shareTeacher(teaching,assignment,colleague.getId(),true);
+        grading.setStudentReview(scope,id,new GradingService.ReviewPermission(true));grading.setStudentReview(scope,id,new GradingService.ReviewPermission(true));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND action='result.review_permission_changed'",org));
+        assertTrue(flag((Map<String,Object>)grading.review(teaching,id).get("attempt"),"student_review_allowed"));
+        assertTrue(flag(grading.queue(teaching).getFirst(),"student_review_allowed"));
+        assignments.shareTeacher(teaching,assignment,colleague.getId(),false);
+        assertThrows(WorkspaceError.class,()->grading.setStudentReview(scope,id,new GradingService.ReviewPermission(false)));
+        mvc.perform(put(path).header("Authorization",bearer).contentType("application/json").content("{\"allowed\":false}")).andExpect(status().isOk());
+        grading.voidAttempt(teaching,id,"Review security check");
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->grading.setStudentReview(teaching,id,new GradingService.ReviewPermission(true))).getStatusCode());
+    }
+    @Test void studentReviewWithholdsWrittenAnswerCriteriaAndExplanationsBeforeDeadline() {
+        long test=number(assessments.save(teaching,null,definition(true)),"id"),published=number(assessments.publish(teaching,test),"id");
+        var assigned=assignments.create(teaching,new AssignmentService.AssignmentRequest(published,List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true));assignment=number(assigned,"id");code=string(assigned,"code");
+        var request=startRequest();long id=number(start(request),"id");attempts.submit(learning,id,session(request));
+        var questions=(List<Map<String,Object>>)grading.review(teaching,id).get("questions");
+        for(var question:questions) grading.grade(teaching,id,new GradingService.GradeRequest(number(question,"id"),BigDecimal.ZERO,"Teacher-only explanation",null));
+        grading.finalizeResult(teaching,id,new GradingService.Finalize("review-written-result","",null,null),false);
+        grading.setStudentReview(teaching,id,new GradingService.ReviewPermission(true));
+        String response=workspaceJson.write(grading.studentResult(learning,id));
+        for(String secret:List.of("Private criteria","Private explanation","Teacher-only explanation")) assertFalse(response.contains(secret),secret);
+        assertTrue(response.contains("Explain"));
+        db.update("UPDATE exam_assignments SET answers_after_deadline=FALSE WHERE id=?",assignment);
+        response=workspaceJson.write(grading.studentResult(learning,id));assertTrue(response.contains("Private criteria"));assertTrue(response.contains("Teacher-only explanation"));
+    }
     @Test void gradingHttpRejectsPointsOutsideEachQuestionsMaximum() throws Exception {
         var r=startRequest();var state=start(r);long id=number(state,"id"),qid=number(question(state),"id");attempts.submit(learning,id,session(r));
         String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
@@ -1773,6 +1860,7 @@ class WorkspaceTests {
         var request=startRequest();long id=number(start(request),"id");attempts.submit(learning,id,session(request));
         assertNull(grading.queue(teaching).getFirst().get("result_outcome"));
         grading.finalizeResult(teaching,id,new GradingService.Finalize("queue-failed-key","",null,null),false);
+        var score=grading.queue(teaching).getFirst();assertEquals(0,number(score,"result_correct_answers"));assertEquals(1,number(score,"result_question_count"));assertEquals(0,decimal(score,"result_percentage").compareTo(BigDecimal.ZERO));
         assertEquals("failed",grading.queue(teaching).getFirst().get("result_outcome"));
         grading.finalizeResult(teaching,id,new GradingService.Finalize("queue-passed-correction","Teacher corrected the outcome",null,"passed"),true);
         assertEquals(1,grading.queue(teaching).size());assertEquals("passed",grading.queue(teaching).getFirst().get("result_outcome"));
@@ -1788,10 +1876,39 @@ class WorkspaceTests {
         var row=grading.queue(teaching).stream().filter(value->number(value,"id")==id).findFirst().orElseThrow();
         assertEquals(code,string(row,"access_code"));assertEquals(student,number(row,"student_id"));assertEquals(1,number(row,"attempts_used"));assertEquals(1,number(row,"max_attempts"));assertTrue(flag(row,"group_assignment"));
         assertFalse(row.containsKey("session_hash"));assertFalse(row.containsKey("code_hash"));
+        assertEquals(List.of(Map.of("id",defaultGroup,"name","Default group")),row.get("groups"));
+        assertNull(row.get("result_percentage"));assertNull(row.get("result_correct_answers"));assertNull(row.get("result_question_count"));
+        assertFalse(row.containsKey("result_snapshot_json"));assertFalse(row.containsKey("source_groups_json"));
         mvc.perform(get("/api/v1/grading").header("Authorization",authorization)).andExpect(status().isForbidden());
         String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
         mvc.perform(post("/api/v1/assignments/"+assignment+"/recipients/"+student+"/extra-attempt").header("Authorization",bearer)).andExpect(status().isOk());
         assignments.revoke(teaching,assignment);assertNull(grading.queue(teaching).getFirst().get("access_code"));
+    }
+    @Test void gradingQueueShowsGroupsAndWeightedPublishedScoresWithoutLeakingSnapshots() throws Exception {
+        organizations.updateGroup(teaching,defaultGroup,new OrganizationService.GroupRequest("12А","",""));
+        long secondGroup=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("12Б","","")),"id");organizations.addStudent(teaching,secondGroup,student);
+        var original=definition(false);
+        var written=new AssessmentService.Question("OPEN_ANSWER","Explain the concept","MEDIUM",new BigDecimal("3"),60,List.of(),List.of(),true,true,"Private queue rubric","Private queue explanation");
+        var definition=new AssessmentService.Definition("Weighted test","","","","","bg","bulgarian",new BigDecimal("50"),List.of(original.questions().getFirst(),written));
+        long test=number(assessments.save(teaching,null,definition),"id"),published=number(assessments.publish(teaching,test),"id");
+        var assigned=assignments.create(teaching,new AssignmentService.AssignmentRequest(published,List.of(defaultGroup,secondGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true));assignment=number(assigned,"id");code=string(assigned,"code");
+        var request=startRequest();var state=start(request);long id=number(state,"id");var question=question(state);
+        attempts.answer(learning,id,number(question,"id"),session(request),new AttemptService.AnswerRequest("queue-correct-answer",string(question,"open_instance"),correct(question)));
+        state=attempts.open(learning,id,session(request),new AttemptService.Ready(true,true));question=question(state);long writtenId=number(question,"id");
+        attempts.answer(learning,id,writtenId,session(request),new AttemptService.AnswerRequest("queue-partial-answer",string(question,"open_instance"),new AttemptService.Answer(List.of(),"A partially correct explanation")));
+        grading.grade(teaching,id,new GradingService.GradeRequest(writtenId,new BigDecimal("2"),"",""));
+        grading.finalizeResult(teaching,id,new GradingService.Finalize("queue-weighted-publish","",null,null),false);
+        var row=grading.queue(teaching).stream().filter(value->number(value,"id")==id).findFirst().orElseThrow();
+        assertEquals(List.of(Map.of("id",defaultGroup,"name","12А"),Map.of("id",secondGroup,"name","12Б")),row.get("groups"));
+        assertEquals(1,number(row,"result_correct_answers"));assertEquals(2,number(row,"result_question_count"));assertEquals(0,decimal(row,"result_percentage").compareTo(new BigDecimal("75")));
+        String response=workspaceJson.write(row);
+        for(String secret:List.of("result_snapshot_json","definition_json","source_groups_json","Private queue rubric","A partially correct explanation")) assertFalse(response.contains(secret),secret);
+        grading.grade(teaching,id,new GradingService.GradeRequest(writtenId,new BigDecimal("3"),"","New correction"));
+        row=grading.queue(teaching).stream().filter(value->number(value,"id")==id).findFirst().orElseThrow();assertEquals(1,number(row,"result_correct_answers"));assertEquals(0,decimal(row,"result_percentage").compareTo(new BigDecimal("75")));
+        grading.finalizeResult(teaching,id,new GradingService.Finalize("queue-weighted-correction","Updated points",null,null),true);
+        row=grading.queue(teaching).stream().filter(value->number(value,"id")==id).findFirst().orElseThrow();assertEquals(2,number(row,"result_correct_answers"));assertEquals(0,decimal(row,"result_percentage").compareTo(new BigDecimal("100")));
+        var outsider=new OrgAccess.Scope(org,user(Role.TEACHER).getId(),Set.of("TEACHER"));assertTrue(grading.queue(outsider).isEmpty());
+        organizations.deleteGroup(teaching,secondGroup);assertEquals(2,((List<?>)grading.queue(teaching).stream().filter(value->number(value,"id")==id).findFirst().orElseThrow().get("groups")).size());
     }
     @Test void extraAttemptIsStudentScopedConcurrentIdempotentAndPreservesResults() throws Exception {
         var peer=enrolledStudent();organizations.addStudent(teaching,defaultGroup,peer.getId());assignments.addRecipient(teaching,assignment,peer.getId());

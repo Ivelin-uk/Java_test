@@ -1,6 +1,7 @@
 package com.quicktest.workspace;
 
 import com.quicktest.access.EndpointPolicy;
+import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,6 +16,7 @@ public class GradingController {
     @PostMapping("/attempts/{id}/ai-grading") public Object aiGrade(@PathVariable long id,@RequestBody AiGradingService.Request request) {return ai.enqueue(access.teacher(),id,request,false);}
     @PostMapping("/attempts/{id}/ai-grading/retry") public Object retryAiGrade(@PathVariable long id,@RequestBody AiGradingService.Request request) {return ai.enqueue(access.teacher(),id,request,true);}
     @GetMapping("/attempts/{id}/review") public Object review(@PathVariable long id) {return service.review(access.teacher(),id);}
+    @PutMapping("/attempts/{id}/student-review") public void studentReview(@PathVariable long id,@Valid @RequestBody GradingService.ReviewPermission request) {service.setStudentReview(access.teacher(),id,request);}
     @PatchMapping("/attempts/{id}/grading") public void grade(@PathVariable long id,@RequestBody GradingService.GradeRequest request) {service.grade(access.teacher(),id,request);}
     @PostMapping("/attempts/{id}/finalize") public Object publish(@PathVariable long id,@RequestBody GradingService.Finalize request) {return service.finalizeResult(access.teacher(),id,request,false);}
     @PostMapping("/attempts/{id}/result-revisions") public Object correct(@PathVariable long id,@RequestBody GradingService.Finalize request) {return service.finalizeResult(access.teacher(),id,request,true);}

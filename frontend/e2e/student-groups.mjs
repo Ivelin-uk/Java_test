@@ -18,7 +18,7 @@ const attempts = [
   { id: 402, assignment_id: 304, title: math[0].title, attempt_number: 1, status: 'finalized', submitted_at: time(-0.5) },
   { id: 405, assignment_id: 305, title: biology[3].title, attempt_number: 1, status: 'in_progress', submitted_at: null },
 ]
-const result = (id, assignment_id, attempt_id, title, percentage, grade, outcome) => ({ id, assignment_id, attempt_id, title, percentage, points: percentage, maximum_points: 100, grade, outcome, attempt_number: 1, revision_number: 1, published_at: time(-0.25) })
+const result = (id, assignment_id, attempt_id, title, percentage, grade, outcome) => ({ review_available: true, id, assignment_id, attempt_id, title, percentage, points: percentage, maximum_points: 100, grade, outcome, attempt_number: 1, revision_number: 1, published_at: time(-0.25) })
 const results = [result(501, 301, 401, biology[0].title, 85, '5', 'passed'), result(502, 304, 402, math[0].title, 40, '2', 'failed')]
 const artifacts = new URL('../../.artifacts/', import.meta.url), errors = []
 await mkdir(artifacts, { recursive: true })

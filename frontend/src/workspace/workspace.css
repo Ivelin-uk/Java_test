@@ -214,6 +214,11 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-publication-dialog h2 { margin: 0; }
 .ws-publication-dialog .dialog-actions { margin-top: 8px; }
 .ws-student-text { margin: 0; padding: 16px; background: var(--subtle); font: 500 16px/1.7 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ws-student-review-setting { margin-top: 12px; white-space: normal; }
+.ws-result-options { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.ws-result-options li { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; overflow-wrap: anywhere; }
+.ws-result-options li > span { flex: 1 1 180px; }
+.ws-result-options strong { font-size: 14px; color: var(--success); }
 .ws-review-question { min-width: 0; padding: 24px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .ws-review-question > * { min-width: 0; }
 .ws-review-question p, .ws-review-question h4 { margin: 0; }
@@ -256,6 +261,10 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-grading-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; }
 .ws-grading-filters label { flex: 0 1 210px; min-width: 0; }
 .ws-grading-filters > button { display: inline-flex; align-items: center; gap: 6px; padding: 10px 12px; }
+.ws-grading-groups { display: block; max-width: 220px; margin-top: 6px; color: var(--muted); font-size: 14px; white-space: normal; overflow-wrap: anywhere; }
+.ws-grading-score { display: grid; gap: 6px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ws-grading-score strong { font-size: 14px; }
+.ws-grading-score > span { font-size: 18px; font-weight: 700; }
 .ws-grading-code { display: flex; align-items: center; gap: 7px; }
 .ws-grading-code code { user-select: all; font-size: 15px; font-weight: 700; letter-spacing: .08em; white-space: nowrap; }
 .ws-grading-code .icon-button { width: 30px; height: 30px; min-height: 30px; flex: 0 0 30px; }

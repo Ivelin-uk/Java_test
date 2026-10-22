@@ -16,7 +16,7 @@ const attack = `${prefix}<p style="position:fixed;text-align:center;background:u
 rows.set(202, row(202, { ...definition(attack), title: 'Безопасно показване' }))
 const assignment = { id: 301, title: 'Форматиран тест', starts_at: new Date().toISOString(), ends_at: new Date(Date.now() + 3600000).toISOString(), max_attempts: 2, canceled: false }
 const attempt = { id: 401, assignment_id: 301, title: assignment.title, student_name: student.user.name, attempt_number: 1, status: 'finalized', submitted_at: new Date().toISOString() }
-const result = { id: 701, attempt_id: 401, assignment_id: 301, attempt_number: 1, title: assignment.title, revision_number: 1, points: 1, maximum_points: 1, percentage: 100, grade: '6', outcome: 'passed', published_at: new Date().toISOString() }
+const result = { review_available: true, id: 701, attempt_id: 401, assignment_id: 301, attempt_number: 1, title: assignment.title, revision_number: 1, points: 1, maximum_points: 1, percentage: 100, grade: '6', outcome: 'passed', published_at: new Date().toISOString() }
 const errors = [], mutations = [], externalRequests = []
 let saved
 const reviewQuestion = () => ({ id: 501, status: 'answered', maximum_points: 1, automatic_points: 1, final_points: 1, reviewed: true, answer_json: JSON.stringify({ optionIds: ['a'], text: '' }), definition_json: JSON.stringify({ question: saved.questions[0], options: [{ id: 'a', text: '3', correct: true }, { id: 'b', text: '9', correct: false }] }) })
@@ -41,7 +41,7 @@ async function session(auth) {
       if (Object.hasOwn(data, path)) return respond(data[path])
       if (/^\/api\/v1\/tests\/\d+$/.test(path)) return respond(rows.get(Number(path.split('/').at(-1))))
       if (path === '/api/v1/attempts/401/review') return respond({ attempt, student: student.user, questions: [reviewQuestion()], events: [], revisions: [] })
-      if (path === '/api/v1/results/401') return respond({ ...result, details: { questions: [reviewQuestion()], gradeOverridden: false, outcomeOverridden: false } })
+      if (path === '/api/v1/results/401') return respond({ ...result, details: { correctAnswersVisible: true, questions: [reviewQuestion()], gradeOverridden: false, outcomeOverridden: false } })
       if (path === '/api/v1/attempts/401/state') return respond(examState())
     }
     if (method !== 'GET') mutations.push({ path, method, data: request.postDataJSON() })
