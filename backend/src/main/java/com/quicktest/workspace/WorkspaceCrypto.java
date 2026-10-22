@@ -20,6 +20,7 @@ public class WorkspaceCrypto {
         for (int i = 0; i < 8; i++) value.append(alphabet.charAt(random.nextInt(alphabet.length())));
         return value.toString();
     }
+    public String assessmentNumber() {return Long.toString(random.nextLong(100_000_000_000L,1_000_000_000_000L));}
     public String hash(String value) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
         catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }

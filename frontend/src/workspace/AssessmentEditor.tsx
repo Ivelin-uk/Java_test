@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { Plus, Save, Trash2, Sparkles, ArrowLeft, X, Check, Pencil, ImagePlus } from 'lucide-react'
+import { Plus, Save, Trash2, Sparkles, ArrowLeft, X, Check, Pencil, ImagePlus, Copy, Download } from 'lucide-react'
 import { useAction, useRemote } from './api'
 import type { WorkspaceApi } from './api'
 import type { AiJob, Assessment, Definition, Question, QuestionType } from './types'
@@ -53,6 +53,8 @@ function QuestionPrompt({ api, question: q, textChanged, imageChanged, uploadCha
 export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: number }) {
   const list = useRemote<Assessment[]>(api, '/tests', [])
   const action = useAction()
+  const [importNumber, setImportNumber] = useState('')
+  const importing = useRef(false)
   const [pendingImages, setPendingImages] = useState(0)
   const [addCount, setAddCount] = useState(1)
   const [jobMode, setJobMode] = useState<'new' | 'append'>('new')
@@ -186,6 +188,20 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
       setShowAi(false)
     })
   }
+  async function importTest() {
+    if (importing.current || action.busy || generating) return
+    importing.current = true
+    try {
+      await action.run(async () => {
+        const number = importNumber.trim()
+        if (!/^[1-9][0-9]{11}$/.test(number)) throw new Error('Номерът на теста трябва да съдържа 12 цифри.')
+        const copy = await api.post<Assessment>('/tests/import', { number })
+        await list.reload()
+        setImportNumber('')
+        setPreview({ assessment: copy, definition: JSON.parse(copy.definition_json) as Definition })
+      }, 'Тестът е добавен в твоята библиотека.')
+    } finally { importing.current = false }
+  }
   function editTest(test: Assessment) {
     void action.run(async () => {
       const row = await api.get<Assessment>(`/tests/${test.id}`)
@@ -234,7 +250,12 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
     </SectionHead>
     <Feedback error={action.error || list.error || pollError} message={action.message} busy={action.busy || list.loading} />
     {!draft ? <>
-      <div className="ws-table-wrap"><table className="ws-table" aria-label="Тестове"><thead><tr><th>Тест</th><th>Въпроси</th><th>Време</th><th>Променен</th><th>Действия</th></tr></thead><tbody>{list.data.map(test => <tr key={test.id} aria-selected={preview?.assessment.id === test.id} className={`ws-selectable-row${preview?.assessment.id === test.id ? ' ws-selected-row' : ''}`} tabIndex={0} aria-disabled={action.busy} onClick={e => { if (!(e.target as HTMLElement).closest('button, a, input, select, textarea')) selectTest(test) }} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectTest(test) } }}><td><button className="ws-text-button" aria-pressed={preview?.assessment.id === test.id} disabled={action.busy} onClick={() => selectTest(test)}>{test.title}</button></td><td>{test.question_count}</td><td>{formatDuration(test.total_time_seconds)}</td><td>{date(test.updated_at)}</td><td><div className="ws-actions">{test.owner_id === userId && <button className="icon-button" title="Редактирай теста" disabled={action.busy || generating} onClick={() => editTest(test)}><Pencil size={17} /></button>}<button className="icon-button danger" title="Изтрий теста" disabled={action.busy} onClick={() => setPendingDelete(test)}><Trash2 size={17} /></button></div></td></tr>)}</tbody></table></div>{!list.data.length && !list.loading && <Empty />}
+      <form className="ws-test-import" aria-label="Добавяне на тест по номер" noValidate onSubmit={event => { event.preventDefault(); void importTest() }}>
+        <label>Номер на тест<input type="text" inputMode="numeric" autoComplete="off" maxLength={32} placeholder="12-цифрен номер" value={importNumber} disabled={action.busy || generating} onChange={event => { setImportNumber(event.target.value); action.clearFeedback() }} /></label>
+        <button type="submit" className="command-button" disabled={action.busy || generating || !importNumber.trim()}><Download size={17} /> Добави по номер</button>
+        <p className="ws-muted">Въведи номера, споделен от друг учител, за да получиш собствено копие. Сподели номера на твой тест по същия начин.</p>
+      </form>
+      <div className="ws-table-wrap"><table className="ws-table" aria-label="Тестове"><thead><tr><th>Тест</th><th>Номер</th><th>Въпроси</th><th>Време</th><th>Променен</th><th>Действия</th></tr></thead><tbody>{list.data.map(test => <tr key={test.id} aria-selected={preview?.assessment.id === test.id} className={`ws-selectable-row${preview?.assessment.id === test.id ? ' ws-selected-row' : ''}`} tabIndex={0} aria-disabled={action.busy} onClick={e => { if (!(e.target as HTMLElement).closest('button, a, input, select, textarea')) selectTest(test) }} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectTest(test) } }}><td><button className="ws-text-button" aria-pressed={preview?.assessment.id === test.id} disabled={action.busy} onClick={() => selectTest(test)}>{test.title}</button></td><td>{test.public_number ? <div className="ws-test-number"><code>{test.public_number}</code><button type="button" className="icon-button" title="Копирай номера на теста" aria-label={`Копирай номера на тест ${test.title}`} disabled={action.busy} onClick={() => void action.run(() => navigator.clipboard.writeText(test.public_number!), 'Номерът е копиран.')}><Copy size={16} /></button></div> : '—'}</td><td>{test.question_count}</td><td>{formatDuration(test.total_time_seconds)}</td><td>{date(test.updated_at)}</td><td><div className="ws-actions">{test.owner_id === userId && <button className="icon-button" title="Редактирай теста" disabled={action.busy || generating} onClick={() => editTest(test)}><Pencil size={17} /></button>}<button className="icon-button danger" title="Изтрий теста" disabled={action.busy} onClick={() => setPendingDelete(test)}><Trash2 size={17} /></button></div></td></tr>)}</tbody></table></div>{!list.data.length && !list.loading && <Empty />}
       {preview && <section ref={previewRef} className="ws-test-preview" aria-label="Избран тест">
         <SectionHead title={preview.assessment.title}>{preview.assessment.owner_id === userId && <button className="command-button" disabled={action.busy || generating} onClick={() => { setCurrent(preview.assessment); setDraft(preview.definition); setShowAppendAi(false) }}><Pencil size={17} /> Редактирай теста</button>}</SectionHead>
         {preview.definition.description && <p>{preview.definition.description}</p>}

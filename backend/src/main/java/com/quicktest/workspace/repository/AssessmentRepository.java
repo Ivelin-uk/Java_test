@@ -15,15 +15,35 @@ public class AssessmentRepository {
     }
 
     public List<Map<String, Object>> findVisibleTests(long organizationId, boolean platform, long userId, long userId2) {
-        return store.rows("SELECT a.id,a.title,a.status,a.shared,a.owner_id,a.updated_at,a.definition_json FROM workspace_assessments a WHERE (a.organization_id=? OR ?) AND (a.owner_id=? OR a.shared=TRUE) AND a.status<>'archived' AND NOT EXISTS (SELECT 1 FROM assessment_library_removals r WHERE r.assessment_id=a.id AND r.user_id=?) ORDER BY a.updated_at DESC", organizationId, platform, userId, userId2);
+        return store.rows("SELECT a.id,a.public_number,a.title,a.status,a.shared,a.owner_id,a.updated_at,a.definition_json FROM workspace_assessments a WHERE (a.organization_id=? OR ?) AND (a.owner_id=? OR a.shared=TRUE) AND a.status<>'archived' AND NOT EXISTS (SELECT 1 FROM assessment_library_removals r WHERE r.assessment_id=a.id AND r.user_id=?) ORDER BY a.updated_at DESC", organizationId, platform, userId, userId2);
     }
 
     public Map<String, Object> requireTest(long organizationId, long id) {
         return store.one("SELECT * FROM workspace_assessments WHERE organization_id=? AND id=?", organizationId, id);
     }
 
-    public long insertTest(long organizationId, long userId, String title, String jsonValue, Instant timestamp) {
-        return store.insert("INSERT INTO workspace_assessments(organization_id,owner_id,title,definition_json,updated_at) VALUES(?,?,?,?,?)", organizationId, userId, title, jsonValue, timestamp);
+    public long insertTest(long organizationId, long userId, String title, String jsonValue,String number, Instant timestamp) {
+        return store.insert("INSERT INTO workspace_assessments(organization_id,owner_id,title,definition_json,public_number,updated_at) VALUES(?,?,?,?,?,?)", organizationId, userId, title, jsonValue,number, timestamp);
+    }
+
+    public boolean assessmentNumberExists(String number) {
+        return store.count("SELECT COUNT(*) FROM workspace_assessments WHERE public_number=?",number)>0;
+    }
+
+    public Optional<Map<String,Object>> findImportSource(String number) {
+        return store.optional("SELECT a.id,a.organization_id,a.owner_id,v.id version_id,v.definition_json FROM workspace_assessments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.assessment_id=a.id JOIN organizations o ON o.id=a.organization_id JOIN memberships m ON m.organization_id=a.organization_id AND m.user_id=a.owner_id JOIN users u ON u.id=a.owner_id WHERE a.public_number=? AND a.status<>'archived' AND o.status='active' AND m.status='active' AND m.roles_json LIKE '%TEACHER%' AND u.active=TRUE AND u.role='TEACHER' ORDER BY v.version_number DESC LIMIT 1",number);
+    }
+
+    public Optional<Map<String,Object>> findImportedTest(long org,long user,long source) {
+        return store.optional("SELECT a.id FROM assessment_imports i JOIN workspace_assessments a ON a.organization_id=i.organization_id AND a.id=i.assessment_id WHERE i.organization_id=? AND i.user_id=? AND i.source_id=? AND a.owner_id=? AND a.status<>'archived'",org,user,source,user);
+    }
+
+    public int deleteImportLink(long org,long user,long source) {
+        return store.update("DELETE FROM assessment_imports WHERE organization_id=? AND user_id=? AND source_id=?",org,user,source);
+    }
+
+    public int recordImport(long org,long user,long source,long target) {
+        return store.update("INSERT INTO assessment_imports(organization_id,user_id,source_id,assessment_id) VALUES(?,?,?,?)",org,user,source,target);
     }
 
     public int updateDraft(String title, String jsonValue, Instant timestamp, long organizationId, Long id) {

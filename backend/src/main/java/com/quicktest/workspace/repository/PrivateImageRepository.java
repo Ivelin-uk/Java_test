@@ -22,6 +22,10 @@ public class PrivateImageRepository {
         return store.count("SELECT COALESCE(SUM(byte_size),0) FROM private_images WHERE organization_id=?", organizationId);
     }
 
+    public Map<String,Object> requireCopyMetadata(long id) {
+        return store.one("SELECT id,organization_id,purpose,mime_type,byte_size,width,height FROM private_images WHERE id=?",id);
+    }
+
     public long insertImage(long organizationId, long userId, String purpose, String value, int value2, int width, int height, byte[] canonical, Instant timestamp) {
         return store.insert("INSERT INTO private_images(organization_id,owner_id,purpose,mime_type,byte_size,width,height,content,created_at) VALUES(?,?,?,?,?,?,?,?,?)", organizationId, userId, purpose, value, value2, width, height, canonical, timestamp);
     }

@@ -44,6 +44,7 @@ class WorkspaceTests {
     @Autowired AuthService auth;
     @Autowired OrganizationService organizations;
     @Autowired AssessmentService assessments;
+    @Autowired AssessmentImportService assessmentImports;
     @Autowired AssignmentService assignments;
     @Autowired AttemptService attempts;
     @Autowired GradingService grading;
@@ -129,6 +130,96 @@ class WorkspaceTests {
         assertTrue(organizations.groups(learning).stream().noneMatch(group->number(group,"id")==defaultGroup));
         organizations.addStudent(teaching,defaultGroup,student);
         assertEquals(1,number(organizations.groups(learning).getFirst(),"participant_count"));
+    }
+    private OrgAccess.Scope importingTeacher() {
+        var recipient=user(Role.TEACHER);
+        db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",other,recipient.getId(),"[\"TEACHER\"]",now);
+        return new OrgAccess.Scope(other,recipient.getId(),Set.of("TEACHER"));
+    }
+    private long sourceTest() {return number(db.one("SELECT assessment_id FROM assessment_versions WHERE id=?",version),"assessment_id");}
+    private String sourceNumber() {return string(assessments.get(teaching,sourceTest(),true),"public_number");}
+    @Test void assessmentNumbersAreAutomaticUniqueAndStableAcrossSavesAndPublication() {
+        long source=sourceTest();String number=sourceNumber();assertTrue(number.matches("[1-9][0-9]{11}"));
+        assessments.save(teaching,source,definition(true));assessments.publish(teaching,source);
+        assertEquals(number,sourceNumber());
+        assertEquals(number,string(assessments.list(teaching).stream().filter(row->number(row,"id")==source).findFirst().orElseThrow(),"public_number"));
+        var copy=assessments.duplicate(teaching,source);assertNotEquals(number,string(copy,"public_number"));
+        assertTrue(string(copy,"public_number").matches("[1-9][0-9]{11}"));
+    }
+    @Test void importingByNumberCreatesAnOwnedPublishedCopyWithoutChangingSourceAccess() throws Exception {
+        var target=importingTeacher();long source=sourceTest();String number=sourceNumber();
+        var definition=workspaceJson.parse(assessments.get(teaching,source,true).get("definition_json"),AssessmentService.Definition.class);
+        assessments.save(teaching,source,new AssessmentService.Definition("Unpublished changes","","","","","bg","bulgarian",new BigDecimal("50"),definition.questions(),"Private new notes"));
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(target.userId()).orElseThrow().getEmail(),"password123")).token();
+        mvc.perform(get("/api/v1/tests/"+source).header("Authorization",bearer)).andExpect(status().isForbidden());
+        String response=mvc.perform(post("/api/v1/tests/import").header("Authorization",bearer).header("X-Organization-Id",other).contentType("application/json").content(workspaceJson.write(Map.of("number",number)))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var copy=workspaceJson.object(response);long id=number(copy,"id");
+        assertNotEquals(source,id);assertEquals(target.userId(),number(copy,"owner_id"));assertEquals(other,number(copy,"organization_id"));assertEquals("published",string(copy,"status"));assertFalse(flag(copy,"shared"));assertNotEquals(number,string(copy,"public_number"));
+        assertEquals(definition,workspaceJson.parse(copy.get("definition_json"),AssessmentService.Definition.class));
+        assertEquals(1,assessments.versions(target,id).size());
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_assignments WHERE organization_id=?",other));assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE organization_id=?",other));
+        assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->assessments.get(new OrgAccess.Scope(org,target.userId(),Set.of("TEACHER")),source,false)).getStatusCode());
+        assessments.archive(teaching,source);assertEquals("published",string(assessments.get(target,id,true),"status"));
+    }
+    @Test void importingByNumberIsConcurrentIdempotentAndArchivedCopiesCanBeAddedAgain() throws Exception {
+        var target=importingTeacher();var request=new AssessmentImportService.Request(sourceNumber());
+        Set<Long> ids=new HashSet<>();
+        try(var pool=Executors.newFixedThreadPool(4)) {
+            List<Callable<Map<String,Object>>> work=new ArrayList<>();for(int n=0;n<4;n++) work.add(()->assessmentImports.importTest(target,request,"import-concurrent-"+org));
+            for(var result:pool.invokeAll(work)) ids.add(number(result.get(15,TimeUnit.SECONDS),"id"));
+        }
+        assertEquals(1,ids.size());assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_assessments WHERE organization_id=?",other));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND action='assessment.imported_by_number'",other));
+        long first=ids.iterator().next();var before=assessments.get(target,first,true);
+        assertEquals(first,number(assessmentImports.importTest(target,request,"import-again-"+org),"id"));assertEquals(before,assessments.get(target,first,true));
+        assessments.archive(target,first);
+        long next=number(assessmentImports.importTest(target,request,"import-restore-"+org),"id");assertNotEquals(first,next);
+        assertEquals(1,db.count("SELECT COUNT(*) FROM assessment_imports WHERE organization_id=?",other));
+    }
+    @Test void importingByNumberRejectsUnpublishedArchivedSourcesAndGuessing() throws Exception {
+        var target=importingTeacher();String ip="import-missing-"+org;
+        var draft=assessments.save(teaching,null,definition(false));
+        assertThrows(WorkspaceError.class,()->assessmentImports.importTest(target,new AssessmentImportService.Request(string(draft,"public_number")),ip));
+        String number=sourceNumber();assessments.archive(teaching,sourceTest());
+        assertThrows(WorkspaceError.class,()->assessmentImports.importTest(target,new AssessmentImportService.Request(number),ip));
+        for(int n=0;n<3;n++) assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->assessmentImports.importTest(target,new AssessmentImportService.Request("999999999999"),ip)).getStatusCode());
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS,assertThrows(WorkspaceError.class,()->assessmentImports.importTest(target,new AssessmentImportService.Request("999999999999"),ip)).getStatusCode());
+        assertEquals(0,db.count("SELECT COUNT(*) FROM workspace_assessments WHERE organization_id=?",other));
+        mvc.perform(post("/api/v1/tests/import").contentType("application/json").content(workspaceJson.write(Map.of("number",number)))).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/tests/import").header("Authorization",authorization).contentType("application/json").content(workspaceJson.write(Map.of("number",number)))).andExpect(status().isForbidden());
+        assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->assessmentImports.importTest(learning,new AssessmentImportService.Request(number),ip)).getStatusCode());
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(target.userId()).orElseThrow().getEmail(),"password123")).token();
+        for(String body:List.of("{}","{\"number\":null}","{\"number\":\"123\"}")) mvc.perform(post("/api/v1/tests/import").header("Authorization",bearer).contentType("application/json").content(body)).andExpect(status().isBadRequest());
+    }
+    @Test void importingByNumberCopiesImagesOnceIntoTheRecipientsWorkspace() throws Exception {
+        var output=new java.io.ByteArrayOutputStream();javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(2,2,java.awt.image.BufferedImage.TYPE_INT_RGB),"png",output);
+        long image=number(images.upload(teaching,new PrivateImageService.Upload("question",Base64.getEncoder().encodeToString(output.toByteArray()))),"id");
+        var q=definition(false).questions().getFirst();var illustrated=new AssessmentService.Question(q.type(),q.text(),q.difficulty(),q.points(),q.timeSeconds(),q.options(),q.acceptedAnswers(),q.caseInsensitive(),q.collapseWhitespace(),q.criteria(),q.explanation(),image);
+        var definition=new AssessmentService.Definition("Illustrated test","","","","Instructions","bg","bulgarian",new BigDecimal("50"),List.of(illustrated,illustrated));
+        long source=number(assessments.save(teaching,null,definition),"id");assessments.publish(teaching,source);
+        var target=importingTeacher();String number=string(assessments.get(teaching,source,true),"public_number");
+        var copy=assessmentImports.importTest(target,new AssessmentImportService.Request(number),"import-images-"+org);
+        var copied=workspaceJson.parse(copy.get("definition_json"),AssessmentService.Definition.class);long copiedImage=copied.questions().getFirst().imageId();
+        assertNotEquals(image,copiedImage);assertEquals(copiedImage,copied.questions().getLast().imageId());assertEquals(1,db.count("SELECT COUNT(*) FROM private_images WHERE organization_id=?",other));
+        assertEquals("image/png",images.download(target,copiedImage,null,new AttemptService.Session(null,null,null)).mime());
+        assertThrows(WorkspaceError.class,()->images.download(target,image,null,new AttemptService.Session(null,null,null)));
+        assessments.archive(teaching,source);assertEquals("image/png",images.download(target,copiedImage,null,new AttemptService.Session(null,null,null)).mime());
+        long group=number(organizations.createGroup(target,new OrganizationService.GroupRequest("Imported test group","","")),"id");
+        db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",other,student,"[\"STUDENT\"]",now);organizations.addStudent(target,group,student);
+        long importedVersion=number(assessments.versions(target,number(copy,"id")).getFirst(),"id");
+        assertEquals(1,number(assignments.create(target,new AssignmentService.AssignmentRequest(importedVersion,List.of(group),List.of(),now,now.plusSeconds(3600),1,false,false,true)),"recipients"));
+    }
+    @Test void importingByNumberHonorsStorageQuotaAndRollsBackAllCopies() throws Exception {
+        var output=new java.io.ByteArrayOutputStream();javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(2,2,java.awt.image.BufferedImage.TYPE_INT_RGB),"png",output);
+        long image=number(images.upload(teaching,new PrivateImageService.Upload("question",Base64.getEncoder().encodeToString(output.toByteArray()))),"id");
+        var q=definition(false).questions().getFirst();var illustrated=new AssessmentService.Question(q.type(),q.text(),q.difficulty(),q.points(),q.timeSeconds(),q.options(),q.acceptedAnswers(),true,true,q.criteria(),q.explanation(),image);
+        long source=number(assessments.save(teaching,null,new AssessmentService.Definition("Quota source","","","","","bg","bulgarian",new BigDecimal("50"),List.of(illustrated))),"id");assessments.publish(teaching,source);
+        var target=importingTeacher();
+        long plan=db.insert("INSERT INTO organization_plans(name,monthly_eur,yearly_eur,teacher_limit,student_limit,ai_limit,storage_bytes) VALUES(?,0,0,100,100,100,1)","Import quota "+UUID.randomUUID());
+        db.update("UPDATE organization_subscriptions SET plan_id=? WHERE organization_id=?",plan,other);
+        String number=string(assessments.get(teaching,source,true),"public_number");
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->assessmentImports.importTest(target,new AssessmentImportService.Request(number),"import-quota-"+org)).getStatusCode());
+        assertEquals(0,db.count("SELECT COUNT(*) FROM workspace_assessments WHERE organization_id=?",other));assertEquals(0,db.count("SELECT COUNT(*) FROM private_images WHERE organization_id=?",other));assertEquals(0,db.count("SELECT COUNT(*) FROM assessment_imports WHERE organization_id=?",other));
     }
     @Test void assessmentListIncludesQuestionCountAndTotalTime() {
         var saved=assessments.save(teaching,null,definition(true));

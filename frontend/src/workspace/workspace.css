@@ -109,9 +109,9 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-selectable-row { cursor: pointer; }
 .ws-selectable-row[aria-disabled="true"] { cursor: wait; }
 .ws-selectable-row:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
-.ws-table[aria-label="Тестове"] { min-width: 800px; }
-.ws-table[aria-label="Тестове"] th:first-child { width: 40%; }
-.ws-table[aria-label="Тестове"] td:nth-child(2), .ws-table[aria-label="Тестове"] td:nth-child(3), .ws-table[aria-label="Тестове"] td:nth-child(4) { white-space: nowrap; }
+.ws-table-wrap > .ws-table[aria-label="Тестове"] { min-width: 920px; }
+.ws-table[aria-label="Тестове"] th:first-child { width: 32%; }
+.ws-table[aria-label="Тестове"] td:nth-child(2), .ws-table[aria-label="Тестове"] td:nth-child(3), .ws-table[aria-label="Тестове"] td:nth-child(4), .ws-table[aria-label="Тестове"] td:nth-child(5) { white-space: nowrap; }
 .ws-test-delete-dialog { display: none; }
 .ws-test-delete-dialog[open] { display: grid; gap: 16px; }
 .ws-test-preview { display: grid; gap: 16px; border-top: 1px solid var(--border); padding-top: 20px; scroll-margin-top: 16px; }
@@ -262,6 +262,12 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-grading-filters label { flex: 0 1 210px; min-width: 0; }
 .ws-grading-filters > button { display: inline-flex; align-items: center; gap: 6px; padding: 10px 12px; }
 .ws-grading-groups { display: block; max-width: 220px; margin-top: 6px; color: var(--muted); font-size: 14px; white-space: normal; overflow-wrap: anywhere; }
+.ws-test-import { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.ws-test-import > label { flex: 0 1 300px; min-width: 0; }
+.ws-test-import > p { flex-basis: 100%; margin: 0; font-size: 14px; }
+.ws-test-number { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.ws-test-number code { font-size: 14px; user-select: all; }
+.ws-test-number .icon-button { width: 30px; height: 30px; min-height: 30px; flex-shrink: 0; }
 .ws-grading-score { display: grid; gap: 6px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ws-grading-score strong { font-size: 14px; }
 .ws-grading-score > span { font-size: 18px; font-weight: 700; }

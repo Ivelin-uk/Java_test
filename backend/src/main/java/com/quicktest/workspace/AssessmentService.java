@@ -17,7 +17,8 @@ public class AssessmentService {
     private final Clock clock;
     private final PrivateImageService images;
     private final PersonalWorkspace personal;
-    public AssessmentService(AssessmentRepository repository,WorkspaceJson json,WorkspaceAudit audit,Clock clock,PrivateImageService images,PersonalWorkspace personal) {this.repository=repository;this.json=json;this.audit=audit;this.clock=clock;this.images=images;this.personal=personal;}
+    private final WorkspaceCrypto crypto;
+    public AssessmentService(AssessmentRepository repository,WorkspaceJson json,WorkspaceAudit audit,Clock clock,PrivateImageService images,PersonalWorkspace personal,WorkspaceCrypto crypto) {this.repository=repository;this.json=json;this.audit=audit;this.clock=clock;this.images=images;this.personal=personal;this.crypto=crypto;}
     public List<Map<String,Object>> list(OrgAccess.Scope scope) {
         return repository.findVisibleTests(scope.organizationId(), scope.platform(), scope.userId(), scope.userId()).stream().map(row -> {
             Definition definition=json.parse(row.remove("definition_json"),Definition.class);
@@ -38,7 +39,8 @@ public class AssessmentService {
         for(var question:definition.questions()) if(question!=null) images.validateQuestionImage(scope,question.imageId());
         if(id==null) {
             if(scope.platform()) personal.member(scope.organizationId(),scope.userId(),"TEACHER");
-            id=repository.insertTest(scope.organizationId(), scope.userId(), definition.title(), json.write(definition), clock.instant());
+            String number;do {number=crypto.assessmentNumber();} while(repository.assessmentNumberExists(number));
+            id=repository.insertTest(scope.organizationId(), scope.userId(), definition.title(), json.write(definition), number,clock.instant());
         }
         else {
             get(scope,id,true);

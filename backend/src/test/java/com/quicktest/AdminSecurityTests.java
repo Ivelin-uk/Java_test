@@ -653,7 +653,7 @@ class AdminSecurityTests {
     }
 
     private long workspaceAssessment(long organization, long owner) {
-        return insert("INSERT INTO workspace_assessments(organization_id,owner_id,title,definition_json,updated_at) VALUES(?,?,'Fixture','{}',CURRENT_TIMESTAMP)", organization, owner);
+        return insert("INSERT INTO workspace_assessments(organization_id,owner_id,title,definition_json,public_number,updated_at) VALUES(?,?,'Fixture','{}',?,CURRENT_TIMESTAMP)", organization, owner,new com.quicktest.workspace.WorkspaceCrypto().assessmentNumber());
     }
 
     private long workspaceVersion(long organization, long assessment) {

@@ -28,6 +28,10 @@ public class CodeRateLimiter {
     public boolean checkAssignmentLookup(long user,String ip,boolean correct) {
         return checkBuckets(List.of("assignment-code-lookup:user:"+user,"assignment-code-lookup:ip:"+crypto.hash(ip)),correct);
     }
+    @Transactional(propagation=Propagation.REQUIRES_NEW)
+    public boolean checkTestImport(long user,String ip,boolean correct) {
+        return checkBuckets(List.of("test-import:user:"+user,"test-import:ip:"+crypto.hash(ip)),correct);
+    }
     private boolean checkBuckets(List<String> keys,boolean correct) {
         boolean allowed=true;
         for(String key:keys.stream().sorted().toList()) {

@@ -4,6 +4,7 @@ import com.quicktest.workspace.repository.PrivateImageRepository;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 import java.time.Clock;
 import java.util.*;
 import java.io.*;
@@ -38,6 +39,26 @@ public class PrivateImageService {
     public void validateQuestionImage(OrgAccess.Scope scope,Long id) {
         if(id==null) return;var file=repository.requireImageMetadata(scope.organizationId(), scope.platform(), id);
         if(!string(file,"purpose").equals("question") || !teacherCanRead(scope,file)) throw WorkspaceError.forbidden();
+    }
+    // Only the test-import workflow calls this with image IDs from the authorized
+    // published test. No public endpoint accepts arbitrary image IDs for copying.
+    @Transactional(propagation=Propagation.MANDATORY)
+    public Map<Long,Long> copyTestImages(OrgAccess.Scope scope,List<Long> imageIds) {
+        if(!scope.roles().contains("TEACHER")) throw WorkspaceError.forbidden();
+        if(imageIds.isEmpty()) return Map.of();
+        organizations.lockQuota(scope.organizationId());
+        var metadata=imageIds.stream().distinct().map(repository::requireCopyMetadata).toList();
+        if(metadata.stream().anyMatch(file->!string(file,"purpose").equals("question"))) throw WorkspaceError.forbidden();
+        long required=metadata.stream().mapToLong(file->number(file,"byte_size")).sum();
+        if(repository.storageUsed(scope.organizationId())+required>number(organizations.subscription(scope.organizationId()),"storage_bytes")) throw WorkspaceError.conflict("Изчерпан лимит за хранилище.");
+        Map<Long,Long> copies=new LinkedHashMap<>();
+        for(var file:metadata) {
+            byte[] content=repository.requireContent(number(file,"organization_id"),number(file,"id"));
+            long copy=repository.insertImage(scope.organizationId(),scope.userId(),"question",string(file,"mime_type"),content.length,(int)number(file,"width"),(int)number(file,"height"),content,clock.instant());
+            copies.put(number(file,"id"),copy);
+            audit.write(scope.organizationId(),scope.userId(),"image.copied_with_test",copy,Map.of("source",number(file,"id")));
+        }
+        return copies;
     }
     private boolean teacherCanRead(OrgAccess.Scope scope,Map<String,Object> file) {
         if(scope.roles().contains("ORG_ADMIN") || number(file,"owner_id")==scope.userId()) return true;

@@ -12,10 +12,11 @@ import org.springframework.web.bind.annotation.*;
 @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT)
 @PreAuthorize("isAuthenticated()")
 public class AssessmentController {
-    private final OrgAccess access;private final AssessmentService assessments;private final AssignmentService assignments;
-    public AssessmentController(OrgAccess access,AssessmentService assessments,AssignmentService assignments) {this.access=access;this.assessments=assessments;this.assignments=assignments;}
+    private final OrgAccess access;private final AssessmentService assessments;private final AssignmentService assignments;private final AssessmentImportService imports;
+    public AssessmentController(OrgAccess access,AssessmentService assessments,AssignmentService assignments,AssessmentImportService imports) {this.access=access;this.assessments=assessments;this.assignments=assignments;this.imports=imports;}
     @GetMapping("/tests") public Object list() {return assessments.list(access.teacher());}
     @PostMapping("/tests") public Object create(@RequestBody AssessmentService.Definition request) {return assessments.save(access.teacher(),null,request);}
+    @PostMapping("/tests/import") public Object importTest(@Valid @RequestBody AssessmentImportService.Request request) {return imports.importTest(access.teacher(),request,access.remoteAddress());}
     @GetMapping("/tests/{id}") public Object get(@PathVariable long id) {return assessments.get(access.teacher(),id,false);}
     @PutMapping("/tests/{id}") public Object update(@PathVariable long id,@RequestBody AssessmentService.Definition request) {return assessments.save(access.teacher(),id,request);}
     @DeleteMapping("/tests/{id}") public void remove(@PathVariable long id) {assessments.archive(access.teacher(),id);}
