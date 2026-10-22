@@ -43,7 +43,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
   const [start, setStart] = useState(() => localTime(new Date()))
   const [end, setEnd] = useState(() => localTime(new Date(Date.now() + 3600000)))
   const periodError = start && end && new Date(start).getTime() >= new Date(end).getTime() ? 'Крайният срок трябва да е след началото.' : ''
-  const [attempts, setAttempts] = useState(1)
+  const [attempts, setAttempts] = useState<number | ''>(1)
   const [shuffleQ, setShuffleQ] = useState(true)
   const [shuffleA, setShuffleA] = useState(false)
   const [afterDeadline, setAfterDeadline] = useState(true)
@@ -77,7 +77,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
     if (!Number.isFinite(endsAt.getTime())) return invalid('Попълнете крайната дата и час.')
     if (startsAt >= endsAt) return invalid('Крайният срок трябва да е след началото.', 'period')
     if (endsAt.getTime() <= Date.now()) return invalid('Крайният срок трябва да е в бъдещето.')
-    if (!Number.isInteger(attempts) || attempts < 1 || attempts > 20) return invalid('Броят опити трябва да е цяло число от 1 до 20.')
+    if (attempts === '' || !Number.isInteger(attempts) || attempts < 1 || attempts > 20) return invalid('Броят опити трябва да е цяло число от 1 до 20.')
     if (!groupIds.length) return invalid('Изберете поне една група.')
     setFormError(null)
     await action.run(async () => {
@@ -88,7 +88,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
   return <section ref={section} className="ws-section"><SectionHead title="Възлагания" /><Feedback error={(formError?.field === 'period' ? '' : formError?.message) || assignments.error || tests.error || groups.error || action.error || (test && resolved?.testId === test.id ? resolved.error : '')} message={action.message} busy={action.busy || loadingVersion} />
     <form className="ws-assignment-form" aria-label="Възлагане на тест" noValidate onChange={() => setFormError(null)} onSubmit={e => { e.preventDefault(); void assign() }} onReset={e => { e.preventDefault(); resetForm() }}>
       <fieldset className="ws-editor" disabled={action.busy}>
-      <div className="ws-form-grid"><TestPicker key={pickerKey} tests={tests.data.filter(t => t.status !== 'archived')} selected={test} select={value => { setTest(value ? { ...value } : null); setResolved(null); setFormError(null) }} disabled={action.busy || tests.loading} invalid={formError?.field === 'test'} /><label>Начало<input type="datetime-local" name="startsAt" required max={minuteBound(end, -1)} step={60} aria-invalid={!!periodError} aria-describedby={periodError ? periodErrorId : undefined} value={start} onChange={e => setStart(e.target.value)} /></label><label>Краен срок<input type="datetime-local" name="endsAt" required min={minuteBound(start, 1)} step={60} aria-invalid={!!periodError} aria-describedby={periodError ? periodErrorId : undefined} value={end} onChange={e => setEnd(e.target.value)} /></label><label>Опити<input type="number" min={1} max={20} value={attempts} onChange={e => setAttempts(Number(e.target.value))} /></label></div>
+      <div className="ws-form-grid"><TestPicker key={pickerKey} tests={tests.data.filter(t => t.status !== 'archived')} selected={test} select={value => { setTest(value ? { ...value } : null); setResolved(null); setFormError(null) }} disabled={action.busy || tests.loading} invalid={formError?.field === 'test'} /><label>Начало<input type="datetime-local" name="startsAt" required max={minuteBound(end, -1)} step={60} aria-invalid={!!periodError} aria-describedby={periodError ? periodErrorId : undefined} value={start} onChange={e => setStart(e.target.value)} /></label><label>Краен срок<input type="datetime-local" name="endsAt" required min={minuteBound(start, 1)} step={60} aria-invalid={!!periodError} aria-describedby={periodError ? periodErrorId : undefined} value={end} onChange={e => setEnd(e.target.value)} /></label><label>Опити<input type="number" required min={1} max={20} step={1} value={attempts} onChange={e => setAttempts(e.target.value === '' ? '' : Number(e.target.value))} /></label></div>
       {periodError && <p id={periodErrorId} className="error" role="alert">{periodError}</p>}
         <RecipientPicker key={pickerKey} title="Групи" searchLabel="Търси групи" placeholder="Име или дисциплина" emptyMessage="Няма налични групи." options={groups.data.map(group => ({ id: group.id, name: group.name, detail: group.subject }))} selected={groupIds} toggle={id => { setGroupIds(ids => toggle(ids, id)); setFormError(null) }} disabled={action.busy} loading={groups.loading} />
       <div className="ws-actions"><label className="ws-check"><input type="checkbox" checked={shuffleQ} onChange={e => setShuffleQ(e.target.checked)} /> Разбъркай въпросите</label><label className="ws-check"><input type="checkbox" checked={shuffleA} onChange={e => setShuffleA(e.target.checked)} /> Разбъркай опциите</label><label className="ws-check"><input type="checkbox" checked={afterDeadline} onChange={e => setAfterDeadline(e.target.checked)} /> Верни отговори след срока</label></div>
@@ -152,7 +152,7 @@ export function AssignmentParticipants({ api, assignment, endsAt, groupAssignmen
   const [reason, setReason] = useState('')
   const [exempt, setExempt] = useState(false)
   const [multiplier, setMultiplier] = useState(1)
-  const [max, setMax] = useState(1)
+  const [max, setMax] = useState<number | ''>(1)
   const [revokingTeacher, setRevokingTeacher] = useState<{ teacher_id: number; name: string } | null>(null)
   const [changingRecipient, setChangingRecipient] = useState<{ row: MonitorRow; remove: boolean } | null>(null)
   const [now, setNow] = useState(() => Date.now())
@@ -192,7 +192,7 @@ export function AssignmentParticipants({ api, assignment, endsAt, groupAssignmen
     {selected && <form className="ws-inline-form" onSubmit={event => { event.preventDefault(); void action.run(async () => { await api.put(`/assignments/${assignment}/recipients/${selected.student_id}/accommodation`, { fullscreenExempt: exempt, timeMultiplier: multiplier, maxAttempts: max, reason }); setSelected(null); await list.reload() }, 'Изключението е запазено и одитирано.') }}>
       <strong>{selected.name}</strong><label className="ws-check"><input type="checkbox" checked={exempt} onChange={event => setExempt(event.target.checked)} /> Без цял екран</label>
       <label>Множител на времето<input type="number" min={1} max={5} step="0.25" value={multiplier} onChange={event => setMultiplier(Number(event.target.value))} /></label>
-      <label>Опити<input type="number" min={1} max={Math.max(20, selected.max_attempts)} value={max} onChange={event => setMax(Number(event.target.value))} /></label>
+      <label>Опити<input type="number" required min={1} max={Math.max(20, selected.max_attempts)} step={1} value={max} onChange={event => setMax(event.target.value === '' ? '' : Number(event.target.value))} /></label>
       <label>Причина<input required value={reason} onChange={event => setReason(event.target.value)} /></label><button disabled={action.busy}>Запази</button>
     </form>}
     {changingRecipient && <DeleteConfirmationDialog title={changingRecipient.remove ? 'Премахване на възлагане за ученик' : 'Повторно възлагане на ученик'} confirmLabel={changingRecipient.remove ? 'Премахни възлагането' : 'Възложи теста'} confirmIcon={changingRecipient.remove ? Trash2 : RotateCw} description={changingRecipient.remove
