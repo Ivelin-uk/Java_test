@@ -1,9 +1,11 @@
 package com.quicktest.workspace;
 
 import com.quicktest.workspace.repository.AssignmentRepository;
+import jakarta.validation.constraints.NotNull;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -78,7 +80,7 @@ public class AssignmentService {
         }
         return assignments;
     }
-    @Transactional
+    @Transactional(isolation=Isolation.READ_COMMITTED)
     public Map<String,Object> create(OrgAccess.Scope scope,AssignmentRequest request) {
         if(request.groupIds()==null || request.groupIds().isEmpty() || request.groupIds().stream().anyMatch(id->id==null || id<1) || request.studentIds()!=null && !request.studentIds().isEmpty())
             throw WorkspaceError.validation("Тестът може да се възлага само на групи. Изберете поне една група.");
@@ -87,21 +89,45 @@ public class AssignmentService {
         var version=repository.requireAssignableVersion(scope.organizationId(), request.versionId());
         if(!flag(version,"shared") && number(version,"owner_id")!=scope.userId() || string(version,"status").equals("archived")) throw WorkspaceError.forbidden();
         if(scope.platform()) organizations.requireActiveMember(scope,scope.userId(),"TEACHER");
+        // READ_COMMITTED plus ordered group locks makes a concurrent join visible
+        // after waiting; an earlier version lookup must not freeze the member snapshot.
+        Map<Long,Long> assignedGroups=new LinkedHashMap<>();
+        for(Long group:new TreeSet<>(request.groupIds())) assignedGroups.put(group,number(organizations.lockAssignmentGroup(scope,group),"organization_id"));
         Map<Long,Set<Long>> recipients=new LinkedHashMap<>();
-        for(Long group:new LinkedHashSet<>(request.groupIds())) {
-            long groupWorkspace=number(organizations.groupAccess(scope,group),"organization_id");
+        for(var entry:assignedGroups.entrySet()) {
+            Long group=entry.getKey();long groupWorkspace=entry.getValue();
             var members=repository.findActiveGroupStudents(groupWorkspace, group);
             if(members.isEmpty()) throw WorkspaceError.validation("Групата няма активни ученици.");
             for(var member:members) {long user=number(member,"user_id");organizations.requireActiveMember(scope,user,"STUDENT");recipients.computeIfAbsent(user,key->new LinkedHashSet<>()).add(group);}
         }
         if(recipients.isEmpty()) throw WorkspaceError.validation("Изберете поне един получател.");
         long id=repository.insertAssignment(scope.organizationId(), request.versionId(), scope.userId(), request.startsAt(), request.endsAt(), request.maxAttempts(), request.shuffleQuestions(), request.shuffleOptions(), request.answersAfterDeadline(), clock.instant());
+        for(var entry:assignedGroups.entrySet()) repository.insertAssignmentGroup(scope.organizationId(),id,entry.getValue(),entry.getKey());
         for(var recipient:recipients.entrySet()) repository.insertRecipient(scope.organizationId(), id, recipient.getKey(), json.write(recipient.getValue()), request.maxAttempts());
         String code=crypto.code();repository.saveCode(codeHash(scope.organizationId(),id,code), code, id, scope.organizationId());
         audit.write(scope.organizationId(),scope.userId(),"assignment.created",id,Map.of("recipients",recipients.size(),"version",request.versionId()));
         return Map.of("id",id,"code",code,"recipients",recipients.size());
     }
     public String codeHash(long org,long assignment,String code) {return crypto.hash(org+":"+assignment+":"+code.strip().toUpperCase(Locale.ROOT));}
+    public record ScheduleRequest(@NotNull Instant startsAt,@NotNull Instant endsAt) {}
+    @Transactional
+    public void updateSchedule(OrgAccess.Scope scope,long id,ScheduleRequest request) {
+        teacherAccess(scope,id,false);
+        if(request.startsAt()==null || request.endsAt()==null || !request.startsAt().isBefore(request.endsAt()))
+            throw WorkspaceError.validation("Крайният срок трябва да е след началото.");
+        if(!clock.instant().isBefore(request.endsAt())) throw WorkspaceError.validation("Крайният срок трябва да е в бъдещето.");
+        // Serialize with exam start using recipient -> assignment -> attempt lock order.
+        repository.lockRecipientIds(scope.organizationId(),id);
+        var assignment=teacherAccess(scope,id,true);
+        Instant previousStart=time(assignment,"starts_at"),previousEnd=time(assignment,"ends_at");
+        if(previousStart.equals(request.startsAt()) && previousEnd.equals(request.endsAt())) return;
+        if(!repository.lockActiveAttempts(scope.organizationId(),id).isEmpty())
+            throw WorkspaceError.conflict("Има активни опити. Изчакайте приключването им, преди да промените датите.");
+        repository.updateSchedule(scope.organizationId(),id,request.startsAt(),request.endsAt());
+        audit.write(scope.organizationId(),scope.userId(),"assignment.schedule_updated",id,Map.of(
+                "previousStartsAt",previousStart.toString(),"previousEndsAt",previousEnd.toString(),
+                "startsAt",request.startsAt().toString(),"endsAt",request.endsAt().toString()));
+    }
     @Transactional
     public Map<String,Object> rotate(OrgAccess.Scope scope,long id) {
         teacherAccess(scope,id,true);String code=crypto.code();

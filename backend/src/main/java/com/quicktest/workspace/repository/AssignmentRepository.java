@@ -19,6 +19,34 @@ public class AssignmentRepository {
         return store.one("SELECT a.*,v.title,v.definition_json FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE a.organization_id=? AND a.id=?"+(lock?" FOR UPDATE":""), organizationId, id);
     }
 
+    public Optional<Map<String,Object>> findAssignmentIfPresent(long organizationId,long id,boolean lock) {
+        return store.optional("SELECT * FROM exam_assignments WHERE organization_id=? AND id=?"+(lock?" FOR UPDATE":""),organizationId,id);
+    }
+
+    public int insertAssignmentGroup(long organizationId,long assignment,long groupOrganization,long group) {
+        return store.update("INSERT INTO assignment_groups(organization_id,assignment_id,group_organization_id,group_id) VALUES(?,?,?,?)",organizationId,assignment,groupOrganization,group);
+    }
+
+    public List<Map<String,Object>> findGroupAssignments(long groupOrganization,long group) {
+        return store.rows("SELECT organization_id,assignment_id FROM assignment_groups WHERE group_organization_id=? AND group_id=? ORDER BY assignment_id",groupOrganization,group);
+    }
+
+    public List<Map<String,Object>> findAssignmentGroups(long organizationId,long assignment) {
+        return store.rows("SELECT group_id FROM assignment_groups WHERE organization_id=? AND assignment_id=? ORDER BY group_id",organizationId,assignment);
+    }
+
+    public int ensureRecipientMembership(long organizationId,long student,String roles,Instant createdAt) {
+        return store.update("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE user_id=user_id",organizationId,student,roles,createdAt);
+    }
+
+    public boolean hasActiveStudentMembership(long organizationId,long student) {
+        return store.count("SELECT COUNT(*) FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.organization_id=? AND m.user_id=? AND m.status='active' AND m.roles_json LIKE '%STUDENT%' AND u.active=TRUE AND u.role='STUDENT'",organizationId,student)>0;
+    }
+
+    public int updateRecipientSources(long organizationId,long assignment,long student,String sources) {
+        return store.update("UPDATE assignment_recipients SET source_groups_json=? WHERE organization_id=? AND assignment_id=? AND student_id=?",sources,organizationId,assignment,student);
+    }
+
     public long countSharedTeacher(long organizationId, long id, long userId) {
         return store.count("SELECT COUNT(*) FROM assignment_teachers WHERE organization_id=? AND assignment_id=? AND teacher_id=?", organizationId, id, userId);
     }
@@ -83,6 +111,14 @@ public class AssignmentRepository {
 
     public List<Map<String, Object>> lockAttemptIds(long organizationId, long id) {
         return store.rows("SELECT id FROM exam_attempts WHERE organization_id=? AND assignment_id=? ORDER BY id FOR UPDATE", organizationId, id);
+    }
+
+    public List<Map<String, Object>> lockActiveAttempts(long organizationId, long id) {
+        return store.rows("SELECT id FROM exam_attempts WHERE organization_id=? AND assignment_id=? AND status='in_progress' ORDER BY id FOR UPDATE", organizationId, id);
+    }
+
+    public int updateSchedule(long organizationId, long id, Instant startsAt, Instant endsAt) {
+        return store.update("UPDATE exam_assignments SET starts_at=?,ends_at=? WHERE organization_id=? AND id=?", startsAt, endsAt, organizationId, id);
     }
 
     public List<Map<String, Object>> lockResultDeliveries(long organizationId, long attemptId) {

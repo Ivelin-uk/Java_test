@@ -32,6 +32,7 @@
     "test:assignment-participants": "node e2e/assignment-participants-pages.mjs",
     "test:dashboard": "node e2e/dashboard-navigation.mjs",
     "test:assignment-dates": "node e2e/assignment-dates.mjs",
+    "test:assignment-schedule": "node e2e/assignment-schedule.mjs",
     "test:assignment-reset": "node e2e/assignment-reset.mjs",
     "test:profile": "node e2e/profile-settings.mjs",
     "test:durations": "node e2e/durations.mjs",

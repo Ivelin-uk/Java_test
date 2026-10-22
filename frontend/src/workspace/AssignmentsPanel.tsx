@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Plus, RotateCw, RotateCcw, Ban, Copy, Mail, KeyRound, UserPlus, Trash2, Users, UserRound, Search } from 'lucide-react'
+import { Plus, RotateCw, RotateCcw, Ban, Copy, Mail, KeyRound, UserPlus, Trash2, Users, UserRound, Search, CalendarDays } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
 import type { Assessment, Assignment, Group, Member, Version } from './types'
@@ -8,13 +8,9 @@ import { Empty, Feedback, SectionHead } from './ui'
 import { TestPicker } from './TestPicker'
 import { RecipientPicker } from './RecipientPicker'
 import { DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
+import { AssignmentScheduleDialog } from './AssignmentScheduleDialog'
+import { localTime, minuteBound } from './assignmentDates'
 
-const localTime = (value: Date) => new Date(value.getTime() - value.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
-const minuteBound = (value: string, offset: number) => {
-  // Calendar limits compare local wall-clock values, not timezone offsets.
-  const time = new Date(value ? `${value}Z` : '').getTime()
-  return Number.isFinite(time) ? new Date(time + offset * 60000).toISOString().slice(0, 16) : undefined
-}
 export function AssignmentsPanel({ api, userId, openParticipants }: { api: WorkspaceApi; userId: number; openParticipants: (assignment: number) => void }) {
   const assignments = useRemote<Assignment[]>(api, '/assignments', [])
   const tests = useRemote<Assessment[]>(api, '/tests', [])
@@ -53,6 +49,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
   const [afterDeadline, setAfterDeadline] = useState(true)
   const [revokingCode, setRevokingCode] = useState<Assignment | null>(null)
   const [deletingAssignment, setDeletingAssignment] = useState<Assignment | null>(null)
+  const [editingSchedule, setEditingSchedule] = useState<Assignment | null>(null)
   const toggle = (ids: number[], value: number) => ids.includes(value) ? ids.filter(id => id !== value) : [...ids, value]
   function resetForm() {
     if (action.busy) return
@@ -112,9 +109,15 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
           <button className="icon-button" title="Копирай кода" aria-label="Копирай кода" disabled={action.busy || !a.access_code} onClick={() => void action.run(() => navigator.clipboard.writeText(a.access_code!), 'Кодът е копиран.')}><Copy size={17} /></button>
           <button className="icon-button" title="Изпрати кода по имейл" aria-label="Изпрати кода по имейл" disabled={action.busy || !a.access_code} onClick={() => void action.run(() => api.post(`/assignments/${a.id}/code/send`, { code: a.access_code, channel: 'email' }), 'Известията са добавени в опашката.')}><Mail size={17} /></button>
         </div></td>
-        <td><div className="ws-actions ws-assignment-actions"><button className="icon-button" title="Участници и наблюдение" aria-label="Участници и наблюдение" onClick={() => openParticipants(a.id)}><Users size={17} /></button><button className="icon-button danger" title="Отмени кода" disabled={action.busy} onClick={() => setRevokingCode(a)}><Ban size={17} /></button>{a.teacher_id === userId && <button className="icon-button danger" title="Изтрий възлагането" aria-label="Изтрий възлагането" disabled={action.busy} onClick={() => setDeletingAssignment(a)}><Trash2 size={17} /></button>}</div></td>
+        <td><div className="ws-actions ws-assignment-actions"><button className="icon-button" title="Промени датите" aria-label={`Промени датите на възлагане №${a.id}`} disabled={action.busy} onClick={() => setEditingSchedule(a)}><CalendarDays size={17} /></button><button className="icon-button" title="Участници и наблюдение" aria-label="Участници и наблюдение" onClick={() => openParticipants(a.id)}><Users size={17} /></button><button className="icon-button danger" title="Отмени кода" disabled={action.busy} onClick={() => setRevokingCode(a)}><Ban size={17} /></button>{a.teacher_id === userId && <button className="icon-button danger" title="Изтрий възлагането" aria-label="Изтрий възлагането" disabled={action.busy} onClick={() => setDeletingAssignment(a)}><Trash2 size={17} /></button>}</div></td>
       </tr>)}</tbody>
     </table></div>{!assignments.data.length && <Empty />}
+    {editingSchedule && <AssignmentScheduleDialog assignment={editingSchedule} onClose={() => setEditingSchedule(null)} onSave={async schedule => {
+      const id = editingSchedule.id
+      await api.put(`/assignments/${id}/schedule`, schedule)
+      assignments.setData(items => items.map(item => item.id === id ? { ...item, starts_at: schedule.startsAt, ends_at: schedule.endsAt } : item))
+      void action.run(assignments.reload, 'Датите на възлагането са запазени.')
+    }} />}
     {deletingAssignment && <DeleteConfirmationDialog title="Изтриване на възлагане" confirmLabel="Изтрий възлагането" description={<>Да изтрием ли възлагането на <strong>{deletingAssignment.title}</strong>? То ще бъде премахнато и за учениците, заедно с всички свързани опити и резултати. Активните опити ще бъдат прекратени. Самият тест остава в библиотеката. Действието е необратимо.</>} onCancel={() => setDeletingAssignment(null)} onConfirm={async () => {
       const id = deletingAssignment.id
       await api.remove(`/assignments/${id}`)

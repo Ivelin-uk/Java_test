@@ -6,6 +6,7 @@ import jakarta.validation.constraints.*;
 import org.apache.commons.csv.CSVFormat;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 
 import java.io.StringReader;
 import java.time.Clock;
@@ -24,9 +25,11 @@ public class OrganizationService {
     private final Clock clock;
     private final PersonalWorkspace personal;
     private final CodeRateLimiter codeLimiter;
+    private final GroupAssignmentService groupAssignments;
 
-    public OrganizationService(OrganizationRepository repository,WorkspaceJson json, WorkspaceCrypto crypto, WorkspaceAudit audit, NotificationService notifications, Clock clock, PersonalWorkspace personal,CodeRateLimiter codeLimiter) {
+    public OrganizationService(OrganizationRepository repository,WorkspaceJson json, WorkspaceCrypto crypto, WorkspaceAudit audit, NotificationService notifications, Clock clock, PersonalWorkspace personal,CodeRateLimiter codeLimiter,GroupAssignmentService groupAssignments) {
         this.repository = repository;this.json=json; this.crypto = crypto; this.audit = audit; this.notifications = notifications; this.clock = clock; this.personal = personal;this.codeLimiter=codeLimiter;
+        this.groupAssignments=groupAssignments;
     }
     public List<Map<String, Object>> organizations(long user) {
         return repository.findOrganizations(user);
@@ -99,7 +102,7 @@ public class OrganizationService {
         // The administrator may copy an invitation; the secret is never stored in audit.
         return Map.of("id",id,"token",token,"email",email,"expires_at",clock.instant().plus(Duration.ofDays(7)).toString());
     }
-    @Transactional
+    @Transactional(isolation=Isolation.READ_COMMITTED)
     public Map<String,Object> accept(long user, String token) {
         var invite = repository.lockInvitation(crypto.hash(token));
         long org = number(invite,"organization_id");
@@ -113,7 +116,7 @@ public class OrganizationService {
         var existing=repository.findMembership(org, user);
         if(existing.isPresent()) repository.activateMembership(json.write(requested), org, user);
         else repository.insertMembership(org, user, json.write(requested), clock.instant());
-        if(invite.get("group_id")!=null) addStudentInternal(org,number(invite,"group_id"),user);
+        if(invite.get("group_id")!=null) addStudentInternal(org,number(invite,"group_id"),user,user);
         audit.write(org,user,"invitation.accepted",number(invite,"id"),Map.of());
         return repository.requireOrganization(org);
     }
@@ -133,6 +136,11 @@ public class OrganizationService {
     public Map<String,Object> groupAccess(OrgAccess.Scope scope,long group) {
         var row=repository.requireGroup(scope.organizationId(), scope.platform(), group);
         if(!scope.roles().contains("ORG_ADMIN") && repository.countGroupTeachers(number(row,"organization_id"), group, scope.userId())==0) throw WorkspaceError.forbidden();
+        return row;
+    }
+    public Map<String,Object> lockAssignmentGroup(OrgAccess.Scope scope,long group) {
+        var row=groupAccess(scope,group);
+        repository.lockGroup(number(row,"organization_id"),group);
         return row;
     }
     public List<Map<String,Object>> groups(OrgAccess.Scope scope) {
@@ -167,7 +175,7 @@ public class OrganizationService {
         audit.write(org,scope.userId(),"group.code_rotated",group,Map.of());
         return Map.of("code",code);
     }
-    @Transactional
+    @Transactional(isolation=Isolation.READ_COMMITTED)
     public Map<String,Object> joinGroup(OrgAccess.Scope scope,String code,String ip) {
         if(!scope.roles().contains("STUDENT")) throw WorkspaceError.forbidden();
         repository.requireActiveProfile(scope.userId(),"STUDENT");
@@ -184,7 +192,7 @@ public class OrganizationService {
         else requireActiveMember(org,scope.userId(),"STUDENT");
         boolean alreadyMember=repository.countActiveGroupMembers(org,id,scope.userId())>0;
         if(!alreadyMember) {
-            repository.upsertGroupMember(org,id,scope.userId());
+            addStudentInternal(org,id,scope.userId(),scope.userId());
             audit.write(org,scope.userId(),"group.student_joined",id,Map.of("student",scope.userId()));
         }
         return Map.of("id",id,"name",string(group,"name"),"alreadyMember",alreadyMember);
@@ -211,14 +219,18 @@ public class OrganizationService {
         groupAccess(scope,group);
         throw WorkspaceError.conflict("Групата има един учител, който не може да бъде премахнат.");
     }
-    @Transactional
+    @Transactional(isolation=Isolation.READ_COMMITTED)
     public void addStudent(OrgAccess.Scope scope,long group,long student) {
-        groupAccess(scope,group); requireActiveMember(scope,student,"STUDENT");
-        addStudentInternal(scope.organizationId(),group,student);
-        audit.write(scope.organizationId(),scope.userId(),"group.student_added",group,Map.of("student",student));
+        var row=groupAccess(scope,group);long org=number(row,"organization_id");
+        requireActiveMember(new OrgAccess.Scope(org,scope.userId(),scope.roles(),scope.platform()),student,"STUDENT");
+        addStudentInternal(org,group,student,scope.userId());
+        audit.write(org,scope.userId(),"group.student_added",group,Map.of("student",student));
     }
-    private void addStudentInternal(long org,long group,long student) {
+    private void addStudentInternal(long org,long group,long student,long actor) {
+        repository.requireActiveProfile(student,"STUDENT");
+        repository.lockGroup(org,group);
         repository.upsertGroupMember(org,group,student);
+        groupAssignments.addMember(org,group,student,actor);
     }
     @Transactional
     public void removeStudent(OrgAccess.Scope scope,long group,long student) {

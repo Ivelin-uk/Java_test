@@ -28,6 +28,7 @@ public class AssessmentController {
     public Object resolveCode(@Valid @RequestBody ResolveCode request) {return assignments.resolveCode(access.student(),request.code(),access.remoteAddress());}
     public record ResolveCode(@NotBlank @Pattern(regexp="[A-Za-z0-9]{8}") String code) {}
     @PostMapping("/assignments") public Object assign(@RequestBody AssignmentService.AssignmentRequest request) {return assignments.create(access.version(request.versionId()),request);}
+    @PutMapping("/assignments/{id}/schedule") public void updateSchedule(@PathVariable long id,@Valid @RequestBody AssignmentService.ScheduleRequest request) {assignments.updateSchedule(access.teacher(),id,request);}
     @DeleteMapping("/assignments/{id}") public void removeAssignment(@PathVariable long id) {assignments.remove(access.teacher(),id);}
     @PostMapping("/assignments/{id}/recipients") public void addRecipient(@PathVariable long id,@RequestBody OrganizationController.UserId request) {assignments.addRecipient(access.teacher(),id,request.userId());}
     @PostMapping("/assignments/{id}/recipients/{user}/extra-attempt") public Object extraAttempt(@PathVariable long id,@PathVariable long user) {return assignments.allowExtraAttempt(access.teacher(),id,user);}

@@ -183,6 +183,8 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-group-search .ws-muted { padding-bottom: 12px; }
 .ws-assignment-form { display: grid; gap: 18px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
 .ws-assignment-form input[type="datetime-local"][aria-invalid="true"] { border-color: var(--danger); }
+.ws-schedule-dialog input[aria-invalid="true"] { border-color: var(--danger); }
+.ws-schedule-dialog .dialog-actions button { white-space: normal; }
 .ws-recipient-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 .ws-recipient-picker { min-width: 0; width: 100%; max-width: 520px; margin: 0; border: 0; display: grid; align-content: start; gap: 8px; padding: 0; }
 .ws-recipient-picker legend { padding: 0; margin-bottom: 8px; font-size: 15px; color: var(--text); }
