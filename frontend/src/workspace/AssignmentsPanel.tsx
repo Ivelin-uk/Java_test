@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Plus, RotateCw, RotateCcw, Ban, Copy, Mail, KeyRound, UserPlus, Trash2, Users, UserRound, Search, CalendarDays } from 'lucide-react'
+import { Plus, RotateCw, RotateCcw, Ban, Copy, Mail, KeyRound, UserPlus, Trash2, Users, UserRound, Search, CalendarDays, X } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
 import type { Assessment, Assignment, Group, Member, Version } from './types'
@@ -10,6 +10,8 @@ import { RecipientPicker } from './RecipientPicker'
 import { DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
 import { AssignmentScheduleDialog } from './AssignmentScheduleDialog'
 import { localTime, minuteBound } from './assignmentDates'
+
+const searchText = (value: string) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('bg')
 
 export function AssignmentsPanel({ api, userId, openParticipants }: { api: WorkspaceApi; userId: number; openParticipants: (assignment: number) => void }) {
   const assignments = useRemote<Assignment[]>(api, '/assignments', [])
@@ -50,6 +52,11 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
   const [revokingCode, setRevokingCode] = useState<Assignment | null>(null)
   const [deletingAssignment, setDeletingAssignment] = useState<Assignment | null>(null)
   const [editingSchedule, setEditingSchedule] = useState<Assignment | null>(null)
+  const [testQuery, setTestQuery] = useState(''), [groupQuery, setGroupQuery] = useState('')
+  const testSearch = searchText(testQuery), groupSearch = searchText(groupQuery)
+  const visibleAssignments = assignments.data.filter(assignment =>
+    (!testSearch || searchText(assignment.title).includes(testSearch))
+    && (!groupSearch || assignment.recipient_groups?.some(group => searchText(group.name).includes(groupSearch))))
   const toggle = (ids: number[], value: number) => ids.includes(value) ? ids.filter(id => id !== value) : [...ids, value]
   function resetForm() {
     if (action.busy) return
@@ -95,9 +102,15 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
       <div className="ws-actions ws-assignment-form-actions"><button type="submit" className="primary command-button" disabled={action.busy || loadingVersion || tests.loading || groups.loading}><Plus size={17} /> Възложи</button><button type="reset" className="icon-button" title="Нулирай формата" aria-label="Нулирай формата" disabled={action.busy}><RotateCcw size={17} /></button></div>
       </fieldset>
     </form>
+    <div className="ws-assignment-filters" role="group" aria-label="Търсене на възлагания">
+      <label>Име на тест<input type="search" placeholder="Търси по име" value={testQuery} onChange={event => setTestQuery(event.target.value)} /></label>
+      <label>Група<input type="search" placeholder="Търси по група" value={groupQuery} onChange={event => setGroupQuery(event.target.value)} /></label>
+      <button type="button" className="command-button" disabled={!testQuery && !groupQuery} onClick={() => { setTestQuery(''); setGroupQuery('') }}><X size={16} /> Изчисти филтъра</button>
+      <span className="ws-summary" role="status">{visibleAssignments.length} от {assignments.data.length} възлагания</span>
+    </div>
     <div className="ws-table-wrap"><table className="ws-table" aria-label="Възлагания">
       <thead><tr><th>Тест</th><th>Начало</th><th>Краен срок</th><th>Възложено на</th><th>Получатели</th><th>Код за достъп</th><th>Действия</th></tr></thead>
-      <tbody>{assignments.data.map(a => <tr key={a.id}>
+      <tbody>{visibleAssignments.map(a => <tr key={a.id}>
         <td><div>{a.title}</div><small className="ws-assignment-reference">Възлагане №{a.id}</small></td><td>{date(a.starts_at)}</td><td>{date(a.ends_at)}</td><td><AssignmentAudience assignment={a} /></td><td><button type="button" className="ws-text-button" title={`Участници във възлагане №${a.id}`} aria-label={`Участници във възлагане №${a.id}`} onClick={() => openParticipants(a.id)}>{a.recipients}</button></td>
         <td><div className="ws-assignment-code">
           <output aria-label={`Код за възлагане №${a.id}`}>{a.access_code || '-'}</output>
@@ -111,7 +124,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
         </div></td>
         <td><div className="ws-actions ws-assignment-actions"><button className="icon-button" title="Промени датите" aria-label={`Промени датите на възлагане №${a.id}`} disabled={action.busy} onClick={() => setEditingSchedule(a)}><CalendarDays size={17} /></button><button className="icon-button" title="Участници и наблюдение" aria-label="Участници и наблюдение" onClick={() => openParticipants(a.id)}><Users size={17} /></button><button className="icon-button danger" title="Отмени кода" disabled={action.busy} onClick={() => setRevokingCode(a)}><Ban size={17} /></button>{a.teacher_id === userId && <button className="icon-button danger" title="Изтрий възлагането" aria-label="Изтрий възлагането" disabled={action.busy} onClick={() => setDeletingAssignment(a)}><Trash2 size={17} /></button>}</div></td>
       </tr>)}</tbody>
-    </table></div>{!assignments.data.length && <Empty />}
+    </table></div>{!visibleAssignments.length && !assignments.loading && !assignments.error && <Empty>{testSearch || groupSearch ? 'Няма възлагания за зададеното търсене.' : 'Няма възлагания.'}</Empty>}
     {editingSchedule && <AssignmentScheduleDialog assignment={editingSchedule} onClose={() => setEditingSchedule(null)} onSave={async schedule => {
       const id = editingSchedule.id
       await api.put(`/assignments/${id}/schedule`, schedule)
