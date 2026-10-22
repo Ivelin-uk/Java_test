@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ExamSession } from './types'
+import { useNotifications } from '../notifications'
+import type { NotificationTone } from '../notifications'
 
 const base = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 export function workspaceClient(token: string) {
@@ -38,16 +40,16 @@ export function useRemote<T>(api: WorkspaceApi, path: string, initial: T) {
   return { data, setData, error, loading, reload }
 }
 export function useAction() {
+  const notify = useNotifications()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
-  function clearFeedback() { if (!busy) { setError(''); setMessage('') } }
-  async function run<T>(work: () => Promise<T>, success = '') {
+  function clearFeedback() { if (!busy) setError('') }
+  async function run<T>(work: () => Promise<T>, success = '', tone: NotificationTone = 'success') {
     if (busy) return
-    setBusy(true); setError(''); setMessage('')
-    try { const result = await work(); setMessage(success); return result }
+    setBusy(true); setError('')
+    try { const result = await work(); if (success) notify(success, tone); return result }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Неуспешно действие.') }
     finally { setBusy(false) }
   }
-  return { busy, error, message, run, clearFeedback }
+  return { busy, error, run, clearFeedback }
 }

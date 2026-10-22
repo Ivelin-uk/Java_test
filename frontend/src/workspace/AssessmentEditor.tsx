@@ -15,6 +15,7 @@ import { DeleteConfirmationButton, DeleteConfirmationDialog } from '../component
 import { AiTestFields } from './AiTestFields'
 import { QuestionReplacementDialog } from './QuestionReplacementDialog'
 import { difficulties, generationPayload, newAiSettings, questionTypes as types, validAiSettings } from './aiSettings'
+import { useNotifications } from '../notifications'
 
 const QuestionTextEditor = lazy(() => import('../components/QuestionTextEditor').then(module => ({ default: module.QuestionTextEditor })))
 
@@ -42,8 +43,8 @@ function QuestionPrompt({ api, question: q, textChanged, imageChanged, uploadCha
   return <div className="ws-question-prompt">
     <Suspense fallback={<p role="status">Зареждане на редактора…</p>}><QuestionTextEditor value={q.text} onChange={textChanged} disabled={disabled} /></Suspense>
     <div className="ws-actions"><button type="button" className="command-button" disabled={upload.busy} onClick={() => fileInput.current?.click()}><ImagePlus size={17} />{q.imageId ? 'Смени снимката' : 'Добави снимка'}</button>
-      <input ref={fileInput} hidden aria-label="Снимка към условието" type="file" accept="image/png,image/jpeg" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void upload.run(async () => { uploadChanged(true); try { const saved = await api.post<{ id: number }>('/files', { purpose: 'question', base64: await imageBase64(file) }); imageChanged(saved.id) } finally { uploadChanged(false) } }) }} />
-      {q.imageId && <DeleteConfirmationButton label="Премахни снимката" icon={X} disabled={upload.busy} title="Премахване на снимка" confirmLabel="Премахни" description="Да премахнем ли снимката от условието на въпроса?" onConfirm={() => imageChanged(null)} />}
+      <input ref={fileInput} hidden aria-label="Снимка към условието" type="file" accept="image/png,image/jpeg" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void upload.run(async () => { uploadChanged(true); try { const saved = await api.post<{ id: number }>('/files', { purpose: 'question', base64: await imageBase64(file) }); imageChanged(saved.id) } finally { uploadChanged(false) } }, 'Изображението е добавено.') }} />
+      {q.imageId && <DeleteConfirmationButton label="Премахни снимката" icon={X} disabled={upload.busy} title="Премахване на снимка" confirmLabel="Премахни" successMessage="Изображението е премахнато от въпроса." description="Да премахнем ли снимката от условието на въпроса?" onConfirm={() => imageChanged(null)} />}
     </div>
     <Feedback error={upload.error} busy={upload.busy} />
     <WorkspaceImage api={api} id={q.imageId} />
@@ -51,6 +52,7 @@ function QuestionPrompt({ api, question: q, textChanged, imageChanged, uploadCha
 }
 
 export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: number }) {
+  const notify = useNotifications()
   const list = useRemote<Assessment[]>(api, '/tests', [])
   const action = useAction()
   const [importNumber, setImportNumber] = useState('')
@@ -176,6 +178,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
       questions: previous.questions.map((q, i) => i === index ? { ...next, points: original.points, timeSeconds: original.timeSeconds } : q),
     } : previous)
     closeReplacement()
+    notify('Въпросът е подменен в черновата.')
   }
   function typeChange(index: number, type: QuestionType) {
     const text = ['SHORT_ANSWER', 'OPEN_ANSWER'].includes(type)
@@ -248,7 +251,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
     <SectionHead title={draft ? draft.title : 'Библиотека с тестове'}>
       {draft ? <><button title="Към библиотеката" className="icon-button" disabled={action.busy || generating || pendingImages > 0 || !!replacement} onClick={() => { setDraft(null); setCurrent(null); setJob(null); setShowAi(false); setShowAppendAi(false) }}><ArrowLeft size={18} /></button><button className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази теста</button></> : <div className="ws-actions"><button className="primary command-button" disabled={!!job && ['queued', 'running'].includes(job.status)} onClick={() => { setCurrent(null); setDraft(blank()); setJob(null); setShowAppendAi(false) }}><Plus size={17} /> Ръчен тест</button><button className="command-button" disabled={action.busy} onClick={() => { setPreview(null); setShowAi(true) }}><Sparkles size={17} /> С AI</button></div>}
     </SectionHead>
-    <Feedback error={action.error || list.error || pollError} message={action.message} busy={action.busy || list.loading} />
+    <Feedback error={action.error || list.error || pollError} busy={action.busy || list.loading} />
     {!draft ? <>
       <form className="ws-test-import" aria-label="Добавяне на тест по номер" noValidate onSubmit={event => { event.preventDefault(); void importTest() }}>
         <label>Номер на тест<input type="text" inputMode="numeric" autoComplete="off" maxLength={32} placeholder="12-цифрен номер" value={importNumber} disabled={action.busy || generating} onChange={event => { setImportNumber(event.target.value); action.clearFeedback() }} /></label>
@@ -304,6 +307,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
     {pendingRemoval && draft && <DeleteConfirmationDialog
       title={pendingRemoval.optionIndex === undefined ? 'Изтриване на въпрос' : 'Премахване на опция'}
       confirmLabel={pendingRemoval.optionIndex === undefined ? 'Изтрий' : 'Премахни'}
+      successMessage={pendingRemoval.optionIndex === undefined ? 'Въпросът е премахнат от черновата.' : 'Опцията е премахната от черновата.'}
       confirmDisabled={action.busy || generating || pendingImages > 0}
       description={pendingRemoval.optionIndex === undefined ? <>Да изтрием ли <strong>въпрос {pendingRemoval.questionIndex + 1}</strong> заедно с отговорите му? {draft.questions[pendingRemoval.questionIndex]?.text}</> : <>Да премахнем ли <strong>опция {pendingRemoval.optionIndex + 1}</strong> от въпрос {pendingRemoval.questionIndex + 1}? {draft.questions[pendingRemoval.questionIndex]?.options[pendingRemoval.optionIndex]?.text}</>}
       onCancel={() => setPendingRemoval(null)}
@@ -313,5 +317,5 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
 }
 
 function TestDeleteDialog({ api, test, owned, close, deleted }: { api: WorkspaceApi; test: Assessment; owned: boolean; close: () => void; deleted: () => Promise<void> }) {
-  return <DeleteConfirmationDialog title="Изтриване на тест" description={owned ? <>Да изтрием ли теста <strong>{test.title}</strong>? Възлаганията и резултатите от проведени изпити ще се запазят.</> : <>Да премахнем ли <strong>{test.title}</strong> от твоята библиотека? Споделеният тест ще остане достъпен за автора и другите учители.</>} onCancel={close} onConfirm={async () => { await api.remove(`/tests/${test.id}`); await deleted() }} />
+  return <DeleteConfirmationDialog title="Изтриване на тест" successMessage={owned ? 'Тестът е изтрит.' : 'Тестът е премахнат от библиотеката.'} description={owned ? <>Да изтрием ли теста <strong>{test.title}</strong>? Възлаганията и резултатите от проведени изпити ще се запазят.</> : <>Да премахнем ли <strong>{test.title}</strong> от твоята библиотека? Споделеният тест ще остане достъпен за автора и другите учители.</>} onCancel={close} onConfirm={async () => { await api.remove(`/tests/${test.id}`); await deleted() }} />
 }

@@ -96,7 +96,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
       await assignments.reload()
     }, 'Възлагането е създадено.')
   }
-  return <section ref={section} className="ws-section"><SectionHead title="Възлагания" /><Feedback error={(formError?.field === 'period' ? '' : formError?.message) || assignments.error || tests.error || groups.error || action.error || (test && resolved?.testId === test.id ? resolved.error : '')} message={action.message} busy={action.busy || loadingVersion} />
+  return <section ref={section} className="ws-section"><SectionHead title="Възлагания" /><Feedback error={(formError?.field === 'period' ? '' : formError?.message) || assignments.error || tests.error || groups.error || action.error || (test && resolved?.testId === test.id ? resolved.error : '')} busy={action.busy || loadingVersion} />
     <form className="ws-assignment-form" aria-label="Възлагане на тест" noValidate onChange={() => setFormError(null)} onSubmit={e => { e.preventDefault(); void assign() }} onReset={e => { e.preventDefault(); resetForm() }}>
       <fieldset className="ws-editor" disabled={action.busy}>
       <div className="ws-form-grid"><TestPicker key={pickerKey} tests={tests.data.filter(t => t.status !== 'archived')} selected={test} select={value => { setTest(value ? { ...value } : null); setResolved(null); setFormError(null) }} disabled={action.busy || tests.loading} invalid={formError?.field === 'test'} /><label>Начало<input type="datetime-local" name="startsAt" required max={minuteBound(end, -1)} step={60} aria-invalid={!!periodError} aria-describedby={periodError ? periodErrorId : undefined} value={start} onChange={e => setStart(e.target.value)} /></label><label>Краен срок<input type="datetime-local" name="endsAt" required min={minuteBound(start, 1)} step={60} aria-invalid={!!periodError} aria-describedby={periodError ? periodErrorId : undefined} value={end} onChange={e => setEnd(e.target.value)} /></label><label>Опити<input type="number" required min={1} max={20} step={1} value={attempts} onChange={e => setAttempts(e.target.value === '' ? '' : Number(e.target.value))} /></label></div>
@@ -140,9 +140,9 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
       const id = deletingAssignment.id
       await api.remove(`/assignments/${id}`)
       assignments.setData(items => items.filter(item => item.id !== id))
-      await action.run(assignments.reload, 'Възлагането е изтрито.')
+      await action.run(assignments.reload, 'Възлагането е изтрито.', 'danger')
     }} />}
-    {revokingCode && <DeleteConfirmationDialog title="Отмяна на код за достъп" confirmLabel="Отмени кода" confirmIcon={Ban} description={<>Да отменим ли кода за <strong>{revokingCode.title}</strong>? Учениците няма да могат да започват нови опити с него.</>} onCancel={() => setRevokingCode(null)} onConfirm={async () => {
+    {revokingCode && <DeleteConfirmationDialog title="Отмяна на код за достъп" confirmLabel="Отмени кода" successMessage="Кодът за достъп е отменен." confirmIcon={Ban} description={<>Да отменим ли кода за <strong>{revokingCode.title}</strong>? Учениците няма да могат да започват нови опити с него.</>} onCancel={() => setRevokingCode(null)} onConfirm={async () => {
       await api.remove(`/assignments/${revokingCode.id}/code`)
       assignments.setData(items => items.map(item => item.id === revokingCode.id ? { ...item, access_code: null } : item))
       await assignments.reload()
@@ -188,9 +188,9 @@ export function AssignmentParticipants({ api, assignment, endsAt, groupAssignmen
   }
   return <section className="ws-monitor">
     <SectionHead title="Участници"><button className="icon-button" title="Обнови" disabled={action.busy} onClick={() => void action.run(refresh)}><RotateCw size={17} /></button></SectionHead>
-    <Feedback error={action.error || list.error || members.error || shared.error || directory.error} message={action.message} busy={action.busy || list.loading || members.loading} />
+    <Feedback error={action.error || list.error || members.error || shared.error || directory.error} busy={action.busy || list.loading || members.loading} />
     <div className="ws-actions">{shared.data.map(teacher => <span key={teacher.teacher_id}>{teacher.name}<button className="icon-button danger" title="Отнеми достъпа до възлагането" disabled={action.busy} onClick={() => setRevokingTeacher(teacher)}><Ban size={15} /></button></span>)}</div>
-    <form className="ws-inline-form" onSubmit={event => { event.preventDefault(); void action.run(async () => { await api.put(`/assignments/${assignment}/teachers/${coTeacher}`, { shared: true }); await shared.reload() }) }}>
+    <form className="ws-inline-form" onSubmit={event => { event.preventDefault(); void action.run(async () => { await api.put(`/assignments/${assignment}/teachers/${coTeacher}`, { shared: true }); await shared.reload() }, 'Достъпът на учителя е добавен.') }}>
       <label>Сподели с учител<select required value={coTeacher} onChange={event => setCoTeacher(event.target.value)}><option value="">Избери</option>{directory.data.filter(member => member.status === 'active' && roles(member).includes('TEACHER')).map(member => <option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select></label>
       <button disabled={action.busy || !coTeacher}><UserPlus size={17} /> Разреши достъп</button>
     </form>
@@ -220,9 +220,9 @@ export function AssignmentParticipants({ api, assignment, endsAt, groupAssignmen
         if (remove) await api.remove(`/assignments/${assignment}/recipients/${row.student_id}`)
         else await api.post(`/assignments/${assignment}/recipients`, { userId: row.student_id })
         if (selected?.student_id === row.student_id) setSelected(null)
-        await action.run(refresh, remove ? 'Възлагането за ученика е премахнато.' : 'Тестът е възложен на ученика.')
+        await action.run(refresh, remove ? 'Възлагането за ученика е премахнато.' : 'Тестът е възложен на ученика.', remove ? 'danger' : 'success')
       }} />}
-    {revokingTeacher && <DeleteConfirmationDialog title="Отнемане на достъп" confirmLabel="Отнеми достъпа" confirmIcon={Ban} description={<>Да отнемем ли достъпа на <strong>{revokingTeacher.name}</strong> до това възлагане?</>} onCancel={() => setRevokingTeacher(null)} onConfirm={async () => {
+    {revokingTeacher && <DeleteConfirmationDialog title="Отнемане на достъп" confirmLabel="Отнеми достъпа" successMessage="Достъпът на учителя е отнет." confirmIcon={Ban} description={<>Да отнемем ли достъпа на <strong>{revokingTeacher.name}</strong> до това възлагане?</>} onCancel={() => setRevokingTeacher(null)} onConfirm={async () => {
       await api.put(`/assignments/${assignment}/teachers/${revokingTeacher.teacher_id}`, { shared: false })
       await shared.reload()
     }} />}

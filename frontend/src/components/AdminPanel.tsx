@@ -4,6 +4,7 @@ import { Users, ShieldCheck, History, UserPlus, UserRoundCog, Pencil, KeyRound, 
 import { api } from '../api/client'
 import { formatDate, roleLabels, subscriptionLabel } from '../api/access'
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog'
+import { useNotifications } from '../notifications'
 import type { AuditEntry, AuthResponse, PasswordResponse, PermissionChange, PermissionRow, Role, User, UserEdit } from '../types/models'
 
 const modes = { ADMIN: 'Само администратор', PUBLIC: 'Публичен вход', PROFILE: 'Собствен профил', MANAGED: '' }
@@ -25,7 +26,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
+  const notify = useNotifications()
   const [editing, setEditing] = useState<{ id: number | null; value: UserEdit } | null>(null)
   const [roleChange, setRoleChange] = useState<{ user: User; role: Role } | null>(null)
   const [confirming, setConfirming] = useState<{ user: User; action: 'reset' | 'toggle' } | null>(null)
@@ -50,7 +51,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
 
   async function perform(work: () => Promise<void>) {
     if (busy) return
-    setBusy(true); setError(''); setMessage('')
+    setBusy(true); setError('')
     try { await work() }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Неуспешно действие.') }
     finally { setBusy(false) }
@@ -59,8 +60,8 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
     event.preventDefault()
     if (!editing) return
     await perform(async () => {
-      if (editing.id === null) { setCredentials(await api.createUser(token, editing.value)); setCopied(false) }
-      else { await api.updateUser(token, editing.id, editing.value); setMessage('Профилът е обновен.') }
+      if (editing.id === null) { setCredentials(await api.createUser(token, editing.value)); setCopied(false); notify('Потребителят е създаден.') }
+      else { await api.updateUser(token, editing.id, editing.value); notify('Профилът е обновен.') }
       setEditing(null)
       await refresh(); await onProfileRefresh()
     })
@@ -68,8 +69,8 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
   async function confirmedAction() {
     if (!confirming) return
     await perform(async () => {
-      if (confirming.action === 'reset') { setCredentials(await api.resetPassword(token, confirming.user.id)); setCopied(false) }
-      else { await api.updateUser(token, confirming.user.id, { ...userEdit(confirming.user), active: !confirming.user.active }); setMessage(confirming.user.active ? 'Потребителят е деактивиран.' : 'Потребителят е активиран.') }
+      if (confirming.action === 'reset') { setCredentials(await api.resetPassword(token, confirming.user.id)); setCopied(false); notify('Временната парола е обновена.') }
+      else { await api.updateUser(token, confirming.user.id, { ...userEdit(confirming.user), active: !confirming.user.active }); notify(confirming.user.active ? 'Потребителят е деактивиран.' : 'Потребителят е активиран.') }
       setConfirming(null); await refresh(); await onProfileRefresh()
     })
   }
@@ -80,18 +81,18 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
       const updated = await api.changeUserRole(token, roleChange.user.id, roleChange.role)
       setUsers(current => current.map(user => user.id === updated.id ? updated : user))
       setRoleChange(null)
-      setMessage(`Ролята на ${updated.name} е сменена на „${roleLabels[updated.role]}“.`)
+      notify(`Ролята на ${updated.name} е сменена на „${roleLabels[updated.role]}“.`)
       if (updated.id === auth.user.id) await onProfileRefresh()
       else await refresh()
     })
   }
   async function deleteUser() {
     if (!deleting || busy || !deletePassword.trim()) return
-    setBusy(true); setError(''); setMessage('')
+    setBusy(true); setError('')
     try {
       await api.deleteUser(token, deleting.id, deletePassword)
       setUsers(current => current.filter(user => user.id !== deleting.id))
-      setMessage(`Потребителят ${deleting.email} и свързаните му данни са изтрити.`)
+      notify(`Потребителят ${deleting.email} и свързаните му данни са изтрити.`, 'danger')
       setDeleting(null); setDeletePassword('')
       try {
         const [nextUsers, nextAudit] = await Promise.all([api.users(token), api.audit(token)])
@@ -121,7 +122,6 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
       <button className="icon-button" title="Обнови" aria-label="Обнови" disabled={busy || dirtyCount > 0} onClick={() => void perform(refresh)}><RefreshCw size={17} /></button>
     </div>
     {loading && <p role="status">Зареждане...</p>}
-    {message && <p className="good" role="status">{message}</p>}
     {error && !editing && !confirming && !roleChange && <p className="error action-error" role="alert">{error}</p>}
 
     {tab === 'users' && <>
@@ -151,7 +151,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
       <div className="filter-bar">
         <label className="search-field"><Search size={17} /><input aria-label="Търси метод" placeholder="Контролер, метод или път" value={query} onChange={event => setQuery(event.target.value)} /></label>
         <select aria-label="Контролер" value={controller} onChange={event => setController(event.target.value)}><option value="">Всички контролери</option>{[...new Set(rows.map(row => row.controller))].map(name => <option key={name}>{name}</option>)}</select>
-        <button className="primary command-button" disabled={busy || !dirtyCount} onClick={() => void perform(async () => { setRows(await api.updatePermissions(token, Object.values(changes))); setChanges({}); setAudit(await api.audit(token)); await onProfileRefresh(); setMessage('Правата са обновени.') })}><Save size={17} /> Запази{dirtyCount > 0 && ` (${dirtyCount})`}</button>
+        <button className="primary command-button" disabled={busy || !dirtyCount} onClick={() => void perform(async () => { setRows(await api.updatePermissions(token, Object.values(changes))); setChanges({}); setAudit(await api.audit(token)); await onProfileRefresh(); notify('Правата са обновени.') })}><Save size={17} /> Запази{dirtyCount > 0 && ` (${dirtyCount})`}</button>
       </div>
       <div className="table-scroll"><table className="data-table permissions-table"><thead><tr><th>Контролер</th><th>Метод / маршрут</th><th>Учител</th><th>Ученик / студент</th><th>Администратор</th></tr></thead><tbody>
         {filteredRows.map(row => <tr key={row.key} className={row.mode !== 'MANAGED' ? 'fixed-policy' : ''}>

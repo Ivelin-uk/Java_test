@@ -73,7 +73,7 @@ try {
     assert.equal(await shuffleA.isChecked(), false)
     assert.equal(await answers.isChecked(), true)
     assert.equal(await page.getByRole('alert').count(), 0)
-    assert.equal(await page.getByText('Възлагането е създадено.', { exact: true }).count(), 0)
+    assert.equal(await form.getByText('Възлагането е създадено.', { exact: true }).count(), 0)
     const times = await form.evaluate(element => ({ start: new Date(element.querySelector('[name="startsAt"]').value).getTime(), end: new Date(element.querySelector('[name="endsAt"]').value).getTime(), now: Date.now() }))
     assert(Math.abs(times.start - times.now) < 60000)
     assert.equal(times.end - times.start, 3600000)

@@ -5,6 +5,7 @@ import { AuthPanel } from './components/AuthPanel'
 import { RoleSelectionPanel } from './components/RoleSelectionPanel'
 import { ExamWorkspace } from './workspace/ExamWorkspace'
 import type { AuthResponse } from './types/models'
+import { NotificationsProvider } from './components/NotificationsProvider'
 
 function App() {
   const [auth, setAuth] = useState<AuthResponse | null>(() => {
@@ -54,10 +55,11 @@ function App() {
     localStorage.removeItem('quicktest.auth'); setAuth(null); setVerified(false); setGoogleError('')
   }
   async function refreshProfile() { if (token) setAuth({ token, user: await api.me(token) }) }
-  if (googlePending) return <main className="app-shell"><p role="status">Влизане с Google...</p></main>
-  if (!auth) return <AuthPanel onAuth={signedIn} googleError={googleError} clearGoogleError={() => setGoogleError('')} />
-  if (!verified) return <main className="app-shell"><p role="status">{error || 'Проверка на сесията...'}</p><button onClick={() => void logout()}>Изход</button></main>
-  if (auth.user.roleSelectionRequired) return <RoleSelectionPanel auth={auth} onAuth={signedIn} logout={logout} />
-  return <>{(error || googleError) && <p className="error" role="alert">{error || googleError}</p>}<ExamWorkspace key={auth.token} auth={auth} onAuth={signedIn} logout={logout} refreshProfile={refreshProfile} /></>
+  const content = googlePending ? <main className="app-shell"><p role="status">Влизане с Google...</p></main>
+    : !auth ? <AuthPanel onAuth={signedIn} googleError={googleError} clearGoogleError={() => setGoogleError('')} />
+    : !verified ? <main className="app-shell"><p role="status">{error || 'Проверка на сесията...'}</p><button onClick={() => void logout()}>Изход</button></main>
+    : auth.user.roleSelectionRequired ? <RoleSelectionPanel auth={auth} onAuth={signedIn} logout={logout} />
+    : <>{(error || googleError) && <p className="error" role="alert">{error || googleError}</p>}<ExamWorkspace key={auth.token} auth={auth} onAuth={signedIn} logout={logout} refreshProfile={refreshProfile} /></>
+  return <NotificationsProvider key={auth?.user.id ?? 'signed-out'}>{content}</NotificationsProvider>
 }
 export default App

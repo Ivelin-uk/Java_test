@@ -8,6 +8,7 @@ import { date, label } from './types'
 import { Empty, Feedback, SectionHead } from './ui'
 import { WorkspaceImage } from './WorkspaceImage'
 import { DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
+import { useNotifications } from '../notifications'
 
 const searchText = (value: string) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('bg')
 
@@ -73,7 +74,7 @@ function GradingRow({ api, attempt: a, now, reload, open, update }: { api: Works
   const submitting = useRef(false)
   const requestKey = useRef(crypto.randomUUID())
   const processing = a.ai_status === 'queued' || a.ai_status === 'running'
-  const [notice, setNotice] = useState('')
+  const notify = useNotifications()
   const remaining = Math.max(0, (a.max_attempts ?? 0) - (a.attempts_used ?? 0))
   const canGrant = !!a.student_id && a.group_assignment && !a.recipient_canceled && !a.active_attempts && remaining === 0 && !!a.assignment_ends_at && new Date(a.assignment_ends_at).getTime() > now
   const pending = a.status === 'pending_review', finalized = a.status === 'finalized'
@@ -95,18 +96,18 @@ function GradingRow({ api, attempt: a, now, reload, open, update }: { api: Works
   async function perform(operation: () => Promise<string>) {
     if (submitting.current) return
     submitting.current = true
-    try { await action.run(async () => { setNotice(''); const message = await operation(); setNotice(message); await reload() }) }
+    try { await action.run(async () => { const message = await operation(); await reload(); notify(message) }) }
     finally { submitting.current = false }
   }
   return <tr className={pending ? 'ws-attempt-pending' : unsuccessful ? 'ws-attempt-failed' : passed ? 'ws-attempt-finalized' : ''}>
-    <td><button className="ws-text-button" onClick={open}>{a.student_name}</button>{!!a.groups?.length && <small className="ws-grading-groups">{a.groups.length === 1 ? 'Група' : 'Групи'}: {a.groups.map(group => group.name).join(', ')}</small>}</td><td>{a.title}</td><td>{a.access_code ? <div className="ws-grading-code"><code>{a.access_code}</code><button type="button" className="icon-button" title="Копирай кода" aria-label="Копирай кода" onClick={() => void action.run(async () => { await navigator.clipboard.writeText(a.access_code!); setNotice('Кодът е копиран.') })}><Copy size={15} /></button></div> : <span className="ws-muted">Няма активен код</span>}</td><td>{a.attempt_number}</td>
+    <td><button className="ws-text-button" onClick={open}>{a.student_name}</button>{!!a.groups?.length && <small className="ws-grading-groups">{a.groups.length === 1 ? 'Група' : 'Групи'}: {a.groups.map(group => group.name).join(', ')}</small>}</td><td>{a.title}</td><td>{a.access_code ? <div className="ws-grading-code"><code>{a.access_code}</code><button type="button" className="icon-button" title="Копирай кода" aria-label="Копирай кода" onClick={() => void action.run(() => navigator.clipboard.writeText(a.access_code!), 'Кодът е копиран.')}><Copy size={15} /></button></div> : <span className="ws-muted">Няма активен код</span>}</td><td>{a.attempt_number}</td>
     <td>{hasScore ? <div className="ws-grading-score"><strong>{a.result_correct_answers} от {a.result_question_count} верни</strong><span>{Number(a.result_percentage).toFixed(2)}%</span></div> : <span className="ws-muted">{pending ? 'Очаква проверка' : '—'}</span>}</td>
     <td><span className="ws-attempt-status"><Icon size={16} className={processing ? 'ws-spin' : ''} aria-hidden="true" />{processing ? (a.ai_status === 'queued' ? 'AI в опашката' : 'AI проверява') : label(a.status)}</span>{(passed || unsuccessful) && <small className="ws-attempt-outcome">{label(a.result_outcome!)}</small>}{a.ai_status === 'completed' && finalized && <small className="ws-ai-graded">AI проверено</small>}</td>
     <td>{date(a.submitted_at)}</td><td><div className="ws-grading-actions">{pending && <button className="command-button" disabled={action.busy || processing || failed && !canRetry} title={failed ? 'Повтори AI проверката и публикувай резултата' : 'AI проверка и автоматично публикуване'} onClick={() => void runAi()}>{processing || action.busy ? <LoaderCircle size={17} className="ws-spin" aria-hidden="true" /> : <Sparkles size={17} aria-hidden="true" />}{failed ? 'Повтори AI' : 'AI проверка'}</button>}<button className="icon-button" title={finalized ? 'Преглед и корекция' : 'Ръчна проверка'} onClick={open}><PencilLine size={17} /></button>{a.group_assignment && <button type="button" className="command-button" title={canGrant ? 'Разреши още един опит на този ученик' : remaining > 0 ? 'Ученикът вече има свободен опит' : 'Нужни са активно групово възлагане, неизтекъл срок и приключили опити'} disabled={action.busy || !canGrant} onClick={() => void perform(async () => { await api.post(`/assignments/${a.assignment_id}/recipients/${a.student_id}/extra-attempt`); return 'Разрешен е още един опит на ученика.' })}><RotateCcw size={17} /> Още един опит</button>}{finalized && <button type="button" className="command-button" disabled={action.busy || a.result_email_status === 'processing'} onClick={() => void perform(async () => {
       const delivery = await api.post<{ status: string; adapter: string }>(`/attempts/${a.id}/result-email`)
       if (delivery.adapter === 'local') return 'Резултатът е в локалната тестова поща. Реален имейл не е изпратен.'
       return delivery.status === 'sent' ? 'Резултатът вече е изпратен към имейл услугата.' : 'Резултатът и линкът за преглед са в опашката за имейл.'
-    })}><Mail size={17} /> Изпрати резултата</button>}</div>{(pending || finalized) && <label className="ws-check ws-student-review-setting"><input type="checkbox" aria-label={`Разреши преглед за ${a.student_name} · Опит ${a.attempt_number}`} checked={!!a.student_review_allowed} disabled={action.busy} onChange={event => { const allowed = event.target.checked; void perform(async () => { await api.put(`/attempts/${a.id}/student-review`, { allowed }); return allowed ? 'Прегледът е разрешен за ученика.' : 'Прегледът е скрит за ученика.' }) }} /> Преглед от ученика</label>}{finalized && a.result_email_status && <small className="ws-muted">Имейл: {({ queued: 'в опашката', processing: 'изпраща се', sent: 'обработен', failed: 'неуспешен', uncertain: 'неясен статус' } as Record<string, string>)[a.result_email_status] ?? a.result_email_status}</small>}<Feedback error={action.error} message={notice} />{failed && pending && <p className="ws-ai-error" role="status">{a.ai_error || 'AI проверката не успя.'}</p>}</td>
+    })}><Mail size={17} /> Изпрати резултата</button>}</div>{(pending || finalized) && <label className="ws-check ws-student-review-setting"><input type="checkbox" aria-label={`Разреши преглед за ${a.student_name} · Опит ${a.attempt_number}`} checked={!!a.student_review_allowed} disabled={action.busy} onChange={event => { const allowed = event.target.checked; void perform(async () => { await api.put(`/attempts/${a.id}/student-review`, { allowed }); return allowed ? 'Прегледът е разрешен за ученика.' : 'Прегледът е скрит за ученика.' }) }} /> Преглед от ученика</label>}{finalized && a.result_email_status && <small className="ws-muted">Имейл: {({ queued: 'в опашката', processing: 'изпраща се', sent: 'обработен', failed: 'неуспешен', uncertain: 'неясен статус' } as Record<string, string>)[a.result_email_status] ?? a.result_email_status}</small>}<Feedback error={action.error} />{failed && pending && <p className="ws-ai-error" role="status">{a.ai_error || 'AI проверката не успя.'}</p>}</td>
   </tr>
 }
 function ReviewPanel({ api, id, back }: { api: WorkspaceApi; id: number; back: () => void }) {
@@ -132,7 +133,7 @@ function ReviewPanel({ api, id, back }: { api: WorkspaceApi; id: number; back: (
   const max = value.questions.reduce((sum, q) => sum + Number(q.maximum_points), 0)
   const pending = value.questions.filter(q => !q.reviewed || q.final_points === null).length
   const correction = value.attempt.status === 'finalized'
-  return <section className="ws-section"><SectionHead title={`Опит #${id} · ${value.student.name}`}><button className="icon-button danger" title="Анулирай опита с причина" disabled={action.busy || value.attempt.status === 'voided'} onClick={() => setVoiding(true)}><Ban size={17} /></button><button className="icon-button" title="Към проверките" onClick={back}><ArrowLeft size={18} /></button></SectionHead><Feedback error={action.error || review.error} message={action.message} busy={action.busy} /><p>{label(value.attempt.status)} · {points} / {max} точки · {pending} непроверени отговора</p>
+  return <section className="ws-section"><SectionHead title={`Опит #${id} · ${value.student.name}`}><button className="icon-button danger" title="Анулирай опита с причина" disabled={action.busy || value.attempt.status === 'voided'} onClick={() => setVoiding(true)}><Ban size={17} /></button><button className="icon-button" title="Към проверките" onClick={back}><ArrowLeft size={18} /></button></SectionHead><Feedback error={action.error || review.error} busy={action.busy} /><p>{label(value.attempt.status)} · {points} / {max} точки · {pending} непроверени отговора</p>
     {['pending_review', 'finalized'].includes(value.attempt.status) && <label className="ws-check ws-student-review-setting"><input type="checkbox" checked={!!value.attempt.student_review_allowed} disabled={action.busy} onChange={event => { const allowed = event.target.checked; void action.run(async () => { await api.put(`/attempts/${id}/student-review`, { allowed }); await review.reload() }, allowed ? 'Прегледът е разрешен за ученика.' : 'Прегледът е скрит за ученика.') }} /> Разреши на ученика да вижда теста и отговорите си</label>}
     {value.questions.map((q, index) => <QuestionReview key={`${q.id}-${q.final_points}-${q.reviewed}`} api={api} attempt={id} number={index + 1} question={q} refresh={review.reload} />)}
     <section className="ws-publication"><h3>{correction ? 'Нова резултатна ревизия' : 'Окончателен резултат'}</h3><button className="primary command-button" disabled={pending > 0 || action.busy || value.attempt.status === 'voided'} onClick={() => setConfirm(true)}><Check size={17} /> Потвърди</button></section>
@@ -143,7 +144,7 @@ function ReviewPanel({ api, id, back }: { api: WorkspaceApi; id: number; back: (
 }
 function VoidAttemptDialog({ api, id, student, close, saved }: { api: WorkspaceApi; id: number; student: string; close: () => void; saved: () => Promise<unknown> }) {
   const [reason, setReason] = useState('')
-  return <DeleteConfirmationDialog title="Анулиране на опит" confirmLabel="Анулирай опита" confirmIcon={Ban} confirmDisabled={!reason.trim()} description={<>Да анулираме ли опит #{id} на <strong>{student}</strong>? Резултатът от този опит няма да участва в обобщената оценка.</>} onCancel={close} onConfirm={async () => {
+  return <DeleteConfirmationDialog title="Анулиране на опит" confirmLabel="Анулирай опита" successMessage="Опитът е анулиран." confirmIcon={Ban} confirmDisabled={!reason.trim()} description={<>Да анулираме ли опит #{id} на <strong>{student}</strong>? Резултатът от този опит няма да участва в обобщената оценка.</>} onCancel={close} onConfirm={async () => {
     await api.post(`/attempts/${id}/void`, { reason: reason.trim() })
     await saved()
   }}><label>Причина за анулиране<textarea required value={reason} onChange={event => setReason(event.target.value)} /></label></DeleteConfirmationDialog>
@@ -185,6 +186,6 @@ function QuestionReview({ api, attempt, number, question: row, refresh }: { api:
     <form className="ws-form-grid" onSubmit={e => { e.preventDefault(); if (!validPoints || !e.currentTarget.reportValidity()) return; void action.run(async () => { await api.call(`/attempts/${attempt}/grading`, 'PATCH', { questionId: row.id, points: Number(points), comment, reason }); await refresh() }, 'Проверката е запазена.') }}>
       <label>Финални точки<span className="ws-grading-points"><input aria-label="Финални точки" aria-describedby={`grading-maximum-${row.id}`} type="number" required min={0} max={maximum} step="0.0001" value={points} onChange={e => { const value = e.target.value; setPoints(value === '' ? '' : Number(value) > maximum ? String(maximum) : Number(value) < 0 ? '0' : value) }} /><span id={`grading-maximum-${row.id}`} className="ws-grading-maximum">/ {maximum}</span></span></label>
       <label>Коментар<input value={comment} onChange={e => setComment(e.target.value)} /></label><label>Причина за корекция<input value={reason} onChange={e => setReason(e.target.value)} /></label><button className="command-button" disabled={action.busy || !validPoints}><Save size={17} /> Запази проверката</button>
-    </form><Feedback error={action.error} message={action.message} />
+    </form><Feedback error={action.error} />
   </article>
 }

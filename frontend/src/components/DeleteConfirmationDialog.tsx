@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { LoaderCircle, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { useNotifications } from '../notifications'
+import type { NotificationTone } from '../notifications'
 
 type Props = {
   title: string
@@ -9,6 +11,8 @@ type Props = {
   confirmLabel?: string
   confirmIcon?: LucideIcon
   confirmDisabled?: boolean
+  successMessage?: string
+  successTone?: NotificationTone
   children?: ReactNode
   onCancel: () => void
   onConfirm: () => void | Promise<void>
@@ -22,7 +26,8 @@ export function DeleteConfirmationButton({ label, icon: Icon = Trash2, disabled 
   </>
 }
 
-export function DeleteConfirmationDialog({ title, description, confirmLabel = 'Изтрий', confirmIcon: ConfirmIcon = Trash2, confirmDisabled = false, children, onCancel, onConfirm }: Props) {
+export function DeleteConfirmationDialog({ title, description, confirmLabel = 'Изтрий', confirmIcon: ConfirmIcon = Trash2, confirmDisabled = false, successMessage, successTone = 'danger', children, onCancel, onConfirm }: Props) {
+  const notify = useNotifications()
   const dialog = useRef<HTMLDialogElement>(null)
   const cancelButton = useRef<HTMLButtonElement>(null)
   const inFlight = useRef(false)
@@ -49,6 +54,7 @@ export function DeleteConfirmationDialog({ title, description, confirmLabel = '�
     setError('')
     try {
       await onConfirm()
+      if (successMessage) notify(successMessage, successTone)
       onCancel()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Действието не успя. Опитайте отново.')

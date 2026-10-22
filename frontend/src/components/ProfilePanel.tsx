@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { KeyRound, CheckCircle2 } from 'lucide-react'
+import { KeyRound } from 'lucide-react'
 import { api } from '../api/client'
 import { roleLabels, formatDate, subscriptionLabel } from '../api/access'
 import type { AuthResponse } from '../types/models'
+import { useNotifications } from '../notifications'
 
 export function ProfilePanel({ auth, onAuth }: { auth: AuthResponse; onAuth: (auth: AuthResponse) => void }) {
   const [currentPassword, setCurrentPassword] = useState('')
@@ -11,7 +12,7 @@ export function ProfilePanel({ auth, onAuth }: { auth: AuthResponse; onAuth: (au
   const [confirmation, setConfirmation] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState(false)
+  const notify = useNotifications()
 
   async function submit(event: FormEvent) {
     event.preventDefault(); setError('')
@@ -19,7 +20,7 @@ export function ProfilePanel({ auth, onAuth }: { auth: AuthResponse; onAuth: (au
     setBusy(true)
     try {
       onAuth(await api.changePassword(auth.token, currentPassword, password))
-      setCurrentPassword(''); setPassword(''); setConfirmation(''); setSuccess(true)
+      setCurrentPassword(''); setPassword(''); setConfirmation(''); notify('Паролата е сменена.')
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Неуспешна смяна на парола.') }
     finally { setBusy(false) }
   }
@@ -43,7 +44,6 @@ export function ProfilePanel({ auth, onAuth }: { auth: AuthResponse; onAuth: (au
       <label>Нова парола<input type="password" required minLength={8} maxLength={72} autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} /></label>
       <label>Повторете новата парола<input type="password" required minLength={8} maxLength={72} autoComplete="new-password" value={confirmation} onChange={event => setConfirmation(event.target.value)} /></label>
       {error && <p className="error" role="alert">{error}</p>}
-      {success && <p className="good command-button" role="status"><CheckCircle2 size={17} /> Паролата е сменена.</p>}
       <button className="primary command-button" disabled={busy}><KeyRound size={17} /> {busy ? 'Запазване...' : 'Смени паролата'}</button>
     </form>
   </section>

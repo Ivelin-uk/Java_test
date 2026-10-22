@@ -109,7 +109,7 @@ export function TestBuilder({ draft, onChange }: { draft: TestRequest; onChange:
           </div>
           <div className="question-actions">
             <button type="button" onClick={() => updateQuestion(questionIndex, { answers: [...question.answers, blankAnswer()] })}>+ Отговор</button>
-            <DeleteConfirmationButton label="Изтрий въпрос" title="Изтриване на въпрос" description={<>Да изтрием ли <strong>въпрос {questionIndex + 1}</strong> заедно с отговорите му? {question.question}</>} onConfirm={() => onChange({ ...draft, questions: draft.questions.filter((_, index) => index !== questionIndex) })} />
+            <DeleteConfirmationButton label="Изтрий въпрос" title="Изтриване на въпрос" successMessage="Въпросът е премахнат от черновата." description={<>Да изтрием ли <strong>въпрос {questionIndex + 1}</strong> заедно с отговорите му? {question.question}</>} onConfirm={() => onChange({ ...draft, questions: draft.questions.filter((_, index) => index !== questionIndex) })} />
           </div>
         </article>
       ))}

@@ -41,7 +41,7 @@ export function WorkspaceProfile({ api, auth, onAuth }: { api: WorkspaceApi; aut
         <label>Текуща парола<input type="password" required autoComplete="current-password" value={emailPassword} onChange={event => setEmailPassword(event.target.value)} /></label>
         <button type="submit" className="primary command-button" disabled={busy || address.loading}><Send size={17} aria-hidden="true" /> Потвърди адреса</button>
       </fieldset>
-      <Feedback error={emailAction.error || address.error} message={emailAction.message} busy={emailAction.busy || address.loading} />
+      <Feedback error={emailAction.error || address.error} busy={emailAction.busy || address.loading} />
     </form>
     <form className="ws-profile-form" aria-label="Смяна на парола" onChange={() => setFormError('')} onSubmit={event => {
       event.preventDefault()
@@ -52,7 +52,7 @@ export function WorkspaceProfile({ api, auth, onAuth }: { api: WorkspaceApi; aut
         const next = await authApi.changePassword(auth.token, password, newPassword)
         setPassword(''); setNewPassword(''); setConfirmation('')
         onAuth(next)
-      })
+      }, 'Паролата е сменена.')
     }}>
       <h3><KeyRound size={17} aria-hidden="true" /> Смяна на парола</h3>
       <fieldset className="ws-editor" disabled={busy}>
@@ -96,11 +96,11 @@ export function NotificationEmailVerification({ api, back }: { api: WorkspaceApi
   const token = new URLSearchParams(window.location.search).get('token') ?? ''
   return <section className="ws-section" aria-label="Потвърждение на имейл">
     <SectionHead title="Потвърждение на имейл"><button type="button" className="icon-button" title="Към профила" aria-label="Към профила" disabled={action.busy} onClick={back}><ArrowLeft size={18} /></button></SectionHead>
-    <Feedback error={action.error || (!token && !confirmed ? 'Липсва линк за потвърждение на имейла.' : '')} message={confirmed ? 'Имейлът е потвърден.' : ''} busy={action.busy} />
+    <Feedback error={action.error || (!token && !confirmed ? 'Липсва линк за потвърждение на имейла.' : '')} busy={action.busy} />
     {!confirmed && token && <div className="ws-actions"><button type="button" className="primary command-button" disabled={action.busy} onClick={() => void action.run(async () => {
       await api.post('/profile/notification-email/verify', { token })
       setConfirmed(true)
       history.replaceState(history.state, '', window.location.pathname)
-    })}><Check size={17} /> Потвърди имейла</button></div>}
+    }, 'Имейлът е потвърден.')}><Check size={17} /> Потвърди имейла</button></div>}
   </section>
 }
