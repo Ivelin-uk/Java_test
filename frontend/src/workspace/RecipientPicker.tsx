@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from 'react'
 import { ChevronDown, Square, SquareCheck, X } from 'lucide-react'
 
-interface RecipientOption { id: number; name: string; detail: string }
+interface RecipientOption { id: number; name: string; detail: string; disabled?: boolean }
 
 export function RecipientPicker({ title, searchLabel, placeholder, emptyMessage, options, selected, toggle, disabled, loading, keepOpenOnSelect = false }: {
   title: string; searchLabel: string; placeholder: string; emptyMessage: string; options: RecipientOption[];
@@ -16,13 +16,15 @@ export function RecipientPicker({ title, searchLabel, placeholder, emptyMessage,
   const search = query.trim().toLocaleLowerCase()
   const results = options.filter(option => `${option.name} ${option.detail}`.toLocaleLowerCase().includes(search))
   const selectedOptions = options.filter(option => selected.includes(option.id))
-  const activeIndex = Math.min(index, Math.max(0, results.length - 1))
+  const selectableIndexes = results.flatMap((option, position) => option.disabled ? [] : [position])
+  const activeIndex = selectableIndexes.includes(index) ? index : selectableIndexes[0] ?? -1
   const expanded = open && !disabled && !loading
   function move(next: number) {
     setIndex(next)
     document.getElementById(`${id}-option-${results[next]?.id}`)?.scrollIntoView({ block: 'nearest' })
   }
   function choose(value: number) {
+    if (options.find(option => option.id === value)?.disabled) return
     toggle(value); setQuery(''); setIndex(0); setOpen(keepOpenOnSelect)
   }
   return <fieldset className="ws-recipient-picker" disabled={disabled || loading} onBlur={event => {
@@ -36,7 +38,9 @@ export function RecipientPicker({ title, searchLabel, placeholder, emptyMessage,
         onKeyDown={event => {
           if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault(); setOpen(true)
-            move(expanded ? Math.max(0, Math.min(results.length - 1, activeIndex + (event.key === 'ArrowDown' ? 1 : -1))) : 0)
+            const position = selectableIndexes.indexOf(activeIndex)
+            const next = expanded ? Math.max(0, Math.min(selectableIndexes.length - 1, position + (event.key === 'ArrowDown' ? 1 : -1))) : 0
+            if (selectableIndexes[next] !== undefined) move(selectableIndexes[next])
           } else if (event.key === 'Enter') {
             event.preventDefault()
             if (expanded && results[activeIndex]) choose(results[activeIndex].id)
@@ -48,7 +52,7 @@ export function RecipientPicker({ title, searchLabel, placeholder, emptyMessage,
         <button type="button" className="icon-button" title={`Списък: ${title}`} aria-expanded={expanded} aria-controls={expanded ? `${id}-results` : undefined} onMouseDown={event => event.preventDefault()} onClick={() => { input.current?.focus({ preventScroll: true }); setOpen(!expanded) }}><ChevronDown size={17} /></button>
       </div>
       {expanded && <div id={`${id}-results`} className="ws-user-options ws-recipient-options" role="listbox" aria-label={title} aria-multiselectable="true">
-        {results.map((option, position) => <button type="button" role="option" tabIndex={-1} id={`${id}-option-${option.id}`} key={option.id} aria-label={option.name} aria-selected={selected.includes(option.id)} data-active={position === activeIndex} onMouseDown={event => event.preventDefault()} onClick={() => choose(option.id)}>
+        {results.map((option, position) => <button type="button" role="option" tabIndex={-1} id={`${id}-option-${option.id}`} key={option.id} aria-label={option.name} aria-selected={selected.includes(option.id)} disabled={option.disabled} data-active={!option.disabled && position === activeIndex} onMouseDown={event => event.preventDefault()} onClick={() => choose(option.id)}>
           {selected.includes(option.id) ? <SquareCheck size={18} aria-hidden="true" /> : <Square size={18} aria-hidden="true" />}
           <span><strong>{option.name}</strong>{option.detail && <small>{option.detail}</small>}</span>
         </button>)}

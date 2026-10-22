@@ -20,6 +20,7 @@ import java.util.concurrent.*;
 import static com.quicktest.workspace.WorkspaceStore.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -309,7 +310,7 @@ class WorkspaceTests {
     }
     @Test void assignmentOwnerCanDeleteItWithoutDeletingTheTestOrAnotherAssignment() throws Exception {
         long test=number(db.one("SELECT assessment_id FROM assessment_versions WHERE id=?",version),"assessment_id");
-        long untouched=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true)),"id");
+        long untouched=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(freshVersion(),List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true)),"id");
         var colleague=user(Role.TEACHER);
         db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,colleague.getId(),"[\"TEACHER\"]",now);
         assignments.shareTeacher(teaching,assignment,colleague.getId(),true);
@@ -915,7 +916,7 @@ class WorkspaceTests {
         db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,another.getId(),"[\"STUDENT\"]",now);
         organizations.addStudent(teaching,first,another.getId());
         long grouped=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(second,first),List.of(),now,now.plusSeconds(3600),1,false,false,true)),"id");
-        long mixed=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(first,second),List.of(),now,now.plusSeconds(3600),1,false,false,true)),"id");
+        long mixed=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(freshVersion(),List.of(first,second),List.of(),now,now.plusSeconds(3600),1,false,false,true)),"id");
         db.update("UPDATE assignment_recipients SET individually_assigned=TRUE WHERE assignment_id=? AND student_id=?",mixed,student);
 
         var list=assignments.list(teaching);
@@ -948,7 +949,7 @@ class WorkspaceTests {
         assertTrue(organizations.groups(teaching).stream().noneMatch(value->number(value,"id")==group));
     }
     @Test void assignmentCodeLookupFindsTheMatchingAssignedTestWithoutStartingAnAttempt() throws Exception {
-        var second=assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now.minusSeconds(1),now.plusSeconds(3600),1,false,false,true));
+        var second=assignments.create(teaching,new AssignmentService.AssignmentRequest(freshVersion(),List.of(defaultGroup),List.of(),now.minusSeconds(1),now.plusSeconds(3600),1,false,false,true));
         long target=number(second,"id");String targetCode=string(second,"code");
         var match=assignments.resolveCode(learning,targetCode.toLowerCase(Locale.ROOT),"lookup-"+UUID.randomUUID());
         assertEquals(Map.of("id",target,"title","Test"),match);
@@ -994,7 +995,7 @@ class WorkspaceTests {
         assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE student_id=?",student));
     }
     @Test void assignmentCodeLookupRejectsAmbiguousCodesInsteadOfChoosingAnAssignment() {
-        long second=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now.minusSeconds(1),now.plusSeconds(3600),1,false,false,true)),"id");
+        long second=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(freshVersion(),List.of(defaultGroup),List.of(),now.minusSeconds(1),now.plusSeconds(3600),1,false,false,true)),"id");
         db.update("UPDATE exam_assignments SET code_hash=? WHERE id=?",assignments.codeHash(org,second,code),second);
         assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->assignments.resolveCode(learning,code,"lookup-"+UUID.randomUUID())).getStatusCode());
         assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE student_id=?",student));
@@ -1066,8 +1067,8 @@ class WorkspaceTests {
         long second=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Second group","","")),"id");
         organizations.addStudent(teaching,second,student);
         long secondAssignment=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(second),List.of(),now,now.plusSeconds(7200),2,false,false,true)),"id");
-        long shared=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup,second),List.of(),now,now.plusSeconds(10800),3,false,false,true)),"id");
-        long individual=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(second),List.of(),now,now.plusSeconds(14400),1,false,false,true)),"id");
+        long shared=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(freshVersion(),List.of(defaultGroup,second),List.of(),now,now.plusSeconds(10800),3,false,false,true)),"id");
+        long individual=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(freshVersion(),List.of(second),List.of(),now,now.plusSeconds(14400),1,false,false,true)),"id");
         db.update("UPDATE assignment_recipients SET source_groups_json='[]',individually_assigned=TRUE WHERE assignment_id=? AND student_id=?",individual,student);
         db.update("UPDATE exam_assignments SET ends_at=? WHERE id=?",now.minusSeconds(1),assignment);
         assertEquals(Set.of(assignment,shared),assignments.listStudentGroup(learning,defaultGroup).stream().map(row->number(row,"id")).collect(java.util.stream.Collectors.toSet()));
@@ -1479,7 +1480,7 @@ class WorkspaceTests {
         aiGrading.enqueue(teaching,id,new AiGradingService.Request("already-reviewed-job"),false);worker.process();
         assertEquals("Already checked",db.one("SELECT teacher_comment FROM attempt_questions WHERE id=?",qid).get("teacher_comment"));
         // Use a fresh assignment for an unanswered attempt with a saved draft.
-        var a=assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now,now.plusSeconds(1000),1,false,false,true));assignment=number(a,"id");code=string(a,"code");var r=startRequest();
+        var a=assignments.create(teaching,new AssignmentService.AssignmentRequest(freshVersion(),List.of(defaultGroup),List.of(),now,now.plusSeconds(1000),1,false,false,true));assignment=number(a,"id");code=string(a,"code");var r=startRequest();
         var state=start(r);id=number(state,"id");var q=question(state);
         attempts.draft(learning,id,number(q,"id"),session(r),new AttemptService.AnswerRequest("saved-draft-for-ai",string(q,"open_instance"),correct(q)));
         attempts.submit(learning,id,session(r));
@@ -1608,6 +1609,70 @@ class WorkspaceTests {
         db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,next.getId(),"[\"STUDENT\"]",now);
         return next;
     }
+    private long freshVersion() {
+        var definition=workspaceJson.parse(db.one("SELECT definition_json FROM assessment_versions WHERE id=?",version).get("definition_json"),AssessmentService.Definition.class);
+        long test=number(assessments.save(teaching,null,definition),"id");
+        return number(assessments.publish(teaching,test),"id");
+    }
+    @Test void duplicateAssignmentsRejectTheSameLibraryTestAcrossVersionsAndKeepExistingData() throws Exception {
+        var before=db.one("SELECT * FROM exam_assignments WHERE id=?",assignment);
+        var recipients=db.rows("SELECT * FROM assignment_recipients WHERE assignment_id=?",assignment);
+        var request=new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now,now.plusSeconds(7200),3,true,true,true);
+        String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+        mvc.perform(post("/api/v1/assignments").header("Authorization",bearer).header("X-Organization-Id",org).contentType("application/json").content(workspaceJson.write(request)))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value(containsString("възлагане №"+assignment)));
+        assertEquals(before,db.one("SELECT * FROM exam_assignments WHERE id=?",assignment));
+        assertEquals(recipients,db.rows("SELECT * FROM assignment_recipients WHERE assignment_id=?",assignment));
+        assessments.save(teaching,sourceTest(),definition(true));
+        long nextVersion=number(assessments.publish(teaching,sourceTest()),"id");
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->assignments.create(teaching,new AssignmentService.AssignmentRequest(nextVersion,List.of(defaultGroup),List.of(),now,now.plusSeconds(7200),1,false,false,true))).getStatusCode());
+        db.update("UPDATE exam_assignments SET ends_at=? WHERE id=?",now.minusSeconds(1),assignment);assignments.revoke(teaching,assignment);assignments.removeRecipient(teaching,assignment,student);
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->assignments.create(teaching,request)).getStatusCode());
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_assignments WHERE organization_id=?",org));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND action='assignment.created'",org));
+        assertEquals(sourceTest(),number(assignments.list(teaching).getFirst(),"assessment_id"));
+    }
+    @Test void duplicateAssignmentsAreAtomicAndAllowOtherLibraryTestsGroupsAndDeletedAssignments() {
+        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Another group","","")),"id");organizations.addStudent(teaching,group,student);
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(group,defaultGroup),List.of(),now,now.plusSeconds(7200),1,false,false,true))).getStatusCode());
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_assignments WHERE organization_id=?",org));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM assignment_groups WHERE group_id=?",group));
+        assertEquals(1,number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(group,group),List.of(),now,now.plusSeconds(7200),1,false,false,true)),"recipients"));
+        // Identical content and titles still represent a different library test.
+        assertEquals(1,number(assignments.create(teaching,new AssignmentService.AssignmentRequest(freshVersion(),List.of(defaultGroup),List.of(),now,now.plusSeconds(7200),1,false,false,true)),"recipients"));
+        assignments.remove(teaching,assignment);
+        assertEquals(1,number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now,now.plusSeconds(7200),1,false,false,true)),"recipients"));
+        assertEquals(3,db.count("SELECT COUNT(*) FROM exam_assignments WHERE organization_id=?",org));
+    }
+    @Test void concurrentAssignmentsOfDifferentVersionsToTheSameGroupCreateOnlyOneAssignment() throws Exception {
+        long first=freshVersion();long test=number(db.one("SELECT assessment_id FROM assessment_versions WHERE id=?",first),"assessment_id");
+        long second=number(assessments.publish(teaching,test),"id");
+        var ready=new CountDownLatch(4);var go=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(4)) {
+            List<Future<Boolean>> work=new ArrayList<>();
+            for(int n=0;n<4;n++) {long selected=n%2==0?first:second;work.add(pool.submit(()->{
+                ready.countDown();assertTrue(go.await(5,TimeUnit.SECONDS));
+                try {assignments.create(teaching,new AssignmentService.AssignmentRequest(selected,List.of(defaultGroup),List.of(),now,now.plusSeconds(7200),1,false,false,true));return true;}
+                catch(WorkspaceError error) {assertEquals(HttpStatus.CONFLICT,error.getStatusCode());return false;}
+            }));}
+            assertTrue(ready.await(5,TimeUnit.SECONDS));go.countDown();int created=0;
+            for(var result:work) if(result.get(15,TimeUnit.SECONDS)) created++;
+            assertEquals(1,created);
+        }
+        assertEquals(2,db.count("SELECT COUNT(*) FROM exam_assignments WHERE organization_id=?",org));
+        assertEquals(2,db.count("SELECT COUNT(*) FROM assignment_groups WHERE group_id=?",defaultGroup));
+        assertEquals(2,db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND action='assignment.created'",org));
+    }
+    @Test void duplicateAssignmentChecksPreserveTeacherAndWorkspaceAuthorization() throws Exception {
+        var colleague=user(Role.TEACHER);db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,colleague.getId(),"[\"TEACHER\"]",now);
+        assessments.share(teaching,sourceTest(),true);
+        var request=new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now,now.plusSeconds(7200),1,false,false,true);
+        assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->assignments.create(new OrgAccess.Scope(org,colleague.getId(),Set.of("TEACHER")),request)).getStatusCode());
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->assignments.create(new OrgAccess.Scope(org,colleague.getId(),Set.of("ORG_ADMIN","TEACHER")),request)).getStatusCode());
+        assertEquals(HttpStatus.NOT_FOUND,assertThrows(WorkspaceError.class,()->assignments.create(new OrgAccess.Scope(other,teacher,Set.of("TEACHER")),request)).getStatusCode());
+        mvc.perform(post("/api/v1/assignments").header("Authorization",authorization).contentType("application/json").content(workspaceJson.write(request))).andExpect(status().isForbidden());
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_assignments WHERE organization_id=?",org));
+    }
     @Test void groupAssignmentsRejectIndividualMixedAndEmptyGroups() throws Exception {
         for(var groups:List.of(List.<Long>of(),List.of(defaultGroup))) {
             assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->assignments.create(teaching,new AssignmentService.AssignmentRequest(version,groups,List.of(student),now,now.plusSeconds(1000),1,false,false,true))).getStatusCode());
@@ -1709,8 +1774,8 @@ class WorkspaceTests {
         organizations.addStudent(teaching,group,next.getId());assignments.addRecipient(teaching,target,next.getId());assignments.addRecipient(teaching,target,next.getId());assertEquals(2,db.count("SELECT COUNT(*) FROM assignment_recipients WHERE assignment_id=?",target));
     }
     @Test void newGroupMemberInheritsExistingPeriodsCodesAndLimitsOnlyFromAssignedGroups() throws Exception {
-        long future=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now.plusSeconds(3600),now.plusSeconds(7200),3,false,true,true)),"id");
-        long expired=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),2,false,false,true)),"id");
+        long future=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(freshVersion(),List.of(defaultGroup),List.of(),now.plusSeconds(3600),now.plusSeconds(7200),3,false,true,true)),"id");
+        long expired=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(freshVersion(),List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),2,false,false,true)),"id");
         db.update("UPDATE exam_assignments SET starts_at=?,ends_at=? WHERE id=?",now.minusSeconds(7200),now.minusSeconds(3600),expired);
         long unrelated=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Unrelated group","","")),"id");organizations.addStudent(teaching,unrelated,student);
         long privateAssignment=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(unrelated),List.of(),now,now.plusSeconds(3600),1,false,false,true)),"id");
@@ -1739,7 +1804,7 @@ class WorkspaceTests {
     }
     @Test void automaticGroupAssignmentMergesSourcesWithoutResettingAttemptsAccommodationsOrRevocations() {
         long secondGroup=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Second source","","")),"id");organizations.addStudent(teaching,secondGroup,student);
-        long target=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup,secondGroup),List.of(),now,now.plusSeconds(7200),2,false,false,true)),"id");
+        long target=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(freshVersion(),List.of(defaultGroup,secondGroup),List.of(),now,now.plusSeconds(7200),2,false,false,true)),"id");
         var next=enrolledStudent();organizations.addStudent(teaching,defaultGroup,next.getId());
         assignments.accommodate(teaching,target,next.getId(),new AssignmentService.Accommodation(true,new BigDecimal("2"),4,"Additional time"));
         var before=db.one("SELECT * FROM assignment_recipients WHERE assignment_id=? AND student_id=?",target,next.getId());
@@ -1772,9 +1837,10 @@ class WorkspaceTests {
     }
     @Test void concurrentGroupAdditionAndAssignmentCreationIncludeNewMemberExactlyOnce() throws Exception {
         var next=enrolledStudent();var ready=new CountDownLatch(2);var go=new CountDownLatch(1);
+        long newVersion=freshVersion();
         try(var pool=Executors.newFixedThreadPool(2)) {
             var adding=pool.submit(()->{ready.countDown();assertTrue(go.await(5,TimeUnit.SECONDS));organizations.addStudent(teaching,defaultGroup,next.getId());return null;});
-            var creating=pool.submit(()->{ready.countDown();assertTrue(go.await(5,TimeUnit.SECONDS));return assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now,now.plusSeconds(7200),1,false,false,true));});
+            var creating=pool.submit(()->{ready.countDown();assertTrue(go.await(5,TimeUnit.SECONDS));return assignments.create(teaching,new AssignmentService.AssignmentRequest(newVersion,List.of(defaultGroup),List.of(),now,now.plusSeconds(7200),1,false,false,true));});
             assertTrue(ready.await(5,TimeUnit.SECONDS));go.countDown();adding.get(15,TimeUnit.SECONDS);long target=number(creating.get(15,TimeUnit.SECONDS),"id");
             for(long id:List.of(assignment,target)) assertEquals(1,db.count("SELECT COUNT(*) FROM assignment_recipients WHERE assignment_id=? AND student_id=?",id,next.getId()));
         }
@@ -1917,7 +1983,7 @@ class WorkspaceTests {
         mvc.perform(post("/api/v1/groups/join").header("Authorization",bearer).contentType("application/json").content(db.json(Map.of("code",groupCode)))).andExpect(status().isOk()).andExpect(jsonPath("$.alreadyMember").value(true));
         assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_audit WHERE action='group.student_joined' AND resource_id=? AND actor_id=?",defaultGroup,learner.getId()));
         assertFalse(string(db.one("SELECT detail_json FROM workspace_audit WHERE action='group.student_joined' AND resource_id=? AND actor_id=?",defaultGroup,learner.getId()),"detail_json").contains(groupCode));
-        var next=assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true));assertEquals(2,number(next,"recipients"));
+        var next=assignments.create(teaching,new AssignmentService.AssignmentRequest(freshVersion(),List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true));assertEquals(2,number(next,"recipients"));
         organizations.updateGroup(teaching,defaultGroup,new OrganizationService.GroupRequest("Renamed","","Java"));assertEquals(groupCode,organizations.groupAccess(teaching,defaultGroup).get("join_code"));
     }
     @Test void groupCodeJoinsAreConcurrentIdempotentAndCanReactivateMembership() throws Exception {

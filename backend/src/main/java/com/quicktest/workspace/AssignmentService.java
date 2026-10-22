@@ -91,18 +91,24 @@ public class AssignmentService {
         if(scope.platform()) organizations.requireActiveMember(scope,scope.userId(),"TEACHER");
         // READ_COMMITTED plus ordered group locks makes a concurrent join visible
         // after waiting; an earlier version lookup must not freeze the member snapshot.
-        Map<Long,Long> assignedGroups=new LinkedHashMap<>();
-        for(Long group:new TreeSet<>(request.groupIds())) assignedGroups.put(group,number(organizations.lockAssignmentGroup(scope,group),"organization_id"));
+        Map<Long,Map<String,Object>> assignedGroups=new LinkedHashMap<>();
+        for(Long group:new TreeSet<>(request.groupIds())) assignedGroups.put(group,organizations.lockAssignmentGroup(scope,group));
+        // Authorize and lock every group before checking. READ_COMMITTED makes a
+        // concurrent assignment visible after waiting, even for another version.
+        for(var entry:assignedGroups.entrySet()) {
+            var duplicate=repository.findGroupTestAssignment(scope.organizationId(),number(version,"assessment_id"),number(entry.getValue(),"organization_id"),entry.getKey());
+            if(duplicate.isPresent()) throw WorkspaceError.conflict("Тестът вече е възложен на група „"+string(entry.getValue(),"name")+"“ (възлагане №"+number(duplicate.get(),"id")+"). Променете съществуващото възлагане.");
+        }
         Map<Long,Set<Long>> recipients=new LinkedHashMap<>();
         for(var entry:assignedGroups.entrySet()) {
-            Long group=entry.getKey();long groupWorkspace=entry.getValue();
+            Long group=entry.getKey();long groupWorkspace=number(entry.getValue(),"organization_id");
             var members=repository.findActiveGroupStudents(groupWorkspace, group);
             if(members.isEmpty()) throw WorkspaceError.validation("Групата няма активни ученици.");
             for(var member:members) {long user=number(member,"user_id");organizations.requireActiveMember(scope,user,"STUDENT");recipients.computeIfAbsent(user,key->new LinkedHashSet<>()).add(group);}
         }
         if(recipients.isEmpty()) throw WorkspaceError.validation("Изберете поне един получател.");
         long id=repository.insertAssignment(scope.organizationId(), request.versionId(), scope.userId(), request.startsAt(), request.endsAt(), request.maxAttempts(), request.shuffleQuestions(), request.shuffleOptions(), request.answersAfterDeadline(), clock.instant());
-        for(var entry:assignedGroups.entrySet()) repository.insertAssignmentGroup(scope.organizationId(),id,entry.getValue(),entry.getKey());
+        for(var entry:assignedGroups.entrySet()) repository.insertAssignmentGroup(scope.organizationId(),id,number(entry.getValue(),"organization_id"),entry.getKey());
         for(var recipient:recipients.entrySet()) repository.insertRecipient(scope.organizationId(), id, recipient.getKey(), json.write(recipient.getValue()), request.maxAttempts());
         String code=crypto.code();repository.saveCode(codeHash(scope.organizationId(),id,code), code, id, scope.organizationId());
         audit.write(scope.organizationId(),scope.userId(),"assignment.created",id,Map.of("recipients",recipients.size(),"version",request.versionId()));

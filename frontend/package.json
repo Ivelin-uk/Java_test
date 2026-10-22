@@ -35,6 +35,7 @@
     "test:assignment-dates": "node e2e/assignment-dates.mjs",
     "test:assignment-schedule": "node e2e/assignment-schedule.mjs",
     "test:assignment-reset": "node e2e/assignment-reset.mjs",
+    "test:assignment-duplicates": "node e2e/assignment-duplicates.mjs",
     "test:profile": "node e2e/profile-settings.mjs",
     "test:durations": "node e2e/durations.mjs",
     "test:exam-navigation": "node e2e/exam-navigation.mjs",

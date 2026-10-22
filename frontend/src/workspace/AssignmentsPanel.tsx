@@ -42,6 +42,9 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
     return () => { active = false }
   }, [api, test])
   const [groupIds, setGroupIds] = useState<number[]>([])
+  const assignedGroupIds = new Set(assignments.data.filter(assignment => test && assignment.assessment_id === test.id).flatMap(assignment => assignment.recipient_groups?.map(group => group.id) ?? []))
+  const duplicateGroups = groups.data.filter(group => groupIds.includes(group.id) && assignedGroupIds.has(group.id))
+  const duplicateMessage = duplicateGroups.length ? `Тестът вече е възложен на: ${duplicateGroups.map(group => group.name).join(', ')}. Променете съществуващото възлагане.` : ''
   const [start, setStart] = useState(() => localTime(new Date()))
   const [end, setEnd] = useState(() => localTime(new Date(Date.now() + 3600000)))
   const periodError = start && end && new Date(start).getTime() >= new Date(end).getTime() ? 'Крайният срок трябва да е след началото.' : ''
@@ -75,7 +78,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
     setPickerKey(key => key + 1)
   }
   async function assign() {
-    if (action.busy || loadingVersion || tests.loading || groups.loading) return
+    if (action.busy || loadingVersion || tests.loading || groups.loading || assignments.loading) return
     const invalid = (message: string, field?: 'test' | 'period') => setFormError({ message, field })
     if (!test) return invalid('Изберете тест за възлагане.', 'test')
     if (!version) return invalid(resolved?.error || 'Тестът няма запазена версия.', 'test')
@@ -86,6 +89,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
     if (endsAt.getTime() <= Date.now()) return invalid('Крайният срок трябва да е в бъдещето.')
     if (attempts === '' || !Number.isInteger(attempts) || attempts < 1 || attempts > 20) return invalid('Броят опити трябва да е цяло число от 1 до 20.')
     if (!groupIds.length) return invalid('Изберете поне една група.')
+    if (duplicateMessage) return invalid(duplicateMessage)
     setFormError(null)
     await action.run(async () => {
       await api.post('/assignments', { versionId: version, groupIds, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(), maxAttempts: attempts, shuffleQuestions: shuffleQ, shuffleOptions: shuffleA, answersAfterDeadline: afterDeadline })
@@ -97,9 +101,10 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
       <fieldset className="ws-editor" disabled={action.busy}>
       <div className="ws-form-grid"><TestPicker key={pickerKey} tests={tests.data.filter(t => t.status !== 'archived')} selected={test} select={value => { setTest(value ? { ...value } : null); setResolved(null); setFormError(null) }} disabled={action.busy || tests.loading} invalid={formError?.field === 'test'} /><label>Начало<input type="datetime-local" name="startsAt" required max={minuteBound(end, -1)} step={60} aria-invalid={!!periodError} aria-describedby={periodError ? periodErrorId : undefined} value={start} onChange={e => setStart(e.target.value)} /></label><label>Краен срок<input type="datetime-local" name="endsAt" required min={minuteBound(start, 1)} step={60} aria-invalid={!!periodError} aria-describedby={periodError ? periodErrorId : undefined} value={end} onChange={e => setEnd(e.target.value)} /></label><label>Опити<input type="number" required min={1} max={20} step={1} value={attempts} onChange={e => setAttempts(e.target.value === '' ? '' : Number(e.target.value))} /></label></div>
       {periodError && <p id={periodErrorId} className="error" role="alert">{periodError}</p>}
-        <RecipientPicker key={pickerKey} title="Групи" searchLabel="Търси групи" placeholder="Име или дисциплина" emptyMessage="Няма налични групи." options={groups.data.map(group => ({ id: group.id, name: group.name, detail: group.subject }))} selected={groupIds} toggle={id => { setGroupIds(ids => toggle(ids, id)); setFormError(null) }} disabled={action.busy} loading={groups.loading} />
+        <RecipientPicker key={pickerKey} title="Групи" searchLabel="Търси групи" placeholder="Име или дисциплина" emptyMessage="Няма налични групи." options={groups.data.map(group => ({ id: group.id, name: group.name, detail: assignedGroupIds.has(group.id) ? 'Вече е възложен' : group.subject, disabled: assignedGroupIds.has(group.id) }))} selected={groupIds} toggle={id => { setGroupIds(ids => toggle(ids, id)); setFormError(null) }} disabled={action.busy} loading={groups.loading || assignments.loading} />
+      {duplicateMessage && <p className="error" role="alert">{duplicateMessage}</p>}
       <div className="ws-actions"><label className="ws-check"><input type="checkbox" checked={shuffleQ} onChange={e => setShuffleQ(e.target.checked)} /> Разбъркай въпросите</label><label className="ws-check"><input type="checkbox" checked={shuffleA} onChange={e => setShuffleA(e.target.checked)} /> Разбъркай опциите</label><label className="ws-check"><input type="checkbox" checked={afterDeadline} onChange={e => setAfterDeadline(e.target.checked)} /> Верни отговори след срока</label></div>
-      <div className="ws-actions ws-assignment-form-actions"><button type="submit" className="primary command-button" disabled={action.busy || loadingVersion || tests.loading || groups.loading}><Plus size={17} /> Възложи</button><button type="reset" className="icon-button" title="Нулирай формата" aria-label="Нулирай формата" disabled={action.busy}><RotateCcw size={17} /></button></div>
+      <div className="ws-actions ws-assignment-form-actions"><button type="submit" className="primary command-button" disabled={action.busy || loadingVersion || tests.loading || groups.loading || assignments.loading || !!duplicateMessage}><Plus size={17} /> Възложи</button><button type="reset" className="icon-button" title="Нулирай формата" aria-label="Нулирай формата" disabled={action.busy}><RotateCcw size={17} /></button></div>
       </fieldset>
     </form>
     <div className="ws-assignment-filters" role="group" aria-label="Търсене на възлагания">

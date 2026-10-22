@@ -31,6 +31,10 @@ public class AssignmentRepository {
         return store.rows("SELECT organization_id,assignment_id FROM assignment_groups WHERE group_organization_id=? AND group_id=? ORDER BY assignment_id",groupOrganization,group);
     }
 
+    public Optional<Map<String,Object>> findGroupTestAssignment(long organizationId,long assessment,long groupOrganization,long group) {
+        return store.optional("SELECT a.id FROM assignment_groups g JOIN exam_assignments a ON a.organization_id=g.organization_id AND a.id=g.assignment_id JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE a.organization_id=? AND v.assessment_id=? AND g.group_organization_id=? AND g.group_id=? ORDER BY a.id LIMIT 1",organizationId,assessment,groupOrganization,group);
+    }
+
     public List<Map<String,Object>> findAssignmentGroups(long organizationId,long assignment) {
         return store.rows("SELECT group_id FROM assignment_groups WHERE organization_id=? AND assignment_id=? ORDER BY group_id",organizationId,assignment);
     }
@@ -64,7 +68,7 @@ public class AssignmentRepository {
     }
 
     public List<Map<String, Object>> findTeacherAssignments(long organizationId, boolean platform, long userId, long userId2) {
-        return store.rows("SELECT a.id,a.version_id,a.teacher_id,a.starts_at,a.ends_at,a.max_attempts,a.access_code,v.title,(SELECT COUNT(*) FROM assignment_recipients r WHERE r.organization_id=a.organization_id AND r.assignment_id=a.id AND r.canceled=FALSE) recipients FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE (a.organization_id=? OR ?) AND (a.teacher_id=? OR EXISTS (SELECT 1 FROM assignment_teachers t WHERE t.organization_id=a.organization_id AND t.assignment_id=a.id AND t.teacher_id=?)) ORDER BY a.id DESC", organizationId, platform, userId, userId2);
+        return store.rows("SELECT a.id,a.version_id,v.assessment_id,a.teacher_id,a.starts_at,a.ends_at,a.max_attempts,a.access_code,v.title,(SELECT COUNT(*) FROM assignment_recipients r WHERE r.organization_id=a.organization_id AND r.assignment_id=a.id AND r.canceled=FALSE) recipients FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE (a.organization_id=? OR ?) AND (a.teacher_id=? OR EXISTS (SELECT 1 FROM assignment_teachers t WHERE t.organization_id=a.organization_id AND t.assignment_id=a.id AND t.teacher_id=?)) ORDER BY a.id DESC", organizationId, platform, userId, userId2);
     }
 
     public List<Map<String, Object>> findRecipientSources(List<Long> assignmentIds) {
