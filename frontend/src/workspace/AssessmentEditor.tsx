@@ -22,6 +22,20 @@ const question = (): Question => ({ type: 'SINGLE_CHOICE', text: '', difficulty:
 const duration = (questions: Question[]) => formatDuration(questions.reduce((total, q) => total + q.timeSeconds, 0))
 const blank = (): Definition => ({ title: 'Нов тест', description: '', subject: '', level: '', instructions: '', language: 'bg', gradingScale: 'bulgarian', passThreshold: 50, questions: [question()], additionalInformation: '' })
 
+function isEmptyQuestion(q: Question) {
+  const defaultTrueFalse = q.type === 'TRUE_FALSE' && q.options.length === 2 && q.options[0].text === 'Вярно' && q.options[1].text === 'Невярно'
+  return !plainQuestionText(q.text).trim() && !q.imageId && !q.criteria?.trim() && !q.explanation?.trim()
+    && q.acceptedAnswers.every(answer => !answer.trim()) && (defaultTrueFalse || q.options.every(option => !option.text.trim()))
+}
+
+function fillAiQuestions(definition: Definition, generated: Question[]): Definition {
+  let next = 0
+  const questions = definition.questions.map(q => isEmptyQuestion(q) && next < generated.length
+    ? { ...generated[next++], points: q.points, timeSeconds: q.timeSeconds }
+    : q)
+  return { ...definition, questions: [...questions, ...generated.slice(next)] }
+}
+
 function QuestionPrompt({ api, question: q, textChanged, imageChanged, uploadChanged, disabled }: { disabled: boolean; api: WorkspaceApi; question: Question; textChanged: (text: string) => void; imageChanged: (id: number | null) => void; uploadChanged: (busy: boolean) => void }) {
   const fileInput = useRef<HTMLInputElement>(null)
   const upload = useAction()
@@ -47,10 +61,11 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
   const [showAppendAi, setShowAppendAi] = useState(false)
   const appendForm = useRef<HTMLFormElement>(null)
   const appendTrigger = useRef<HTMLElement | null>(null)
+  const appendQuestionCount = useRef(0)
   function reviewJob() {
     if (!job?.result_json) return
     const definition = (JSON.parse(job.result_json) as { definition: Definition }).definition
-    if (jobMode === 'append') { setDraft(previous => previous ? { ...previous, questions: [...previous.questions, ...definition.questions] } : previous); setShowAppendAi(false) }
+    if (jobMode === 'append') { setDraft(previous => previous ? fillAiQuestions(previous, definition.questions) : previous); setShowAppendAi(false) }
     else { setCurrent(null); setDraft(definition); setShowAi(false) }
     setJob(null)
   }
@@ -69,6 +84,8 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
   const generating = !!job && ['queued', 'running'].includes(job.status)
   const saveDisabled = action.busy || !editable || generating || pendingImages > 0 || !!replacement
   const addLimit = Math.min(20, 100 - (draft?.questions.length ?? 0))
+  const emptyQuestions = draft?.questions.filter(isEmptyQuestion) ?? []
+  const aiLimit = Math.min(20, 100 - (draft?.questions.length ?? 0) + emptyQuestions.length)
   const validAddCount = Number.isInteger(addCount) && addCount >= 1 && addCount <= addLimit
   const validGeneration = validAiSettings(aiSettings)
   const draftDifficulties = [...new Set(draft?.questions.map(q => q.difficulty))]
@@ -93,7 +110,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
         setPollError('')
         if (next.status === 'completed' && next.result_json) {
           const definition = (JSON.parse(next.result_json) as { definition: Definition }).definition
-          if (jobMode === 'append') { setDraft(previous => previous ? { ...previous, questions: [...previous.questions, ...definition.questions] } : previous); setShowAppendAi(false) }
+          if (jobMode === 'append') { setDraft(previous => previous ? fillAiQuestions(previous, definition.questions) : previous); setShowAppendAi(false) }
           else { setCurrent(null); setDraft(definition); setShowAi(false) }
           setJob(null)
         } else setJob(next)
@@ -102,10 +119,10 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
     return () => { active = false; window.clearInterval(timer) }
   }, [api, job, jobMode])
   function openAppendAi() {
-    if (!draft || saveDisabled || addLimit < 1) return
+    if (!draft || saveDisabled || aiLimit < 1) return
     if (document.activeElement instanceof HTMLElement) appendTrigger.current = document.activeElement
     if (showAppendAi) { appendForm.current?.querySelector('input')?.focus(); return }
-    setAppendSettings(newAiSettings(draft, validAddCount ? addCount : 1))
+    setAppendSettings(newAiSettings({ ...draft, questions: emptyQuestions.length ? emptyQuestions : draft.questions }, Math.min(aiLimit, emptyQuestions.length || (validAddCount ? addCount : 1))))
     setJob(null); setPollError(''); setShowAppendAi(true)
   }
   function closeAppendAi() {
@@ -114,8 +131,9 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
     appendTrigger.current?.focus()
   }
   async function appendAiQuestions() {
-    if (!draft || saveDisabled || !validAiSettings(appendSettings, addLimit)) return
+    if (!draft || saveDisabled || !validAiSettings(appendSettings, aiLimit)) return
     await action.run(async () => {
+      appendQuestionCount.current = appendSettings.questionCount
       setJobMode('append'); setPollError('')
       setJob(await api.post<AiJob>('/ai/test-generations', {
         ...generationPayload(appendSettings), level: draft.level, language: draft.language,
@@ -125,6 +143,13 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
           sourceText: `${draft.description ?? ''}\n${draft.instructions ?? ''}\nВече включени въпроси (създай различни нови въпроси):\n${draft.questions.map(q => plainQuestionText(q.text)).join('\n')}`.slice(0, 20000),
         }),
       }))
+    })
+  }
+  async function retryAppendAi() {
+    if (!job || job.status !== 'failed' || saveDisabled) return
+    await action.run(async () => {
+      if (appendQuestionCount.current > aiLimit) throw new Error('Няма достатъчно място за тази AI заявка. Освободете място или генерирайте по-малко въпроси с нова заявка.')
+      setPollError(''); setJob(await api.post<AiJob>(`/ai/test-generations/${job.id}/retry`))
     })
   }
   function patchQuestion(index: number, patch: Partial<Question>) { if (draft) setDraft({ ...draft, questions: draft.questions.map((q, i) => i === index ? { ...q, ...patch } : q) }) }
@@ -219,7 +244,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
       </section>}
     </> : <fieldset className="ws-editor" disabled={saveDisabled}>
       <div className="ws-test-settings" role="group" aria-labelledby="test-settings-title">
-      <div className="ws-section-head"><h3 id="test-settings-title">Настройки на теста</h3><button type="button" className="command-button" disabled={saveDisabled || addLimit < 1} onClick={openAppendAi}><Sparkles size={17} /> Добави с AI</button></div>
+      <div className="ws-section-head"><h3 id="test-settings-title">Настройки на теста</h3><button type="button" className="command-button" disabled={saveDisabled || aiLimit < 1} onClick={openAppendAi}><Sparkles size={17} /> Добави с AI</button></div>
       <div className="ws-form-grid"><label>Тема<input value={draft.title} maxLength={190} onChange={e => setDraft({ ...draft, title: e.target.value })} /></label><label>Дисциплина<input value={draft.subject ?? ''} maxLength={190} onChange={e => setDraft({ ...draft, subject: e.target.value })} /></label><label>Въпроси<input type="number" readOnly value={draft.questions.length} /></label><label>Трудност<input readOnly value={draftDifficulties.length === 1 ? difficulties[draftDifficulties[0]] : draftDifficulties.length ? difficulties.MIXED : ''} /></label></div>
       <fieldset className="ws-ai-types" disabled><legend>Типове въпроси</legend><div className="ws-actions">{types.map(([key, text]) => <label className="ws-check" key={key}><input type="checkbox" readOnly checked={draft.questions.some(q => q.type === key)} />{text}</label>)}</div></fieldset>
       <div className="ws-ai-image-settings"><label className="ws-check"><input type="checkbox" disabled readOnly checked={draftImageCount > 0} />С изображения</label>{draftImageCount > 0 && <label>Въпроси с изображение<input type="number" readOnly value={draftImageCount} /></label>}</div>
@@ -239,14 +264,15 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
         {['SHORT_ANSWER', 'OPEN_ANSWER'].includes(q.type) && <label>Критерии за ръчна проверка<textarea value={q.criteria} onChange={e => patchQuestion(index, { criteria: e.target.value })} /></label>}<label>Обяснение след разрешен преглед<textarea value={q.explanation ?? ''} onChange={e => patchQuestion(index, { explanation: e.target.value })} /></label>
       </article>)}
       <section className="ws-add-questions" aria-label="Добавяне на въпроси">
-        <div className="ws-inline-form"><label>Брой нови въпроси<input type="number" min={1} max={Math.max(1, addLimit)} step={1} value={addCount} disabled={!addLimit} onChange={e => setAddCount(Number(e.target.value))} /></label><button className="command-button" disabled={!validAddCount || generating} onClick={() => setDraft(previous => previous ? { ...previous, questions: [...previous.questions, ...Array.from({ length: addCount }, question)] } : previous)}><Plus size={17} /> Ръчно</button><button type="button" className="command-button" disabled={saveDisabled || addLimit < 1} onClick={openAppendAi}><Sparkles size={17} /> С AI</button><span className="ws-summary">{draft.questions.length} / 100</span></div>
+        <div className="ws-inline-form"><label>Брой нови въпроси<input type="number" min={1} max={Math.max(1, addLimit)} step={1} value={addCount} disabled={!addLimit} onChange={e => setAddCount(Number(e.target.value))} /></label><button className="command-button" disabled={!validAddCount || generating} onClick={() => setDraft(previous => previous ? { ...previous, questions: [...previous.questions, ...Array.from({ length: addCount }, question)] } : previous)}><Plus size={17} /> Ръчно</button><button type="button" className="command-button" disabled={saveDisabled || aiLimit < 1} onClick={openAppendAi}><Sparkles size={17} /> С AI</button><span className="ws-summary">{draft.questions.length} / 100</span></div>
         <Feedback error={action.error || (job?.status === 'failed' ? job.error_message ?? 'AI заявката не успя.' : pollError)} busy={generating} />
         {showAppendAi && <form ref={appendForm} className="ws-ai-form ws-append-ai" aria-label="Добавяне на въпроси с AI" onSubmit={e => { e.preventDefault(); void appendAiQuestions() }}>
-          <div className="ws-section-head"><h3>Нови въпроси с AI</h3><button type="button" className="icon-button" title="Затвори AI настройките" disabled={saveDisabled} onClick={closeAppendAi}><X size={18} /></button></div>
-          <AiTestFields api={api} value={appendSettings} onChange={setAppendSettings} disabled={saveDisabled} maximum={addLimit} />
-          <div className="ws-actions"><button type="submit" className="primary command-button" disabled={saveDisabled || !validAiSettings(appendSettings, addLimit)}><Sparkles size={17} />{generating ? 'Генериране...' : 'Генерирай'}</button>
+          <div className="ws-section-head"><h3>{emptyQuestions.length ? 'Попълване на празни въпроси с AI' : 'Нови въпроси с AI'}</h3><button type="button" className="icon-button" title="Затвори AI настройките" disabled={saveDisabled} onClick={closeAppendAi}><X size={18} /></button></div>
+          {emptyQuestions.length > 0 && <p className="ws-muted">AI ще попълни първо празните въпроси ({emptyQuestions.length}) по ред. Въпросите с въведено съдържание, точките и времето се запазват. Ако заявите повече въпроси, останалите ще се добавят в края.</p>}
+          <AiTestFields api={api} value={appendSettings} onChange={setAppendSettings} disabled={saveDisabled} maximum={aiLimit} />
+          <div className="ws-actions"><button type="submit" className="primary command-button" disabled={saveDisabled || !validAiSettings(appendSettings, aiLimit)}><Sparkles size={17} />{generating ? 'Генериране...' : 'Генерирай'}</button>
             {job && <span role="status">{label(job.status)}</span>}
-            {job?.status === 'failed' && <button type="button" className="command-button" disabled={saveDisabled} onClick={() => void action.run(async () => { setPollError(''); setJob(await api.post<AiJob>(`/ai/test-generations/${job.id}/retry`)) })}><Sparkles size={17} /> Повтори</button>}
+            {job?.status === 'failed' && <button type="button" className="command-button" disabled={saveDisabled} onClick={() => void retryAppendAi()}><Sparkles size={17} /> Повтори</button>}
           </div>
         </form>}
       </section>
