@@ -9,6 +9,9 @@ node_modules/
 build/
 dist/
 
+# Documentation
+/docs/
+
 # Runtime files
 *.log
 *.pid
