@@ -90,6 +90,12 @@ try {
       await chosenWrong.getByText('Твоят избор', { exact: true }).waitFor()
       assert.equal(await chosenWrong.getByText('Неверен избор', { exact: true }).count(), 1)
       assert.equal(await chosenWrong.getByText('Верен отговор', { exact: true }).count(), 0)
+      assert.equal(await card(1).locator('.result-review-options li.is-incorrect').filter({ hasText: 'Числото 42' }).evaluate(element => {
+        const sample = document.createElement('span'); sample.style.outline = '2px solid var(--danger)'; document.body.append(sample)
+        const expected = getComputedStyle(sample).outlineColor; sample.remove()
+        const outline = getComputedStyle(element)
+        return outline.outlineStyle === 'solid' && outline.outlineWidth === '2px' && outline.outlineColor === expected
+      }), true, 'A wrong student choice must have a visible red outline')
       const missed = card(1).getByRole('listitem').filter({ hasText: 'Стойността true' })
       assert.equal(await missed.getByText('Верен отговор', { exact: true }).count(), 1)
       assert.equal(await missed.getByText('Не е избран', { exact: true }).count(), 1)
