@@ -13,6 +13,7 @@ import { AssignmentsPanel } from './AssignmentsPanel'
 import { AssignmentParticipantsPage } from './AssignmentParticipantsPage'
 import { GradingPanel } from './GradingPanel'
 import { LearnerPanel } from './StudentPanel'
+import { ResultReviewPage } from './ResultReviewPage'
 import { ExamScreen } from './ExamScreen'
 import { NotificationEmailVerification, WorkspaceProfile } from './AccountPanels'
 import { Feedback, Panel, SectionHead } from './ui'
@@ -21,15 +22,18 @@ import { ThemeToggle } from '../components/ThemeToggle'
 
 type View = 'dashboard' | 'groups' | 'tests' | 'assignments' | 'grading' | 'learner' | 'profile' | 'admin'
 
-function workspaceLocation(fallback: View): { view: View; participants: number | null } {
+type WorkspaceScreen = { view: View; participants: number | null; result: number | null }
+
+function workspaceLocation(fallback: View): WorkspaceScreen {
   const path = window.location.pathname
   const match = path.match(/^\/assignments\/([1-9][0-9]{0,14})\/participants$/)
-  if (match) return { view: 'assignments', participants: Number(match[1]) }
-  if (path === '/assignments') return { view: 'assignments', participants: null }
-  if (path.startsWith('/results/')) return { view: 'learner', participants: null }
-  if (path.startsWith('/verify-email')) return { view: 'profile', participants: null }
+  if (match) return { view: 'assignments', participants: Number(match[1]), result: null }
+  if (path === '/assignments') return { view: 'assignments', participants: null, result: null }
+  const resultMatch = path.match(/^\/results\/([1-9][0-9]{0,14})$/)
+  if (resultMatch) return { view: 'learner', participants: null, result: Number(resultMatch[1]) }
+  if (path.startsWith('/verify-email')) return { view: 'profile', participants: null, result: null }
   const view = history.state?.examaiView
-  return { view: ['dashboard', 'groups', 'tests', 'assignments', 'grading', 'learner', 'profile', 'admin'].includes(view) ? view : fallback, participants: null }
+  return { view: ['dashboard', 'groups', 'tests', 'assignments', 'grading', 'learner', 'profile', 'admin'].includes(view) ? view : fallback, participants: null, result: null }
 }
 
 export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: AuthResponse; logout: () => Promise<void>; onAuth: (auth: AuthResponse) => void; refreshProfile: () => Promise<void> }) {
@@ -45,7 +49,13 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
   function navigate(next: View, participants: number | null = null) {
     const path = next === 'assignments' ? participants === null ? '/assignments' : `/assignments/${participants}/participants` : '/'
     if (window.location.pathname !== path || view !== next) history.pushState({ examaiView: next }, '', path)
-    setScreen({ view: next, participants })
+    setScreen({ view: next, participants, result: null })
+    window.scrollTo({ top: 0 })
+  }
+  function openResult(attempt: number) {
+    const path = `/results/${attempt}`
+    if (window.location.pathname !== path) history.pushState({ examaiView: 'learner' }, '', path)
+    setScreen({ view: 'learner', participants: null, result: attempt })
     window.scrollTo({ top: 0 })
   }
   const [exam, setExam] = useState<{ assignment: number; attempt?: number; code?: string } | null>(null)
@@ -66,13 +76,15 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
     <nav className="ws-nav" aria-label="Основна навигация">{available.map(({ key, name, icon: Icon }) => <button key={key} className={actualView === key ? 'active' : ''} aria-current={actualView === key ? 'page' : undefined} onClick={() => navigate(key)}><Icon size={18} aria-hidden="true" />{name}</button>)}</nav>
     <div className="ws-body" id="workspace-content" tabIndex={-1}>
       {actualView === 'dashboard' && <Dashboard api={api} teacher={teacher} navigate={navigate} />}
-      {actualView === 'groups' && <GroupsPanel api={api} teacher={teacher} selected={selectedGroup} setSelected={setSelectedGroup} begin={(assignment, attempt) => setExam({ assignment, attempt })} />}
+      {actualView === 'groups' && <GroupsPanel api={api} openResult={openResult} teacher={teacher} selected={selectedGroup} setSelected={setSelectedGroup} begin={(assignment, attempt) => setExam({ assignment, attempt })} />}
       {actualView === 'tests' && <AssessmentEditor api={api} userId={auth.user.id} />}
       {actualView === 'assignments' && (screen.participants === null
         ? <AssignmentsPanel api={api} userId={auth.user.id} openParticipants={id => navigate('assignments', id)} />
         : <AssignmentParticipantsPage key={screen.participants} api={api} id={screen.participants} back={() => navigate('assignments')} />)}
       {actualView === 'grading' && <GradingPanel api={api} />}
-      {actualView === 'learner' && <LearnerPanel api={api} begin={(assignment, attempt) => setExam({ assignment, attempt })} />}
+      {actualView === 'learner' && (screen.result === null
+        ? <LearnerPanel api={api} openResult={openResult} begin={(assignment, attempt) => setExam({ assignment, attempt })} />
+        : <ResultReviewPage key={screen.result} api={api} attempt={screen.result} back={() => navigate('learner')} />)}
       {actualView === 'profile' && (window.location.pathname.startsWith('/verify-email')
         ? <NotificationEmailVerification api={api} back={() => navigate('profile')} />
         : <WorkspaceProfile api={api} auth={auth} onAuth={onAuth} />)}

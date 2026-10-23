@@ -176,7 +176,8 @@ try {
       await page.getByLabel('Парола', { exact: true }).fill('fixture-password')
       await page.getByRole('button', { name: 'Влез', exact: true }).click()
     }
-    await page.getByRole('heading', { name: 'Оценка 5 · Успешен', exact: true }).waitFor()
+    await page.getByRole('heading', { name: 'Преглед на теста', exact: true }).waitFor()
+    await page.getByText('Учителят не е разрешил преглед на теста и отговорите за този опит.', { exact: true }).waitFor()
     assert.equal(new URL(page.url()).pathname, '/results/401')
     await page.getByText('Учителят не е разрешил преглед на теста и отговорите за този опит.', { exact: true }).waitFor()
     await learner.close()

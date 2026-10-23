@@ -10,7 +10,7 @@ import { RecipientPicker } from './RecipientPicker'
 import { LearnerPanel } from './StudentPanel'
 import { useNotifications } from '../notifications'
 
-export function GroupsPanel({ api, teacher, selected, setSelected, begin }: { api: WorkspaceApi; teacher: boolean; selected: Group | null; setSelected: (group: Group | null) => void; begin: (assignment: number, attempt?: number) => void }) {
+export function GroupsPanel({ api, teacher, selected, setSelected, begin, openResult }: { api: WorkspaceApi; openResult: (attempt: number) => void; teacher: boolean; selected: Group | null; setSelected: (group: Group | null) => void; begin: (assignment: number, attempt?: number) => void }) {
   const groups = useRemote<Group[]>(api, '/groups', [])
   const refresh = useAction()
   const [creating, setCreating] = useState(false)
@@ -27,7 +27,7 @@ export function GroupsPanel({ api, teacher, selected, setSelected, begin }: { ap
     const refreshed = await groups.reload()
     setSelected(refreshed.find(group => group.id === selected.id) ?? (code ? { ...selected, join_code: code } : selected))
   }} />
-  if (selected && !teacher) return <GroupTests api={api} group={selected} back={backToGroups} begin={begin} />
+  if (selected && !teacher) return <GroupTests api={api} group={selected} back={backToGroups} begin={begin} openResult={openResult} />
   return <section className="ws-section"><SectionHead title="Групи" description={teacher ? 'Организирай учениците в групи, за да им възлагаш тестове заедно.' : 'Присъедини се с код от учителя или отвори група, за да видиш тестовете ѝ.'}>{teacher && <button type="button" className="primary command-button" onClick={() => setCreating(true)}><Plus size={17} /> Създай група</button>}</SectionHead><Feedback error={groups.error || refresh.error} busy={groups.loading || refresh.busy} />
     {!teacher && <JoinGroupForm api={api} joined={async result => { await groups.reload(); notify(result.alreadyMember ? `Вече си в групата „${result.name}“.` : `Присъедини се към групата „${result.name}“.`) }} />}
     <Panel title={teacher ? 'Твоите групи' : 'Групите, в които участваш'} description={teacher ? 'Избери група, за да управляваш участниците. Сподели кода ѝ с учениците, за да се присъединят.' : 'Избери името на групата, за да отвориш възложените тестове.'}>
@@ -202,6 +202,6 @@ function GroupMembers({ api, group }: { api: WorkspaceApi; group: Group }) {
   </section>
 }
 
-function GroupTests({ api, group, back, begin }: { api: WorkspaceApi; group: Group; back: () => void; begin: (assignment: number, attempt?: number) => void }) {
-  return <section className="ws-section" aria-label="Тестове на групата"><SectionHead title={group.name}><button className="command-button" title="Към групите" onClick={back}><ArrowLeft size={17} /> Към групите</button></SectionHead><p className="ws-muted">Учител: {group.teacher_name ?? '—'}</p>{group.subject && <p>{group.subject}</p>}{group.description && <p>{group.description}</p>}<LearnerPanel key={group.id} api={api} begin={begin} groupId={group.id} /></section>
+function GroupTests({ api, group, back, begin, openResult }: { api: WorkspaceApi; openResult: (attempt: number) => void; group: Group; back: () => void; begin: (assignment: number, attempt?: number) => void }) {
+  return <section className="ws-section" aria-label="Тестове на групата"><SectionHead title={group.name}><button className="command-button" title="Към групите" onClick={back}><ArrowLeft size={17} /> Към групите</button></SectionHead><p className="ws-muted">Учител: {group.teacher_name ?? '—'}</p>{group.subject && <p>{group.subject}</p>}{group.description && <p>{group.description}</p>}<LearnerPanel key={group.id} api={api} begin={begin} openResult={openResult} groupId={group.id} /></section>
 }

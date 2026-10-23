@@ -42,6 +42,7 @@
     "test:exam-navigation": "node e2e/exam-navigation.mjs",
     "test:exam-retakes": "node e2e/exam-retakes.mjs",
     "test:learner-results": "node e2e/learner-results.mjs",
+    "test:result-review-page": "node e2e/result-review-page.mjs",
     "test:student-review": "node e2e/student-review-permission.mjs",
     "test:grading": "node e2e/grading-limits.mjs",
     "test:grading-answers": "node e2e/grading-answers.mjs",
