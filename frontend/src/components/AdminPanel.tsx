@@ -5,6 +5,7 @@ import { api } from '../api/client'
 import { formatDate, roleLabels, subscriptionLabel } from '../api/access'
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog'
 import { useNotifications } from '../notifications'
+import { TableContainer } from '../workspace/ui'
 import type { AuditEntry, AuthResponse, PasswordResponse, PermissionChange, PermissionRow, Role, User, UserEdit } from '../types/models'
 
 const modes = { ADMIN: 'Само администратор', PUBLIC: 'Публичен вход', PROFILE: 'Собствен профил', MANAGED: '' }
@@ -130,7 +131,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
         <select aria-label="Филтър по роля" value={role} onChange={event => setRole(event.target.value as Role | '')}><option value="">Всички роли</option>{Object.entries(roleLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
         <button className="primary command-button" disabled={busy} onClick={() => { setError(''); setEditing({ id: null, value: { ...emptyUser } }) }}><UserPlus size={17} /> Нов потребител</button>
       </div>
-      <div className="table-scroll"><table className="data-table users-table"><thead><tr><th>Потребител</th><th>Роля</th><th>Статус</th><th>Абонамент / до</th><th>Действия</th></tr></thead><tbody>
+      <TableContainer label="Потребители — таблица"><table className="ws-table data-table users-table" aria-label="Потребители"><thead><tr><th>Потребител</th><th>Роля</th><th>Статус</th><th>Абонамент / до</th><th>Действия</th></tr></thead><tbody>
         {filteredUsers.map(user => <tr key={user.id}>
           <td><strong>{user.name}{user.id === auth.user.id && <small className="inline-muted"> (Вие)</small>}</strong><small>{user.email}</small>{user.passwordChangeRequired && <small className="warning-text">Временна парола</small>}</td>
           <td><div className="role-cell"><span>{roleLabels[user.role]}</span><button className="icon-button" title="Смени роля" aria-label={`Смени ролята на ${user.email}`} disabled={busy} onClick={() => { setError(''); setRoleChange({ user, role: user.role }) }}><UserRoundCog size={16} /></button></div></td>
@@ -144,7 +145,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
           </div></td>
         </tr>)}
         {!loading && !filteredUsers.length && <tr><td colSpan={5} className="empty-cell">Няма намерени потребители.</td></tr>}
-      </tbody></table></div>
+      </tbody></table></TableContainer>
     </>}
 
     {tab === 'permissions' && <>
@@ -153,7 +154,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
         <select aria-label="Контролер" value={controller} onChange={event => setController(event.target.value)}><option value="">Всички контролери</option>{[...new Set(rows.map(row => row.controller))].map(name => <option key={name}>{name}</option>)}</select>
         <button className="primary command-button" disabled={busy || !dirtyCount} onClick={() => void perform(async () => { setRows(await api.updatePermissions(token, Object.values(changes))); setChanges({}); setAudit(await api.audit(token)); await onProfileRefresh(); notify('Правата са обновени.') })}><Save size={17} /> Запази{dirtyCount > 0 && ` (${dirtyCount})`}</button>
       </div>
-      <div className="table-scroll"><table className="data-table permissions-table"><thead><tr><th>Контролер</th><th>Метод / маршрут</th><th>Учител</th><th>Ученик / студент</th><th>Администратор</th></tr></thead><tbody>
+      <TableContainer label="Права — таблица"><table className="ws-table data-table permissions-table" aria-label="Права"><thead><tr><th>Контролер</th><th>Метод / маршрут</th><th>Учител</th><th>Ученик / студент</th><th>Администратор</th></tr></thead><tbody>
         {filteredRows.map(row => <tr key={row.key} className={row.mode !== 'MANAGED' ? 'fixed-policy' : ''}>
           <td><strong>{row.controller}</strong></td>
           <td><code>{row.method}</code><small className="route-text">{row.httpMethods.join(', ')} {row.paths.join(', ')}</small>{row.mode !== 'MANAGED' && <small>{modes[row.mode]}</small>}</td>
@@ -166,13 +167,13 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
           <td><span className="admin-access"><Check size={16} /> Пълен достъп</span></td>
         </tr>)}
         {!loading && !filteredRows.length && <tr><td colSpan={5} className="empty-cell">Няма намерени методи.</td></tr>}
-      </tbody></table></div>
+      </tbody></table></TableContainer>
     </>}
 
-    {tab === 'audit' && <div className="table-scroll"><table className="data-table"><thead><tr><th>Дата</th><th>Администратор</th><th>Действие</th><th>Промяна</th></tr></thead><tbody>
+    {tab === 'audit' && <TableContainer label="Журнал — таблица"><table className="ws-table data-table" aria-label="Журнал"><thead><tr><th>Дата</th><th>Администратор</th><th>Действие</th><th>Промяна</th></tr></thead><tbody>
       {audit.map(entry => <tr key={entry.id}><td>{new Date(entry.createdAt).toLocaleString('bg-BG')}</td><td>{entry.actorEmail}</td><td>{actions[entry.action] ?? entry.action}<small>{entry.targetEmail}</small></td><td>{entry.details}</td></tr>)}
       {!loading && !audit.length && <tr><td colSpan={4} className="empty-cell">Няма записани промени.</td></tr>}
-    </tbody></table></div>}
+    </tbody></table></TableContainer>}
 
     {deleting && <DeleteConfirmationDialog title="Изтриване на потребител" description={<>Да изтрием ли <strong>{deleting.email}</strong>? Ще бъдат изтрити профилът, Google връзката, сесиите, опитите и резултатите му, както и собствените тестове и възлагания с опитите и резултатите на всички участници. Това е необратимо. Административният журнал се запазва.</>} confirmLabel="Изтрий потребителя" confirmDisabled={!deletePassword.trim()} onCancel={() => { setDeleting(null); setDeletePassword('') }} onConfirm={deleteUser}>
       <label>Вашата администраторска парола<input type="password" required autoComplete="current-password" value={deletePassword} onChange={event => setDeletePassword(event.target.value)} /></label>
