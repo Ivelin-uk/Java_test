@@ -4,7 +4,7 @@ import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
 import type { Assessment, Assignment, Group, Member, Version } from './types'
 import { date, label, roles } from './types'
-import { Empty, Feedback, SectionHead } from './ui'
+import { Empty, Feedback, Panel, SectionHead, TableContainer } from './ui'
 import { TestPicker } from './TestPicker'
 import { RecipientPicker } from './RecipientPicker'
 import { DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
@@ -96,7 +96,8 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
       await assignments.reload()
     }, 'Възлагането е създадено.')
   }
-  return <section ref={section} className="ws-section"><SectionHead title="Възлагания" /><Feedback error={(formError?.field === 'period' ? '' : formError?.message) || assignments.error || tests.error || groups.error || action.error || (test && resolved?.testId === test.id ? resolved.error : '')} busy={action.busy || loadingVersion} />
+  return <section ref={section} className="ws-section"><SectionHead title="Възлагания" description="Избери кой тест да решава всяка група и до кога. Управлявай сроковете и достъпа от списъка по-долу." /><Feedback error={(formError?.field === 'period' ? '' : formError?.message) || assignments.error || tests.error || groups.error || action.error || (test && resolved?.testId === test.id ? resolved.error : '')} busy={action.busy || loadingVersion} />
+    <Panel title="Ново възлагане" description="1. Избери тест · 2. Задай срок и брой опити · 3. Добави групите и натисни „Възложи“.">
     <form className="ws-assignment-form" aria-label="Възлагане на тест" noValidate onChange={() => setFormError(null)} onSubmit={e => { e.preventDefault(); void assign() }} onReset={e => { e.preventDefault(); resetForm() }}>
       <fieldset className="ws-editor" disabled={action.busy}>
       <div className="ws-form-grid"><TestPicker key={pickerKey} tests={tests.data.filter(t => t.status !== 'archived')} selected={test} select={value => { setTest(value ? { ...value } : null); setResolved(null); setFormError(null) }} disabled={action.busy || tests.loading} invalid={formError?.field === 'test'} /><label>Начало<input type="datetime-local" name="startsAt" required max={minuteBound(end, -1)} step={60} aria-invalid={!!periodError} aria-describedby={periodError ? periodErrorId : undefined} value={start} onChange={e => setStart(e.target.value)} /></label><label>Краен срок<input type="datetime-local" name="endsAt" required min={minuteBound(start, 1)} step={60} aria-invalid={!!periodError} aria-describedby={periodError ? periodErrorId : undefined} value={end} onChange={e => setEnd(e.target.value)} /></label><label>Опити<input type="number" required min={1} max={20} step={1} value={attempts} onChange={e => setAttempts(e.target.value === '' ? '' : Number(e.target.value))} /></label></div>
@@ -107,13 +108,15 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
       <div className="ws-actions ws-assignment-form-actions"><button type="submit" className="primary command-button" disabled={action.busy || loadingVersion || tests.loading || groups.loading || assignments.loading || !!duplicateMessage}><Plus size={17} /> Възложи</button><button type="reset" className="icon-button" title="Нулирай формата" aria-label="Нулирай формата" disabled={action.busy}><RotateCcw size={17} /></button></div>
       </fieldset>
     </form>
+    </Panel>
+    <Panel title="Възложени тестове" description="Намери тест по име или група. От „Действия“ можеш да промениш датите и да видиш участниците.">
     <div className="ws-assignment-filters" role="group" aria-label="Търсене на възлагания">
       <label>Име на тест<input type="search" placeholder="Търси по име" value={testQuery} onChange={event => setTestQuery(event.target.value)} /></label>
       <label>Група<input type="search" placeholder="Търси по група" value={groupQuery} onChange={event => setGroupQuery(event.target.value)} /></label>
       <button type="button" className="command-button" disabled={!testQuery && !groupQuery} onClick={() => { setTestQuery(''); setGroupQuery('') }}><X size={16} /> Изчисти филтъра</button>
       <span className="ws-summary" role="status">{visibleAssignments.length} от {assignments.data.length} възлагания</span>
     </div>
-    <div className="ws-table-wrap"><table className="ws-table" aria-label="Възлагания">
+    <TableContainer label="Възлагания — таблица"><table className="ws-table" aria-label="Възлагания">
       <thead><tr><th>Тест</th><th>Начало</th><th>Краен срок</th><th>Възложено на</th><th>Получатели</th><th>Код за достъп</th><th>Действия</th></tr></thead>
       <tbody>{visibleAssignments.map(a => <tr key={a.id}>
         <td><div>{a.title}</div></td><td>{date(a.starts_at)}</td><td>{date(a.ends_at)}</td><td><AssignmentAudience assignment={a} /></td><td><button type="button" className="ws-text-button" title={`Участници: ${a.title}`} aria-label={`Участници: ${a.title}`} onClick={() => openParticipants(a.id)}>{a.recipients}</button></td>
@@ -127,9 +130,10 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
           <button className="icon-button" title="Копирай кода" aria-label="Копирай кода" disabled={action.busy || !a.access_code} onClick={() => void action.run(() => navigator.clipboard.writeText(a.access_code!), 'Кодът е копиран.')}><Copy size={17} /></button>
           <button className="icon-button" title="Изпрати кода по имейл" aria-label="Изпрати кода по имейл" disabled={action.busy || !a.access_code} onClick={() => void action.run(() => api.post(`/assignments/${a.id}/code/send`, { code: a.access_code, channel: 'email' }), 'Известията са добавени в опашката.')}><Mail size={17} /></button>
         </div></td>
-        <td><div className="ws-actions ws-assignment-actions"><button className="icon-button" title="Промени датите" aria-label={`Промени датите: ${a.title}`} disabled={action.busy} onClick={() => setEditingSchedule(a)}><CalendarDays size={17} /></button><button className="icon-button" title="Участници и наблюдение" aria-label="Участници и наблюдение" onClick={() => openParticipants(a.id)}><Users size={17} /></button><button className="icon-button danger" title="Отмени кода" disabled={action.busy} onClick={() => setRevokingCode(a)}><Ban size={17} /></button>{a.teacher_id === userId && <button className="icon-button danger" title="Изтрий възлагането" aria-label="Изтрий възлагането" disabled={action.busy} onClick={() => setDeletingAssignment(a)}><Trash2 size={17} /></button>}</div></td>
+        <td><div className="ws-actions ws-assignment-actions"><button className="command-button" title="Промени датите" aria-label={`Промени датите: ${a.title}`} disabled={action.busy} onClick={() => setEditingSchedule(a)}><CalendarDays size={17} /> Дати</button><button className="command-button" title="Участници и наблюдение" aria-label="Участници и наблюдение" onClick={() => openParticipants(a.id)}><Users size={17} /> Участници</button><button className="icon-button danger" title="Отмени кода" disabled={action.busy} onClick={() => setRevokingCode(a)}><Ban size={17} /></button>{a.teacher_id === userId && <button className="icon-button danger" title="Изтрий възлагането" aria-label="Изтрий възлагането" disabled={action.busy} onClick={() => setDeletingAssignment(a)}><Trash2 size={17} /></button>}</div></td>
       </tr>)}</tbody>
-    </table></div>{!visibleAssignments.length && !assignments.loading && !assignments.error && <Empty>{testSearch || groupSearch ? 'Няма възлагания за зададеното търсене.' : 'Няма възлагания.'}</Empty>}
+    </table></TableContainer>{!visibleAssignments.length && !assignments.loading && !assignments.error && <Empty>{testSearch || groupSearch ? 'Няма възлагания за зададеното търсене.' : 'Няма възлагания.'}</Empty>}
+    </Panel>
     {editingSchedule && <AssignmentScheduleDialog assignment={editingSchedule} onClose={() => setEditingSchedule(null)} onSave={async schedule => {
       const id = editingSchedule.id
       await api.put(`/assignments/${id}/schedule`, schedule)
@@ -195,7 +199,7 @@ export function AssignmentParticipants({ api, assignment, endsAt, groupAssignmen
       <button disabled={action.busy || !coTeacher}><UserPlus size={17} /> Разреши достъп</button>
     </form>
     <div className="ws-recipient-search"><Search size={17} aria-hidden="true" /><input type="search" aria-label="Търси член на групата" placeholder="Име или имейл" value={query} onChange={event => setQuery(event.target.value)} /></div>
-    <div className="ws-table-wrap"><table className="ws-table" aria-label="Получатели на възлагането">
+    <TableContainer label="Получатели на възлагането — таблица"><table className="ws-table" aria-label="Получатели на възлагането">
       <thead><tr><th>Обучаем</th><th>Възлагане</th><th>Опит</th><th>Статус</th><th>Разрешения</th><th>Действия</th></tr></thead>
       <tbody>{visible.map((row, index) => <tr key={`${row.student_id}-${row.attempt_id ?? 'none'}`}>
         <td>{row.name}{row.email && <div className="ws-muted">{row.email}</div>}</td><td>{!row.assigned ? 'Не е възложен' : row.canceled ? 'Премахнат' : 'Възложен'}</td><td>{row.assigned ? `${row.attempt_number ?? 0}/${row.max_attempts}` : '-'}</td><td>{row.status ? label(row.status) : 'Не е започнал'}</td>
@@ -205,7 +209,7 @@ export function AssignmentParticipants({ api, assignment, endsAt, groupAssignmen
           {canAssign(row) && <button className="icon-button" title={`${row.assigned ? 'Възложи отново на' : 'Възложи теста на'} ${row.name}`} aria-label={`${row.assigned ? 'Възложи отново на' : 'Възложи теста на'} ${row.name}`} disabled={action.busy} onClick={() => setChangingRecipient({ row, remove: false })}><RotateCw size={17} /></button>}
         </div>}</td>
       </tr>)}</tbody>
-    </table></div>
+    </table></TableContainer>
     {!visible.length && !list.loading && !members.loading && <Empty>{search ? 'Няма намерени резултати.' : 'Няма получатели.'}</Empty>}
     {selected && <form className="ws-inline-form" onSubmit={event => { event.preventDefault(); void action.run(async () => { await api.put(`/assignments/${assignment}/recipients/${selected.student_id}/accommodation`, { fullscreenExempt: exempt, timeMultiplier: multiplier, maxAttempts: max, reason }); setSelected(null); await list.reload() }, 'Изключението е запазено и одитирано.') }}>
       <strong>{selected.name}</strong><label className="ws-check"><input type="checkbox" checked={exempt} onChange={event => setExempt(event.target.checked)} /> Без цял екран</label>

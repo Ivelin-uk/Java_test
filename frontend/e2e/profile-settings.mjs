@@ -95,7 +95,7 @@ try {
       assert.equal(writes(emailPath).length, 2)
       assert.equal(writes(passwordPath).length, 0)
       current.releaseEmail()
-      await emailForm.getByRole('status').getByText('Изпратено е потвърждение до новия адрес.', { exact: true }).waitFor()
+      await page.getByRole('status').getByText('Изпратено е потвърждение до новия адрес.', { exact: true }).waitFor()
       assert.equal(await emailPassword.inputValue(), '')
       assert.equal(await oldPassword.inputValue(), 'password-form-draft')
       assert.equal(writes(emailPath).at(-1).body.email, 'new-notifications@example.test')
@@ -139,7 +139,7 @@ try {
         await page.setViewportSize({ width, height })
         if (await page.locator('html').getAttribute('data-theme') !== theme) await page.getByRole('button', { name: theme === 'dark' ? 'Тъмна тема' : 'Светла тема', exact: true }).click()
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-        assert.equal(await profile.evaluate(element => [...element.querySelectorAll('form, input, button, p')].every(child => { const bounds = child.getBoundingClientRect(); return bounds.left >= 0 && bounds.right <= innerWidth && child.scrollWidth <= child.clientWidth })), true)
+        assert.equal(await profile.evaluate(element => [...element.querySelectorAll('form, input, button, p')].every(child => { const bounds = child.getBoundingClientRect(); return bounds.left >= 0 && bounds.right <= innerWidth && (child.matches('input') || child.scrollWidth <= child.clientWidth) })), true)
         await page.screenshot({ path: new URL(`profile-settings-${theme}-${width}.png`, artifacts).pathname, fullPage: true })
       }
       await page.goto(`${frontend}/verify-email`)

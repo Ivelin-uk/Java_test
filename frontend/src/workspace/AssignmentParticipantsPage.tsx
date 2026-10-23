@@ -10,7 +10,7 @@ export function AssignmentParticipantsPage({ api, id, back }: { api: WorkspaceAp
   const assignments = useRemote<Assignment[]>(api, '/assignments', [])
   const assignment = assignments.data.find(value => value.id === id)
   return <section className="ws-section" aria-label="Участници във възлагането">
-    <SectionHead title="Участници във възлагането"><button type="button" className="icon-button" title="Към възлаганията" aria-label="Към възлаганията" onClick={back}><ArrowLeft size={18} /></button></SectionHead>
+    <SectionHead title="Участници във възлагането" description="Виж кои ученици имат достъп и следи техните опити за този тест."><button type="button" className="command-button" title="Към възлаганията" aria-label="Към възлаганията" onClick={back}><ArrowLeft size={18} /> Към възлаганията</button></SectionHead>
     <Feedback error={assignments.error || (!assignments.loading && !assignment ? 'Възлагането не е намерено или нямате достъп до него.' : '')} busy={assignments.loading} />
     {assignment && <>
       <div className="ws-assignment-context">

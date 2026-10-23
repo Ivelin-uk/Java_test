@@ -171,7 +171,7 @@ try {
   const remove = page.getByRole('button', { name: 'Изтрий възлагането', exact: true })
   const unchanged = async () => {
     assert.equal(assignmentVisible, true)
-    assert.equal(await page.locator('.ws-section > .ws-table-wrap tbody tr').count(), 1)
+    assert.equal(await page.getByRole('table', { name: 'Възлагания', exact: true }).locator('tbody tr').count(), 1)
     assert.equal(await page.locator('.ws-assignment-code output').textContent(), 'DEL23456')
     assert.equal(await page.locator('.ws-monitor').count(), 0)
   }
@@ -202,13 +202,13 @@ try {
   releaseDeletion()
   await removeDialog.waitFor({ state: 'detached' })
   assert.equal(assignmentVisible, false)
-  assert.equal(await page.locator('.ws-section > .ws-table-wrap tbody tr').count(), 0)
+  assert.equal(await page.getByRole('table', { name: 'Възлагания', exact: true }).locator('tbody tr').count(), 0)
   assert.equal(await page.locator('.ws-assignment-code').count(), 0)
   assert.equal(await page.locator('.ws-monitor').count(), 0)
   await page.getByRole('button', { name: 'Тестове', exact: true }).click()
   await page.getByRole('button', { name: test.title, exact: true }).waitFor()
   await page.getByRole('button', { name: 'Възлагания', exact: true }).click()
-  assert.equal(await page.locator('.ws-section > .ws-table-wrap tbody tr').count(), 0)
+  assert.equal(await page.getByRole('table', { name: 'Възлагания', exact: true }).locator('tbody tr').count(), 0)
   assert.deepEqual(errors, [])
   console.log('Passed: question/option removal, code revocation, teacher access removal, attempt voiding, owner-only assignment deletion, server-error retry, busy/double-click guard, code/monitor cleanup, source-test preservation, cancel/Escape/focus, desktop/mobile and both themes. API fixtures only; no real data changed.')
 } finally {

@@ -4,7 +4,7 @@ import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
 import type { Group, Member } from './types'
 import { roles } from './types'
-import { Empty, Feedback, SectionHead } from './ui'
+import { Empty, Feedback, Panel, SectionHead, TableContainer } from './ui'
 import { DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
 import { RecipientPicker } from './RecipientPicker'
 import { LearnerPanel } from './StudentPanel'
@@ -28,10 +28,12 @@ export function GroupsPanel({ api, teacher, selected, setSelected, begin }: { ap
     setSelected(refreshed.find(group => group.id === selected.id) ?? (code ? { ...selected, join_code: code } : selected))
   }} />
   if (selected && !teacher) return <GroupTests api={api} group={selected} back={backToGroups} begin={begin} />
-  return <section className="ws-section"><SectionHead title="Групи">{teacher && <button type="button" className="primary command-button" onClick={() => setCreating(true)}><Plus size={17} /> Създай група</button>}</SectionHead><Feedback error={groups.error || refresh.error} busy={groups.loading || refresh.busy} />
+  return <section className="ws-section"><SectionHead title="Групи" description={teacher ? 'Организирай учениците в групи, за да им възлагаш тестове заедно.' : 'Присъедини се с код от учителя или отвори група, за да видиш тестовете ѝ.'}>{teacher && <button type="button" className="primary command-button" onClick={() => setCreating(true)}><Plus size={17} /> Създай група</button>}</SectionHead><Feedback error={groups.error || refresh.error} busy={groups.loading || refresh.busy} />
     {!teacher && <JoinGroupForm api={api} joined={async result => { await groups.reload(); notify(result.alreadyMember ? `Вече си в групата „${result.name}“.` : `Присъедини се към групата „${result.name}“.`) }} />}
+    <Panel title={teacher ? 'Твоите групи' : 'Групите, в които участваш'} description={teacher ? 'Избери група, за да управляваш участниците. Сподели кода ѝ с учениците, за да се присъединят.' : 'Избери името на групата, за да отвориш възложените тестове.'}>
     <div className="ws-group-search"><label>Търси група<input type="search" placeholder="Име на група" value={search} onChange={event => setSearch(event.target.value)} /></label>{!groups.loading && <span className="ws-muted" role="status">{filtered.length} от {groups.data.length} групи</span>}</div>
-    <div className="ws-table-wrap"><table className="ws-table" aria-label="Групи"><thead><tr><th>Име</th><th>Учител</th><th>Дисциплина</th><th>Описание</th><th>Участници</th>{teacher && <><th>Код за присъединяване</th><th>Действия</th></>}</tr></thead><tbody>{filtered.map(group => <tr key={group.id}><td><button className="ws-text-button" onClick={() => setSelected(group)}>{group.name}</button></td><td>{group.teacher_name ?? '—'}</td><td>{group.subject}</td><td>{group.description}</td><td>{group.participant_count ?? '—'}</td>{teacher && <><td><GroupCode code={group.join_code} /></td><td><div className="ws-actions"><button className="icon-button" title="Редактирай групата" onClick={() => setSelected(group)}><Pencil size={17} /></button><button className="icon-button danger" title="Изтрий групата" onClick={() => setDeleting(group)}><Trash2 size={17} /></button></div></td></>}</tr>)}</tbody></table></div>{!filtered.length && !groups.loading && <Empty>{groups.data.length ? 'Няма групи с това име.' : 'Няма записи.'}</Empty>}
+    <TableContainer label="Групи — таблица"><table className="ws-table" aria-label="Групи"><thead><tr><th>Име</th><th>Учител</th><th>Дисциплина</th><th>Описание</th><th>Участници</th>{teacher && <><th>Код за присъединяване</th><th>Действия</th></>}</tr></thead><tbody>{filtered.map(group => <tr key={group.id}><td><button className="ws-text-button" onClick={() => setSelected(group)}>{group.name}</button></td><td>{group.teacher_name ?? '—'}</td><td>{group.subject}</td><td>{group.description}</td><td>{group.participant_count ?? '—'}</td>{teacher && <><td><GroupCode code={group.join_code} /></td><td><div className="ws-actions"><button className="command-button" aria-label="Редактирай групата" title="Редактирай групата" onClick={() => setSelected(group)}><Pencil size={17} /> Редактирай</button><button className="icon-button danger" title="Изтрий групата" onClick={() => setDeleting(group)}><Trash2 size={17} /></button></div></td></>}</tr>)}</tbody></table></TableContainer>{!filtered.length && !groups.loading && <Empty>{groups.data.length ? 'Няма групи с това име.' : 'Няма записи.'}</Empty>}
+    </Panel>
     {deleting && <GroupDeleteDialog api={api} group={deleting} close={() => setDeleting(null)} saved={async () => { await groups.reload(); notify('Групата е изтрита.', 'danger'); setDeleting(null) }} />}
     {creating && <GroupCreateDialog api={api} close={() => setCreating(false)} created={async () => { await groups.reload(); notify('Групата е създадена. Кодът за присъединяване е в таблицата.') }} />}
   </section>
@@ -112,8 +114,8 @@ function GroupEditor({ api, group, back, saved }: { api: WorkspaceApi; group: Gr
     } finally { rotating.current = false }
   }
   return <section className="ws-section" aria-label="Редактиране на група">
-    <SectionHead title={group.name}>
-      <button className="icon-button" title="Към групите" disabled={action.busy} onClick={back}><ArrowLeft size={18} /></button>
+    <SectionHead title={group.name} description="Управлявай данните, кода за присъединяване и учениците в тази група.">
+      <button className="command-button" title="Към групите" disabled={action.busy} onClick={back}><ArrowLeft size={18} /> Към групите</button>
       <button form={formId} type="submit" className="primary command-button" disabled={action.busy || !editing.name.trim()}><Save size={17} /> Запази</button>
     </SectionHead>
     <Feedback error={action.error} busy={action.busy} />
@@ -132,7 +134,7 @@ function GroupEditor({ api, group, back, saved }: { api: WorkspaceApi; group: Gr
         <label>Описание<textarea maxLength={4000} value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })} /></label>
       </fieldset>
     </form>
-    <section className="ws-section" aria-label="Код за присъединяване към групата"><h3>Код за присъединяване</h3><div className="ws-actions"><GroupCode key={code} code={code} /><button type="button" className="command-button" disabled={action.busy || !code} onClick={() => void rotateCode()}><RefreshCw size={17} /> Нов код</button></div><p className="ws-muted">Споделете кода с учениците. „Нов код“ заменя стария код за присъединяване. Учениците, които вече са в групата, остават в нея.</p></section>
+    <section className="ws-section ws-group-access" aria-label="Код за присъединяване към групата"><h3>Код за присъединяване</h3><div className="ws-actions"><GroupCode key={code} code={code} /><button type="button" className="command-button" disabled={action.busy || !code} onClick={() => void rotateCode()}><RefreshCw size={17} /> Нов код</button></div><p className="ws-muted">Споделете кода с учениците. „Нов код“ заменя стария код за присъединяване. Учениците, които вече са в групата, остават в нея.</p></section>
     <GroupMembers api={api} group={group} />
   </section>
 }
@@ -184,13 +186,13 @@ function GroupMembers({ api, group }: { api: WorkspaceApi; group: Group }) {
       <RecipientPicker key={pickerVersion} title="Ученици" searchLabel="Търси ученици" placeholder="Търси по име или имейл" emptyMessage="Няма налични ученици." options={available.map(member => ({ id: member.user_id, name: member.name, detail: member.email }))} selected={selected} toggle={id => setUserIds(ids => ids.includes(id) ? ids.filter(value => value !== id) : [...ids, id])} disabled={disabled} loading={directory.loading || members.loading} keepOpenOnSelect />
       <button type="submit" className="primary command-button" disabled={!selected.length || disabled}><UserPlus size={17} /> Добави</button>
     </form>
-    <div className="ws-table-wrap"><table className="ws-table" aria-label="Участници в групата">
+    <TableContainer label="Участници в групата — таблица"><table className="ws-table" aria-label="Участници в групата">
       <thead><tr><th>Име</th><th>Имейл</th><th>Действие</th></tr></thead>
       <tbody>{participants.map(m => <tr key={m.user_id}>
         <td>{m.name}</td><td>{m.email}</td>
         <td><button className="icon-button danger" title="Премахни от групата" disabled={action.busy} onClick={() => setRemoving(m)}><Trash2 size={17} /></button></td>
       </tr>)}</tbody>
-    </table></div>
+    </table></TableContainer>
     {!participants.length && !members.loading && !members.error && <Empty>Няма участници в групата.</Empty>}
     {removing && <DeleteConfirmationDialog title="Премахване на ученик от група" confirmLabel="Премахни" description={<>Да премахнем ли <strong>{removing.name}</strong> ({removing.email}) от групата <strong>{group.name}</strong>? Профилът и резултатите на ученика ще се запазят.</>} onCancel={() => setRemoving(null)} onConfirm={async () => {
       await api.remove(`/groups/${group.id}/members/${removing.user_id}`)
@@ -201,5 +203,5 @@ function GroupMembers({ api, group }: { api: WorkspaceApi; group: Group }) {
 }
 
 function GroupTests({ api, group, back, begin }: { api: WorkspaceApi; group: Group; back: () => void; begin: (assignment: number, attempt?: number) => void }) {
-  return <section className="ws-section" aria-label="Тестове на групата"><SectionHead title={group.name}><button className="icon-button" title="Към групите" onClick={back}><ArrowLeft size={17} /></button></SectionHead><p className="ws-muted">Учител: {group.teacher_name ?? '—'}</p>{group.subject && <p>{group.subject}</p>}{group.description && <p>{group.description}</p>}<LearnerPanel key={group.id} api={api} begin={begin} groupId={group.id} /></section>
+  return <section className="ws-section" aria-label="Тестове на групата"><SectionHead title={group.name}><button className="command-button" title="Към групите" onClick={back}><ArrowLeft size={17} /> Към групите</button></SectionHead><p className="ws-muted">Учител: {group.teacher_name ?? '—'}</p>{group.subject && <p>{group.subject}</p>}{group.description && <p>{group.description}</p>}<LearnerPanel key={group.id} api={api} begin={begin} groupId={group.id} /></section>
 }

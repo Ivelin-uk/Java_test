@@ -24,7 +24,7 @@ export function WorkspaceProfile({ api, auth, onAuth }: { api: WorkspaceApi; aut
   const [confirmation, setConfirmation] = useState('')
   const [formError, setFormError] = useState('')
   return <section className="ws-section" aria-label="Моят профил">
-    <SectionHead title="Моят профил" />
+    <SectionHead title="Моят профил" description="Управлявай имейла за известия, паролата и свързания Google акаунт." />
     <div className="ws-profile-settings">
     <form className="ws-profile-form" aria-label="Смяна на имейл за известия" onSubmit={event => {
       event.preventDefault()

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowUpRight, BookOpen, ClipboardList, GraduationCap, LayoutDashboard, LogOut, Shield, UserRound, Users } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, BookOpen, ClipboardList, GraduationCap, LayoutDashboard, LogOut, Shield, UserRound, Users } from 'lucide-react'
 import type { AuthResponse } from '../types/models'
 import { roleLabels } from '../api/access'
 import { AdminPanel } from '../components/AdminPanel'
@@ -15,7 +15,7 @@ import { GradingPanel } from './GradingPanel'
 import { LearnerPanel } from './StudentPanel'
 import { ExamScreen } from './ExamScreen'
 import { NotificationEmailVerification, WorkspaceProfile } from './AccountPanels'
-import { Feedback, SectionHead } from './ui'
+import { Feedback, Panel, SectionHead } from './ui'
 import './workspace.css'
 import { ThemeToggle } from '../components/ThemeToggle'
 
@@ -61,9 +61,10 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
   if (auth.user.passwordChangeRequired) return <main className="app-shell"><h1>Смяна на временната парола</h1><ProfilePanel auth={auth} onAuth={onAuth} /></main>
   if (exam) return <ExamScreen key={exam.assignment} api={api} user={auth.user.id} assignment={exam.assignment} resume={exam.attempt} initialCode={exam.code} openAssignment={(assignment, code) => setExam({ assignment, code })} back={() => { setExam(null); if (view !== 'groups') navigate('learner') }} />
   return <main className="ws-shell">
-    <header className="ws-topbar"><a className="ws-brand" href="/">ExamAI</a><div className="ws-account"><strong>{auth.user.name}</strong><span>{roleLabels[auth.user.role]}</span></div><ThemeToggle /><button className="icon-button" title="Изход" aria-label="Изход" onClick={() => void logout()}><LogOut size={18} /></button></header>
-    <nav className="ws-nav" aria-label="Основна навигация">{available.map(({ key, name, icon: Icon }) => <button key={key} className={actualView === key ? 'active' : ''} onClick={() => navigate(key)}><Icon size={17} />{name}</button>)}</nav>
-    <div className="ws-body">
+    <a className="ws-skip-link" href="#workspace-content">Към съдържанието</a>
+    <header className="ws-topbar"><a className="ws-brand" href="/" aria-label="ExamAI — начало"><span className="ws-brand-icon"><BookOpen size={23} aria-hidden="true" /></span>ExamAI</a><div className="ws-account"><strong>{auth.user.name}</strong><span>{roleLabels[auth.user.role]}</span></div><ThemeToggle /><button className="icon-button" title="Изход" aria-label="Изход" onClick={() => void logout()}><LogOut size={18} /></button></header>
+    <nav className="ws-nav" aria-label="Основна навигация">{available.map(({ key, name, icon: Icon }) => <button key={key} className={actualView === key ? 'active' : ''} aria-current={actualView === key ? 'page' : undefined} onClick={() => navigate(key)}><Icon size={18} aria-hidden="true" />{name}</button>)}</nav>
+    <div className="ws-body" id="workspace-content" tabIndex={-1}>
       {actualView === 'dashboard' && <Dashboard api={api} teacher={teacher} navigate={navigate} />}
       {actualView === 'groups' && <GroupsPanel api={api} teacher={teacher} selected={selectedGroup} setSelected={setSelectedGroup} begin={(assignment, attempt) => setExam({ assignment, attempt })} />}
       {actualView === 'tests' && <AssessmentEditor api={api} userId={auth.user.id} />}
@@ -75,7 +76,7 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
       {actualView === 'profile' && (window.location.pathname.startsWith('/verify-email')
         ? <NotificationEmailVerification api={api} back={() => navigate('profile')} />
         : <WorkspaceProfile api={api} auth={auth} onAuth={onAuth} />)}
-      {actualView === 'admin' && <AdminPanel auth={auth} onProfileRefresh={refreshProfile} />}
+      {actualView === 'admin' && <section className="ws-section"><SectionHead title="Администрация" description="Управлявай потребителите и правата за достъп. В журнала можеш да проследиш направените промени." /><AdminPanel auth={auth} onProfileRefresh={refreshProfile} /></section>}
     </div>
   </main>
 }
@@ -84,8 +85,17 @@ function Dashboard({ api, teacher, navigate }: { api: WorkspaceApi; teacher: boo
   const groups = useRemote<Group[]>(api, '/groups', [])
   const assignments = useRemote<Assignment[]>(api, '/assignments', [])
   const records = useRemote<(Attempt | Result)[]>(api, teacher ? '/grading' : '/results', [])
+  const steps: { title: string; description: string; view: View; icon: typeof Users }[] = teacher ? [
+    { title: 'Създай група', description: 'Събери учениците на едно място и им изпрати кода за присъединяване.', view: 'groups', icon: Users },
+    { title: 'Подготви тест', description: 'Добави свои въпроси, създай ги с AI или използвай споделен тест.', view: 'tests', icon: BookOpen },
+    { title: 'Възложи на учениците', description: 'Избери тест, група и срок. След предаването отвори „Проверка“.', view: 'assignments', icon: ClipboardList },
+  ] : [
+    { title: 'Присъедини се към група', description: 'Отвори „Групи“ и въведи кода, който ти е дал учителят.', view: 'groups', icon: Users },
+    { title: 'Отвори възложения тест', description: 'В „Моите тестове“ виж срока и избери „Подготовка“, за да започнеш.', view: 'learner', icon: ClipboardList },
+    { title: 'Виж резултата си', description: 'След проверката виж точките и оценката в „Опити и резултати“.', view: 'learner', icon: GraduationCap },
+  ]
   return <section className="ws-section">
-    <SectionHead title="Моето табло" />
+    <SectionHead title="Моето табло" description={teacher ? 'Твоите групи, възложени тестове и проверки — всичко започва оттук.' : 'Виж възложените тестове, следи сроковете и намери резултатите си.'} />
     <Feedback error={groups.error || assignments.error || records.error} busy={groups.loading || assignments.loading || records.loading} />
     <div className="ws-metrics" role="group" aria-label="Статистика">
       <button type="button" title="Към групите" aria-busy={groups.loading} onClick={() => navigate('groups')}>
@@ -101,5 +111,11 @@ function Dashboard({ api, teacher, navigate }: { api: WorkspaceApi; teacher: boo
         <strong>{records.loading || records.error ? '-' : teacher ? records.data.filter(item => 'status' in item && item.status === 'pending_review').length : records.data.length}</strong>
       </button>
     </div>
+    <Panel title="Откъде да започна" description={teacher ? 'Следвай тези три стъпки, за да проведеш първия си тест.' : 'Три лесни стъпки от присъединяването до резултата.'}>
+      <div className="ws-start-steps">{steps.map(({ title, description, view: destination, icon: Icon }, index) => <button type="button" className="ws-start-step" key={title} onClick={() => navigate(destination)}>
+        <span className="ws-step-top"><span className="ws-step-icon"><Icon size={22} aria-hidden="true" /></span><span className="ws-step-number">Стъпка {index + 1}</span></span>
+        <strong>{title}</strong><span className="ws-step-description">{description}</span><span className="ws-step-link">Отвори раздела <ArrowRight size={17} aria-hidden="true" /></span>
+      </button>)}</div>
+    </Panel>
   </section>
 }
