@@ -1896,6 +1896,134 @@ class WorkspaceTests {
         mvc.perform(post("/api/v1/assignments/"+assignment+"/attempts").header("Authorization",authorization).header("X-Organization-Id",org).header("User-Agent","iPhone Mobile").contentType("application/json").content(db.json(exempt))).andExpect(status().isOk());
         assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND action='assignment.accommodation'",org));
     }
+    private AttemptService.StartRequest mobileStartRequest(boolean visible) {
+        return new AttemptService.StartRequest(code,UUID.randomUUID().toString(),UUID.randomUUID().toString(),"m".repeat(43),false,false,visible,true);
+    }
+    private String teacherAuthorization() {
+        return "Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
+    }
+    private void setMobileAllowed(boolean allowed) throws Exception {
+        mvc.perform(put("/api/v1/assignments/"+assignment+"/mobile-mode").header("Authorization",teacherAuthorization()).header("X-Organization-Id",org).contentType("application/json").content(workspaceJson.write(Map.of("mobileAllowed",allowed)))).andExpect(status().isOk());
+    }
+    private Map<String,Object> mobileStart(AttemptService.StartRequest request) throws Exception {
+        String response=mvc.perform(post("/api/v1/assignments/"+assignment+"/attempts").header("Authorization",authorization).header("X-Organization-Id",org).header("User-Agent","Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile Safari/604.1").contentType("application/json").content(workspaceJson.write(request)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.mobile_mode").value(true)).andReturn().getResponse().getContentAsString();
+        return workspaceJson.object(response);
+    }
+    @Test void mobileModeIsDefaultOffAndOnlyTheOwningTeacherCanEnableIt() throws Exception {
+        assertEquals(Boolean.FALSE,assignments.preflight(learning,assignment).get("mobile_allowed"));
+        assertEquals(Boolean.FALSE,assignments.list(teaching).getFirst().get("mobile_allowed"));
+        assertEquals(Boolean.FALSE,assignments.list(learning).getFirst().get("mobile_allowed"));
+        var colleague=user(Role.TEACHER);db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,colleague.getId(),"[\"TEACHER\"]",now);
+        String colleagueToken="Bearer "+auth.login(new AuthService.LoginRequest(colleague.getEmail(),"password123")).token();
+        String body=workspaceJson.write(Map.of("mobileAllowed",true));
+        mvc.perform(put("/api/v1/assignments/"+assignment+"/mobile-mode").contentType("application/json").content(body)).andExpect(status().isUnauthorized());
+        mvc.perform(put("/api/v1/assignments/"+assignment+"/mobile-mode").header("Authorization",authorization).header("X-Organization-Id",org).contentType("application/json").content(body)).andExpect(status().isForbidden());
+        mvc.perform(put("/api/v1/assignments/"+assignment+"/mobile-mode").header("Authorization",colleagueToken).header("X-Organization-Id",org).contentType("application/json").content(body)).andExpect(status().isForbidden());
+        assignments.shareTeacher(teaching,assignment,colleague.getId(),true);
+        mvc.perform(put("/api/v1/assignments/"+assignment+"/mobile-mode").header("Authorization",colleagueToken).header("X-Organization-Id",org).contentType("application/json").content(body)).andExpect(status().isForbidden());
+        String teacherToken=teacherAuthorization();
+        for(String invalid:List.of("{}","{\"mobileAllowed\":null}")) mvc.perform(put("/api/v1/assignments/"+assignment+"/mobile-mode").header("Authorization",teacherToken).header("X-Organization-Id",org).contentType("application/json").content(invalid)).andExpect(status().isBadRequest());
+        assertFalse(flag(db.one("SELECT mobile_allowed FROM exam_assignments WHERE id=?",assignment),"mobile_allowed"));
+        setMobileAllowed(true);setMobileAllowed(true);
+        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND resource_id=? AND action='assignment.mobile_mode_updated'",org,assignment));
+        mvc.perform(get("/api/v1/assignments/"+assignment+"/preflight").header("Authorization",authorization).header("X-Organization-Id",org)).andExpect(status().isOk()).andExpect(jsonPath("$.mobile_allowed").value(true));
+        assertTrue(flag(assignments.list(teaching).getFirst(),"mobile_allowed"));assertTrue(flag(assignments.list(learning).getFirst(),"mobile_allowed"));
+        setMobileAllowed(false);assertFalse(flag(assignments.preflight(learning,assignment),"mobile_allowed"));
+        assertEquals(2,db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND resource_id=? AND action='assignment.mobile_mode_updated'",org,assignment));
+    }
+    @Test void mobileModeCanBeChosenWhenCreatingAnAssignmentWithoutChangingTheDefault() throws Exception {
+        long published=freshVersion();
+        var request=workspaceJson.object(workspaceJson.write(new AssignmentService.AssignmentRequest(published,List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true)));
+        request.put("mobileAllowed",true);
+        String response=mvc.perform(post("/api/v1/assignments").header("Authorization",teacherAuthorization()).header("X-Organization-Id",org).contentType("application/json").content(workspaceJson.write(request)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        long created=number(workspaceJson.object(response),"id");
+        assertTrue(flag(assignments.preflight(learning,created),"mobile_allowed"));
+        assertFalse(flag(assignments.preflight(learning,assignment),"mobile_allowed"));
+    }
+    @Test void mobileStartRequiresTeacherConsentMobileClientVisibilityAndCorrectCodeBeforeConsumingAnAttempt() throws Exception {
+        var request=mobileStartRequest(true);String endpoint="/api/v1/assignments/"+assignment+"/attempts";
+        mvc.perform(post(endpoint).header("Authorization",authorization).header("X-Organization-Id",org).header("User-Agent","iPhone Mobile").contentType("application/json").content(workspaceJson.write(request))).andExpect(status().isConflict());
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=?",assignment));
+        setMobileAllowed(true);
+        mvc.perform(post(endpoint).header("Authorization",authorization).header("X-Organization-Id",org).header("User-Agent","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)").contentType("application/json").content(workspaceJson.write(request))).andExpect(status().isConflict());
+        mvc.perform(post(endpoint).header("Authorization",authorization).header("X-Organization-Id",org).header("User-Agent","iPhone Mobile").contentType("application/json").content(workspaceJson.write(mobileStartRequest(false)))).andExpect(status().isConflict());
+        var strict=new AttemptService.StartRequest(code,request.idempotencyKey(),request.browserId(),request.sessionToken(),false,false,true);
+        mvc.perform(post(endpoint).header("Authorization",authorization).header("X-Organization-Id",org).header("User-Agent","iPhone Mobile").contentType("application/json").content(workspaceJson.write(strict))).andExpect(status().isConflict());
+        var wrong=new AttemptService.StartRequest(code.equals("ZZZZZZZZ")?"XXXXXXXX":"ZZZZZZZZ",request.idempotencyKey(),request.browserId(),request.sessionToken(),false,false,true,true);
+        mvc.perform(post(endpoint).header("Authorization",authorization).header("X-Organization-Id",org).header("User-Agent","iPhone Mobile").contentType("application/json").content(workspaceJson.write(wrong))).andExpect(status().isBadRequest());
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=?",assignment));
+        var state=mobileStart(request);long id=number(state,"id");
+        assertEquals(id,number(mobileStart(request),"id"));assertEquals(1,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=?",assignment));
+        assertTrue(flag(db.one("SELECT mobile_mode FROM exam_attempts WHERE id=?",id),"mobile_mode"));
+        mvc.perform(get("/api/v1/attempts/"+id+"/state").header("Authorization",authorization).header("X-Organization-Id",org).header("X-Exam-Session",request.sessionToken()).header("X-Exam-Browser",request.browserId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.mobile_mode").value(true));
+        mvc.perform(get("/api/v1/attempts/"+id+"/state").header("Authorization",authorization).header("X-Organization-Id",org).header("X-Exam-Session","x".repeat(43)).header("X-Exam-Browser",request.browserId())).andExpect(status().isConflict());
+    }
+    @Test void approvedMobileAttemptAnswersWithoutFullscreenButHiddenPageStillClosesOnlyTheCurrentQuestion() throws Exception {
+        assignQuestionOrder(false,3,1);setMobileAllowed(true);var request=mobileStartRequest(true);var state=mobileStart(request);long id=number(state,"id");var first=question(state);long firstId=number(first,"id");
+        for(String privateKey:List.of("acceptedAnswers","criteria","correct","explanation","definition_json","session_hash")) assertFalse(workspaceJson.write(state).contains("\""+privateKey+"\""),privateKey);
+        state=attempts.answer(learning,id,firstId,session(request),new AttemptService.AnswerRequest("mobile-first-answer",string(first,"open_instance"),correct(first)));
+        assertEquals("pending",string(question(state),"status"));
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->attempts.open(learning,id,session(request),new AttemptService.Ready(false,false))).getStatusCode());
+        state=attempts.open(learning,id,session(request),new AttemptService.Ready(false,true));var second=question(state);long secondId=number(second,"id");
+        state=attempts.event(learning,id,session(request),new AttemptService.Event("mobile-stale-hidden",firstId,string(first,"open_instance"),"visibility_hidden",false,false));assertEquals(secondId,number(question(state),"id"));assertEquals("open",string(question(state),"status"));
+        state=attempts.event(learning,id,session(request),new AttemptService.Event("mobile-wrong-instance",secondId,string(first,"open_instance"),"visibility_hidden",false,false));assertEquals(secondId,number(question(state),"id"));assertEquals("open",string(question(state),"status"));
+        var hidden=new AttemptService.Event("mobile-current-hidden",secondId,string(second,"open_instance"),"visibility_hidden",false,false);
+        state=attempts.event(learning,id,session(request),hidden);long thirdId=number(question(state),"id");assertNotEquals(secondId,thirdId);assertEquals("pending",string(question(state),"status"));
+        state=attempts.open(learning,id,session(request),new AttemptService.Ready(false,true));assertEquals("open",string(question(state),"status"));
+        state=attempts.event(learning,id,session(request),hidden);assertEquals(thirdId,number(question(state),"id"));assertEquals("open",string(question(state),"status"));
+        assertEquals("answered",string(db.one("SELECT status FROM attempt_questions WHERE id=?",firstId),"status"));
+        var invalidated=db.one("SELECT status,final_points FROM attempt_questions WHERE id=?",secondId);assertEquals("invalidated",string(invalidated,"status"));assertEquals(0,decimal(invalidated,"final_points").compareTo(BigDecimal.ZERO));
+    }
+    @Test void mobileFullscreenExitClosesCurrentQuestion() throws Exception {
+        assignQuestionOrder(false,2,1);setMobileAllowed(true);var request=mobileStartRequest(true);var state=mobileStart(request);long id=number(state,"id");var first=question(state);
+        state=attempts.event(learning,id,session(request),new AttemptService.Event("mobile-fullscreen-exit",number(first,"id"),string(first,"open_instance"),"fullscreen_exit",true,false));
+        assertNotEquals(number(first,"id"),number(question(state),"id"));assertEquals("pending",string(question(state),"status"));
+        var invalidated=db.one("SELECT status,final_points FROM attempt_questions WHERE id=?",number(first,"id"));
+        assertEquals("invalidated",string(invalidated,"status"));assertEquals(0,decimal(invalidated,"final_points").compareTo(BigDecimal.ZERO));
+    }
+    @Test void mobileAttemptModePersistsOnResumeAndTransferAfterTeacherDisablesNewMobileStarts() throws Exception {
+        assignQuestionOrder(false,2,1);setMobileAllowed(true);var request=mobileStartRequest(true);var state=mobileStart(request);long id=number(state,"id");var first=question(state);
+        setMobileAllowed(false);
+        assertTrue(flag(attempts.getState(learning,id,session(request)),"mobile_mode"));assertEquals(first,workspaceJson.object(workspaceJson.write(question(attempts.getState(learning,id,session(request))))));
+        var transferred=startRequest();state=attempts.transfer(learning,id,transferred,"password123",authorization);
+        assertTrue(flag(state,"mobile_mode"));assertEquals(first,workspaceJson.object(workspaceJson.write(question(state))));
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->attempts.getState(learning,id,session(request))).getStatusCode());
+        state=attempts.event(learning,id,session(transferred),new AttemptService.Event("mobile-transfer-fullscreen",number(first,"id"),string(first,"open_instance"),"fullscreen_exit",true,false));
+        assertEquals("pending",string(question(state),"status"));
+        assertEquals("open",string(question(attempts.open(learning,id,session(transferred),new AttemptService.Ready(false,true))),"status"));
+    }
+    @Test void desktopAttemptCannotSwitchToMobileModeThroughConsentOrSessionTransfer() throws Exception {
+        assignQuestionOrder(false,2,1);var request=startRequest();var state=start(request);long id=number(state,"id");var first=question(state);assertFalse(flag(state,"mobile_mode"));setMobileAllowed(true);
+        var mobileTransfer=mobileStartRequest(true);assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->attempts.transfer(learning,id,mobileTransfer,"password123",authorization)).getStatusCode());
+        assertEquals(first,question(attempts.getState(learning,id,session(request))));
+        var transferred=startRequest();state=attempts.transfer(learning,id,transferred,"password123",authorization);assertFalse(flag(state,"mobile_mode"));
+        attempts.answer(learning,id,number(first,"id"),session(transferred),new AttemptService.AnswerRequest("strict-transfer-answer",string(first,"open_instance"),correct(first)));
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->attempts.open(learning,id,session(transferred),new AttemptService.Ready(false,true))).getStatusCode());
+        assertFalse(flag(db.one("SELECT mobile_mode FROM exam_attempts WHERE id=?",id),"mobile_mode"));
+    }
+    @Test void mobileModePreservesStartWindowQuestionDeadlinesIdempotencyAndAttemptLimit() throws Exception {
+        setMobileAllowed(true);var request=mobileStartRequest(true);String endpoint="/api/v1/assignments/"+assignment+"/attempts";
+        db.update("UPDATE exam_assignments SET starts_at=? WHERE id=?",now.plusSeconds(60),assignment);
+        mvc.perform(post(endpoint).header("Authorization",authorization).header("X-Organization-Id",org).header("Sec-CH-UA-Mobile","?1").contentType("application/json").content(workspaceJson.write(request))).andExpect(status().isGone());
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=?",assignment));
+        db.update("UPDATE exam_assignments SET starts_at=?,ends_at=? WHERE id=?",now.minusSeconds(60),now,assignment);
+        mvc.perform(post(endpoint).header("Authorization",authorization).header("X-Organization-Id",org).header("Sec-CH-UA-Mobile","?1").contentType("application/json").content(workspaceJson.write(request))).andExpect(status().isGone());
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=?",assignment));
+        db.update("UPDATE exam_assignments SET starts_at=?,ends_at=? WHERE id=?",now.minusSeconds(1),now.plusSeconds(3600),assignment);
+        String response=mvc.perform(post(endpoint).header("Authorization",authorization).header("X-Organization-Id",org).header("Sec-CH-UA-Mobile","?1").contentType("application/json").content(workspaceJson.write(request)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.mobile_mode").value(true)).andReturn().getResponse().getContentAsString();
+        var state=workspaceJson.object(response);long id=number(state,"id");var q=question(state);long qid=number(q,"id");
+        var answer=new AttemptService.AnswerRequest("mobile-deadline-answer",string(q,"open_instance"),correct(q));attempts.draft(learning,id,qid,session(request),answer);
+        when(clock.instant()).thenReturn(Instant.parse(string(q,"deadline_at")));
+        assertEquals("pending_review",string(attempts.answer(learning,id,qid,session(request),answer),"status"));
+        var stored=db.one("SELECT status,answer_json,final_points FROM attempt_questions WHERE id=?",qid);assertEquals("timed_out",string(stored,"status"));assertNull(stored.get("answer_json"));assertEquals(0,decimal(stored,"final_points").compareTo(BigDecimal.ZERO));
+        assertEquals(id,number(mobileStart(request),"id"));
+        mvc.perform(post(endpoint).header("Authorization",authorization).header("X-Organization-Id",org).header("User-Agent","iPhone Mobile").contentType("application/json").content(workspaceJson.write(mobileStartRequest(true)))).andExpect(status().isConflict());
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=?",assignment));
+    }
     @Test void deadlineWorkerClosesUnattendedAttemptWithoutClientRequests() {
         var r=startRequest();var state=start(r);long id=number(state,"id"),qid=number(question(state),"id");
         when(clock.instant()).thenReturn(Instant.parse(string(question(state),"deadline_at")));

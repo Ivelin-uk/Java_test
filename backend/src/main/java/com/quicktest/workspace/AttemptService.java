@@ -28,10 +28,12 @@ public class AttemptService {
         this.repository=repository;this.json=json;this.clock=clock;this.crypto=crypto;this.organizations=organizations;this.assignments=assignments;this.notifications=notifications;this.limiter=limiter;this.transactions=transactions;this.passwords=passwords;this.audit=audit;this.workers=workers;this.mutex=mutex;
     }
     public Map<String,Object> startForClient(OrgAccess.Scope scope,long assignment,StartRequest request,String authSession,String ip,boolean mobile) {
-        if(mobile && !mobileValidated && !flag(recipient(scope,assignment),"fullscreen_exempt")) throw WorkspaceError.conflict("Мобилният строг режим не е валидиран. Опит не е изразходван.");
-        return start(scope,assignment,request,authSession,ip);
+        return startInternal(scope,assignment,request,authSession,ip,mobile);
     }
     public Map<String,Object> start(OrgAccess.Scope scope,long assignment,StartRequest request,String authSession,String ip) {
+        return startInternal(scope,assignment,request,authSession,ip,false);
+    }
+    private Map<String,Object> startInternal(OrgAccess.Scope scope,long assignment,StartRequest request,String authSession,String ip,boolean mobileClient) {
         requireKey(request.idempotencyKey());requireKey(request.browserId());
         if(request.sessionToken()==null || !request.sessionToken().matches("[A-Za-z0-9_-]{43,80}")) throw WorkspaceError.validation("Невалиден ключ на изпитната сесия.");
         // Rate accounting commits before the attempt transaction, including rejected guesses.
@@ -51,15 +53,19 @@ public class AttemptService {
             if(previous.isPresent()) {checkSession(previous.get(),session);sweep(previous.get());return state(previous.get());}
             if(flag(recipient,"canceled")) throw WorkspaceError.forbidden();
             notifications.verifiedAddress(scope.userId());if(!scope.platform()) organizations.requirePaid(scope.organizationId());
-            var a=repository.requireAssignmentDefinition(scope.organizationId(), assignment);
+            var a=repository.lockAssignmentDefinition(scope.organizationId(), assignment);
             if(clock.instant().isBefore(time(a,"starts_at")) || !clock.instant().isBefore(time(a,"ends_at"))) throw WorkspaceError.expired("Тестът е извън разрешения период.");
-            if(!flag(recipient,"fullscreen_exempt") && (!request.fullscreenSupported() || !request.fullscreenActive() || !request.visible())) throw WorkspaceError.conflict("Началото изисква поддържан цял екран и видима страница. Опит не е изразходван.");
+            boolean mobileMode=request.mobileMode();
+            if(mobileMode && !mobileClient) throw WorkspaceError.conflict("Мобилният режим е достъпен само при решаване от телефон или таблет. Опит не е изразходван.");
+            if(mobileMode && !flag(a,"mobile_allowed")) throw WorkspaceError.conflict("Учителят не е разрешил решаване от телефон за този тест. Опит не е изразходван.");
+            if(mobileClient && !mobileMode && !mobileValidated && !flag(recipient,"fullscreen_exempt")) throw WorkspaceError.conflict("Мобилният строг режим не е валидиран. Учителят може да разреши решаване от телефон за този тест. Опит не е изразходван.");
+            if(!request.visible() || !mobileMode && !flag(recipient,"fullscreen_exempt") && (!request.fullscreenSupported() || !request.fullscreenActive())) throw WorkspaceError.conflict("Началото изисква поддържан цял екран и видима страница. Опит не е изразходван.");
             boolean correct=request.code()!=null && a.get("code_hash")!=null && crypto.matches(scope.organizationId()+":"+assignment+":"+request.code().strip().toUpperCase(Locale.ROOT),string(a,"code_hash"));
             if(!correct) throw WorkspaceError.validation("Невалиден или отменен код.");
             if(repository.countActiveStudentAttempts(scope.userId())>0) throw WorkspaceError.conflict("Има активен опит. Продължете съществуващата изпитна сесия.");
             long count=repository.countStudentAttempts(scope.organizationId(), assignment, scope.userId());
             if(count>=number(recipient,"max_attempts")) throw WorkspaceError.conflict("Няма оставащи опити.");
-            long id=repository.insertAttempt(scope.organizationId(), assignment, scope.userId(), count+1, request.idempotencyKey(), crypto.hash(request.sessionToken()), crypto.hash(authSession), request.browserId(), scope.organizationId()+":"+assignment+":"+scope.userId(), clock.instant());
+            long id=repository.insertAttempt(scope.organizationId(), assignment, scope.userId(), count+1, request.idempotencyKey(), crypto.hash(request.sessionToken()), crypto.hash(authSession), request.browserId(), scope.organizationId()+":"+assignment+":"+scope.userId(), mobileMode, clock.instant());
             var definition=json.parse(a.get("definition_json"),AssessmentService.Definition.class);
             List<AssessmentService.Question> questions=new ArrayList<>(definition.questions());
             if(flag(a,"shuffle_questions")) Collections.shuffle(questions,new java.security.SecureRandom());
@@ -70,7 +76,7 @@ public class AttemptService {
                 repository.insertQuestion(scope.organizationId(), id, i, json.write(Map.of("question",q,"options",options)), q.points(), (int)Math.ceil(q.timeSeconds()*decimal(recipient,"time_multiplier").doubleValue()));
             }
             var attempt=lock(scope.organizationId(),id);openInternal(attempt,request.fullscreenActive(),request.visible());
-            audit.write(scope.organizationId(),scope.userId(),"attempt.started",id,Map.of("number",count+1));
+            audit.write(scope.organizationId(),scope.userId(),"attempt.started",id,Map.of("number",count+1,"mobileMode",mobileMode));
             return state(attempt);
         });
     }
@@ -95,7 +101,7 @@ public class AttemptService {
         var q=current(attempt);
         if(!string(q,"status").equals("pending")) return;
         var recipient=repository.requireRecipientFlags(number(attempt,"organization_id"), number(attempt,"assignment_id"), number(attempt,"student_id"));
-        if(!visible || !flag(recipient,"fullscreen_exempt") && !fullscreen) throw WorkspaceError.conflict("Продължете на видим цял екран.");
+        if(!visible || !flag(attempt,"mobile_mode") && !flag(recipient,"fullscreen_exempt") && !fullscreen) throw WorkspaceError.conflict("Продължете на видим цял екран.");
         var assignment=repository.requireAssignmentDeadline(number(attempt,"organization_id"), number(attempt,"assignment_id"));
         var deadline=clock.instant().plusSeconds(number(q,"time_seconds"));
         if(deadline.isAfter(time(assignment,"ends_at"))) deadline=time(assignment,"ends_at");
@@ -205,6 +211,7 @@ public class AttemptService {
         var user=repository.requirePassword(scope.userId());
         if(password==null || !passwords.matches(password,string(user,"password_hash"))) throw WorkspaceError.forbidden();
         var attempt=lock(scope.organizationId(),id);if(number(attempt,"student_id")!=scope.userId()) throw WorkspaceError.forbidden();
+        if(request.mobileMode() && !flag(attempt,"mobile_mode")) throw WorkspaceError.conflict("Започнатият опит изисква цял екран. Мобилният режим се избира само при нов опит.");
         sweep(attempt);
         repository.transferSession(crypto.hash(request.sessionToken()), crypto.hash(authSession), request.browserId(), scope.organizationId(), id);
         audit.write(scope.organizationId(),scope.userId(),"attempt.session_transferred",id,Map.of());return state(attempt);
@@ -212,6 +219,7 @@ public class AttemptService {
     private Map<String,Object> state(Map<String,Object> attempt) {
         Map<String,Object> result=new LinkedHashMap<>();
         for(String key:List.of("id","assignment_id","attempt_number","status","started_at","submitted_at","expired")) result.put(key,attempt.get(key));
+        result.put("mobile_mode",flag(attempt,"mobile_mode"));
         result.put("server_now",clock.instant().toString());
         long total=repository.countQuestions(number(attempt,"organization_id"), number(attempt,"id"));
         result.put("question_count",total);result.put("question_number",Math.min(number(attempt,"current_position")+1,total));
@@ -237,7 +245,11 @@ public class AttemptService {
     }
     private void requireKey(String key) {if(key==null || !key.matches("[A-Za-z0-9_-]{8,80}")) throw WorkspaceError.validation("Невалиден ключ за идемпотентност/сесия.");}
     public record Session(String token,String browserId,String authorization) {}
-    public record StartRequest(String code,String idempotencyKey,String browserId,String sessionToken,boolean fullscreenSupported,boolean fullscreenActive,boolean visible) {}
+    public record StartRequest(String code,String idempotencyKey,String browserId,String sessionToken,boolean fullscreenSupported,boolean fullscreenActive,boolean visible,boolean mobileMode) {
+        public StartRequest(String code,String idempotencyKey,String browserId,String sessionToken,boolean fullscreenSupported,boolean fullscreenActive,boolean visible) {
+            this(code,idempotencyKey,browserId,sessionToken,fullscreenSupported,fullscreenActive,visible,false);
+        }
+    }
     public record Ready(boolean fullscreenActive,boolean visible) {}
     public record Answer(List<String> optionIds,String text) {}
     public record AnswerRequest(String idempotencyKey,String openInstance,Answer answer) {}

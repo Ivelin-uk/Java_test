@@ -417,3 +417,9 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-logo { width: 36px; height: 36px; flex: 0 0 36px; object-fit: contain; }
 .ws-answer-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .ws-muted { color: var(--muted); font-size: 14px; }
+
+.ws-mobile-permission { display: grid; gap: 8px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--page); }
+.ws-mobile-permission p { margin: 0; line-height: 1.6; }
+.ws-mobile-dialog .ws-check { align-items: flex-start; line-height: 1.5; }
+.ws-mobile-dialog .ws-check input { margin-top: 3px; }
+.ws-mobile-dialog p { line-height: 1.65; overflow-wrap: anywhere; }

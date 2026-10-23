@@ -64,11 +64,11 @@ public class AssignmentRepository {
     }
 
     public List<Map<String, Object>> findStudentAssignments(long organizationId, boolean platform, long userId, boolean includeSources) {
-        return store.rows("SELECT a.id,a.starts_at,a.ends_at,r.max_attempts,r.canceled,r.fullscreen_exempt,r.time_multiplier,v.title,teacher.name teacher_name"+(includeSources?",r.source_groups_json":"")+" FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id JOIN assignment_recipients r ON r.organization_id=a.organization_id AND r.assignment_id=a.id LEFT JOIN users teacher ON teacher.id=a.teacher_id WHERE (a.organization_id=? OR ?) AND r.student_id=? AND r.canceled=FALSE ORDER BY a.ends_at DESC", organizationId, platform, userId);
+        return store.rows("SELECT a.id,a.starts_at,a.ends_at,a.mobile_allowed,r.max_attempts,r.canceled,r.fullscreen_exempt,r.time_multiplier,v.title,teacher.name teacher_name"+(includeSources?",r.source_groups_json":"")+" FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id JOIN assignment_recipients r ON r.organization_id=a.organization_id AND r.assignment_id=a.id LEFT JOIN users teacher ON teacher.id=a.teacher_id WHERE (a.organization_id=? OR ?) AND r.student_id=? AND r.canceled=FALSE ORDER BY a.ends_at DESC", organizationId, platform, userId);
     }
 
     public List<Map<String, Object>> findTeacherAssignments(long organizationId, boolean platform, long userId, long userId2) {
-        return store.rows("SELECT a.id,a.version_id,v.assessment_id,a.teacher_id,a.starts_at,a.ends_at,a.max_attempts,a.access_code,v.title,(SELECT COUNT(*) FROM assignment_recipients r WHERE r.organization_id=a.organization_id AND r.assignment_id=a.id AND r.canceled=FALSE) recipients FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE (a.organization_id=? OR ?) AND (a.teacher_id=? OR EXISTS (SELECT 1 FROM assignment_teachers t WHERE t.organization_id=a.organization_id AND t.assignment_id=a.id AND t.teacher_id=?)) ORDER BY a.id DESC", organizationId, platform, userId, userId2);
+        return store.rows("SELECT a.id,a.version_id,v.assessment_id,a.teacher_id,a.starts_at,a.ends_at,a.max_attempts,a.access_code,a.mobile_allowed,v.title,(SELECT COUNT(*) FROM assignment_recipients r WHERE r.organization_id=a.organization_id AND r.assignment_id=a.id AND r.canceled=FALSE) recipients FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE (a.organization_id=? OR ?) AND (a.teacher_id=? OR EXISTS (SELECT 1 FROM assignment_teachers t WHERE t.organization_id=a.organization_id AND t.assignment_id=a.id AND t.teacher_id=?)) ORDER BY a.id DESC", organizationId, platform, userId, userId2);
     }
 
     public List<Map<String, Object>> findRecipientSources(List<Long> assignmentIds) {
@@ -89,8 +89,8 @@ public class AssignmentRepository {
         return store.rows("SELECT g.user_id FROM group_members g JOIN memberships m ON m.organization_id=g.organization_id AND m.user_id=g.user_id JOIN users u ON u.id=g.user_id WHERE g.organization_id=? AND g.group_id=? AND g.active=TRUE AND m.status='active' AND m.roles_json LIKE '%STUDENT%' AND u.active=TRUE AND u.role='STUDENT'", groupWorkspace, group);
     }
 
-    public long insertAssignment(long organizationId, long versionId, long userId, Instant startsAt, Instant endsAt, int maxAttempts, boolean shuffleQuestions, boolean shuffleOptions, boolean answersAfterDeadline, Instant timestamp) {
-        return store.insert("INSERT INTO exam_assignments(organization_id,version_id,teacher_id,starts_at,ends_at,max_attempts,shuffle_questions,shuffle_options,answers_after_deadline,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)", organizationId, versionId, userId, startsAt, endsAt, maxAttempts, shuffleQuestions, shuffleOptions, answersAfterDeadline, timestamp);
+    public long insertAssignment(long organizationId, long versionId, long userId, Instant startsAt, Instant endsAt, int maxAttempts, boolean shuffleQuestions, boolean shuffleOptions, boolean answersAfterDeadline, boolean mobileAllowed, Instant timestamp) {
+        return store.insert("INSERT INTO exam_assignments(organization_id,version_id,teacher_id,starts_at,ends_at,max_attempts,shuffle_questions,shuffle_options,answers_after_deadline,mobile_allowed,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)", organizationId, versionId, userId, startsAt, endsAt, maxAttempts, shuffleQuestions, shuffleOptions, answersAfterDeadline, mobileAllowed, timestamp);
     }
 
     public int insertRecipient(long organizationId, long id, Long getKey, String jsonValue, int maxAttempts) {
@@ -123,6 +123,10 @@ public class AssignmentRepository {
 
     public int updateSchedule(long organizationId, long id, Instant startsAt, Instant endsAt) {
         return store.update("UPDATE exam_assignments SET starts_at=?,ends_at=? WHERE organization_id=? AND id=?", startsAt, endsAt, organizationId, id);
+    }
+
+    public int updateMobileMode(long organizationId, long id, boolean mobileAllowed) {
+        return store.update("UPDATE exam_assignments SET mobile_allowed=? WHERE organization_id=? AND id=?", mobileAllowed, organizationId, id);
     }
 
     public List<Map<String, Object>> lockResultDeliveries(long organizationId, long attemptId) {
@@ -182,7 +186,7 @@ public class AssignmentRepository {
     }
 
     public Map<String, Object> findPreflight(long organizationId, long id, long userId) {
-        return store.one("SELECT a.id,a.starts_at,a.ends_at,v.title,v.definition_json,r.max_attempts,r.fullscreen_exempt,r.time_multiplier,r.canceled FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id JOIN assignment_recipients r ON r.organization_id=a.organization_id AND r.assignment_id=a.id WHERE a.organization_id=? AND a.id=? AND r.student_id=?", organizationId, id, userId);
+        return store.one("SELECT a.id,a.starts_at,a.ends_at,a.mobile_allowed,v.title,v.definition_json,r.max_attempts,r.fullscreen_exempt,r.time_multiplier,r.canceled FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id JOIN assignment_recipients r ON r.organization_id=a.organization_id AND r.assignment_id=a.id WHERE a.organization_id=? AND a.id=? AND r.student_id=?", organizationId, id, userId);
     }
 
     public int shareTeacher(long organizationId, long id, long teacher) {

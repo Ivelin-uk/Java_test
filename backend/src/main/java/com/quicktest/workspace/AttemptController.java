@@ -24,6 +24,6 @@ public class AttemptController {
     @PostMapping("/attempts/{id}/session/transfer") public Object transfer(@PathVariable long id,@RequestBody Transfer request) {return attempts.transfer(access.student(),id,request.session(),request.password(),access.authSession());}
     public record Transfer(String password,AttemptService.StartRequest session) {}
     private boolean mobileClient() {
-        return "?1".equals(http.getHeader("Sec-CH-UA-Mobile")) || java.util.regex.Pattern.compile("Mobile|Android|iPhone|iPad",java.util.regex.Pattern.CASE_INSENSITIVE).matcher(java.util.Objects.toString(http.getHeader("User-Agent"),"")).find();
+        return "?1".equals(http.getHeader("Sec-CH-UA-Mobile")) || java.util.regex.Pattern.compile("Mobile|Android|iPhone|iPad|iPod",java.util.regex.Pattern.CASE_INSENSITIVE).matcher(java.util.Objects.toString(http.getHeader("User-Agent"),"")).find();
     }
 }

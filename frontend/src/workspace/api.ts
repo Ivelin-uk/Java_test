@@ -5,9 +5,9 @@ import type { NotificationTone } from '../notifications'
 
 const base = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 export function workspaceClient(token: string) {
-  async function call<T>(path: string, method = 'GET', data?: unknown, session?: ExamSession): Promise<T> {
+  async function call<T>(path: string, method = 'GET', data?: unknown, session?: ExamSession, options?: { keepalive?: boolean }): Promise<T> {
     const response = await fetch(`${base}${path.startsWith('/api/') ? path : `/api/v1${path}`}`, {
-      method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(session ? { 'X-Exam-Session': session.token, 'X-Exam-Browser': session.browserId } : {}) },
+      method, keepalive: options?.keepalive ?? false, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(session ? { 'X-Exam-Session': session.token, 'X-Exam-Browser': session.browserId } : {}) },
       ...(data === undefined ? {} : { body: JSON.stringify(data) }),
     })
     const text = await response.text()
@@ -24,7 +24,7 @@ export function workspaceClient(token: string) {
     if (!response.ok) throw new Error('Изображението е недостъпно.')
     return response.blob()
   }
-  return { call, image, get: <T>(path: string, session?: ExamSession) => call<T>(path, 'GET', undefined, session), post: <T>(path: string, data?: unknown, session?: ExamSession) => call<T>(path, 'POST', data, session), put: <T>(path: string, data?: unknown, session?: ExamSession) => call<T>(path, 'PUT', data, session), remove: (path: string) => call<void>(path, 'DELETE') }
+  return { call, image, get: <T>(path: string, session?: ExamSession) => call<T>(path, 'GET', undefined, session), post: <T>(path: string, data?: unknown, session?: ExamSession, options?: { keepalive?: boolean }) => call<T>(path, 'POST', data, session, options), put: <T>(path: string, data?: unknown, session?: ExamSession) => call<T>(path, 'PUT', data, session), remove: (path: string) => call<void>(path, 'DELETE') }
 }
 export type WorkspaceApi = ReturnType<typeof workspaceClient>
 export function useRemote<T>(api: WorkspaceApi, path: string, initial: T) {

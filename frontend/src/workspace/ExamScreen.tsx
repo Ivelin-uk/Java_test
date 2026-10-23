@@ -24,6 +24,10 @@ export function ExamScreen({ api, user, assignment, resume, initialCode = '', op
   const busyRef = useRef(false)
   const [offline, setOffline] = useState(!navigator.onLine)
   const [fullscreen, setFullscreen] = useState(false)
+  const [mobileClient] = useState(() => /Mobile|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  const mobileStart = mobileClient && preflight.data?.mobile_allowed === true && !preflight.data?.fullscreen_exempt
+  const withoutFullscreen = !!preflight.data?.fullscreen_exempt || (state ? state.mobile_mode === true : mobileStart)
+  const startLabel = withoutFullscreen ? 'Започни теста' : 'Започни на цял екран'
   const [remaining, setRemaining] = useState(0)
   const [initialClock] = useState(() => ({ at: performance.now(), server: Date.now() }))
   const serverClock = useRef(initialClock)
@@ -106,7 +110,7 @@ export function ExamScreen({ api, user, assignment, resume, initialCode = '', op
       const value = stateRef.current
       if (!value || value.status !== 'in_progress') return
       const q = value.question
-      const event = { eventKey: crypto.randomUUID(), questionId: q?.status === 'open' ? q.id : null, openInstance: q?.status === 'open' ? q.open_instance : null, type, visible: document.visibilityState === 'visible', fullscreen: document.fullscreenElement === container.current }
+      const event = { eventKey: crypto.randomUUID(), questionId: q?.status === 'open' ? q.id : null, openInstance: q?.status === 'open' ? q.open_instance : null, type, visible: type === 'visibility_hidden' ? false : document.visibilityState === 'visible', fullscreen: document.fullscreenElement === container.current }
       // Persist the original instance so a disconnected sanction cannot hit a later question.
       const queueKey = `${storageKey}.events`
       const pending = JSON.parse(sessionStorage.getItem(queueKey) ?? '[]') as unknown[]
@@ -118,7 +122,7 @@ export function ExamScreen({ api, user, assignment, resume, initialCode = '', op
       const pending = JSON.parse(sessionStorage.getItem(queueKey) ?? '[]') as { eventKey: string }[]
       for (const event of pending) {
         try {
-          apply(await api.post<ExamState>(`/attempts/${id}/events`, event, session))
+          apply(await api.post<ExamState>(`/attempts/${id}/events`, event, session, { keepalive: true }))
           const current = JSON.parse(sessionStorage.getItem(queueKey) ?? '[]') as { eventKey: string }[]
           sessionStorage.setItem(queueKey, JSON.stringify(current.filter(item => item.eventKey !== event.eventKey)))
         } catch { break }
@@ -126,13 +130,14 @@ export function ExamScreen({ api, user, assignment, resume, initialCode = '', op
     }
     const visibility = () => { if (document.visibilityState === 'hidden') emit('visibility_hidden') }
     const fullscreenChanged = () => { setFullscreen(document.fullscreenElement === container.current); if (document.fullscreenElement !== container.current) emit('fullscreen_exit') }
+    const pageHidden = () => emit('visibility_hidden')
     const blur = () => emit('blur')
     const networkOff = () => { setOffline(true); emit('offline') }
     const networkOn = () => { setOffline(false); emit('online'); if (stateRef.current) void flush(stateRef.current.id) }
     document.addEventListener('visibilitychange', visibility); document.addEventListener('fullscreenchange', fullscreenChanged)
-    window.addEventListener('blur', blur); window.addEventListener('offline', networkOff); window.addEventListener('online', networkOn)
+    window.addEventListener('pagehide', pageHidden); window.addEventListener('blur', blur); window.addEventListener('offline', networkOff); window.addEventListener('online', networkOn)
     if (stateRef.current) void flush(stateRef.current.id)
-    return () => { document.removeEventListener('visibilitychange', visibility); document.removeEventListener('fullscreenchange', fullscreenChanged); window.removeEventListener('blur', blur); window.removeEventListener('offline', networkOff); window.removeEventListener('online', networkOn) }
+    return () => { document.removeEventListener('visibilitychange', visibility); document.removeEventListener('fullscreenchange', fullscreenChanged); window.removeEventListener('pagehide', pageHidden); window.removeEventListener('blur', blur); window.removeEventListener('offline', networkOff); window.removeEventListener('online', networkOn) }
   }, [api, session, storageKey, apply])
   async function perform(work: () => Promise<void>) {
     if (busyRef.current) return
@@ -144,9 +149,8 @@ export function ExamScreen({ api, user, assignment, resume, initialCode = '', op
     finally { busyRef.current = false; setBusy(false) }
   }
   async function fullscreenReady() {
-    const mobile = /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent) || navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
-    if (mobile && !preflight.data?.mobile_validated && !preflight.data?.fullscreen_exempt) throw new Error('Мобилният строг режим не е валидиран. Използвайте настолен компютър или индивидуално разрешено изключение.')
-    if (!preflight.data?.fullscreen_exempt && document.fullscreenElement !== container.current) {
+    if (mobileClient && !withoutFullscreen && !preflight.data?.mobile_validated) throw new Error('Учителят не е разрешил решаване от телефон за този тест. Поискайте разрешение за мобилен режим или използвайте компютър. Опит не е изразходван.')
+    if (!withoutFullscreen && document.fullscreenElement !== container.current) {
       if (!document.fullscreenEnabled || !container.current?.requestFullscreen) throw new Error('Този браузър не поддържа строгия режим. Опит не е изразходван.')
       await container.current.requestFullscreen()
     }
@@ -157,7 +161,7 @@ export function ExamScreen({ api, user, assignment, resume, initialCode = '', op
       await fullscreenReady()
       let next: ExamState
       try {
-        next = await api.post<ExamState>(`/assignments/${assignment}/attempts`, { code, idempotencyKey: session.startKey, browserId: session.browserId, sessionToken: session.token, fullscreenSupported: document.fullscreenEnabled, fullscreenActive: document.fullscreenElement === container.current, visible: document.visibilityState === 'visible' })
+        next = await api.post<ExamState>(`/assignments/${assignment}/attempts`, { code, idempotencyKey: session.startKey, browserId: session.browserId, sessionToken: session.token, mobileMode: mobileStart, fullscreenSupported: !!document.fullscreenEnabled, fullscreenActive: document.fullscreenElement === container.current, visible: document.visibilityState === 'visible' })
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : ''
         if (openAssignment && ['Невалиден или отменен код.', 'Твърде много грешни кодове. Опитайте след 5 минути.'].includes(message)) {
@@ -178,18 +182,18 @@ export function ExamScreen({ api, user, assignment, resume, initialCode = '', op
     await perform(async () => {
       const next = await api.post<ExamState>(`/attempts/${state.id}/questions/${state.question!.id}/answer`, { idempotencyKey: crypto.randomUUID(), openInstance: state.question!.open_instance, answer }, session)
       apply(next)
-      if (stateRef.current === next && next.status === 'in_progress' && next.question?.status === 'pending' && document.visibilityState === 'visible' && (preflight.data?.fullscreen_exempt || document.fullscreenElement === container.current)) {
+      if (stateRef.current === next && next.status === 'in_progress' && next.question?.status === 'pending' && document.visibilityState === 'visible' && (next.mobile_mode || preflight.data?.fullscreen_exempt || document.fullscreenElement === container.current)) {
         apply(await api.post<ExamState>(`/attempts/${next.id}/questions/open`, { fullscreenActive: document.fullscreenElement === container.current, visible: true }, session))
       }
     })
   }
   return <div className="exam-screen" ref={container}>
     <div className="exam-content"><header className="exam-header"><strong>ExamAI · {preflight.data?.title ?? 'Изпит'}</strong>{state?.status === 'in_progress' && <span aria-label="Оставащо време" className={remaining <= 10 ? 'exam-timer danger' : 'exam-timer'}><Timer size={20} /> {formatDuration(remaining)}</span>}<ThemeToggle /></header><Feedback error={error || preflight.error} busy={busy || preflight.loading} />{offline && <p className="error ws-feedback"><WifiOff size={17} /> Няма връзка. Сървърните срокове продължават.</p>}
-    {!state && preflight.data && <section className="exam-preflight"><h1>Подготовка за изпит</h1>{initialCode && code === initialCode && <p className="good" role="status">Отворен е тестът за въведения код. Прегледайте условията и натиснете „Започни на цял екран“.</p>}<p>{preflight.data.instructions}</p><dl><dt>Въпроси</dt><dd>{preflight.data.question_count}</dd><dt>Общо време</dt><dd>{formatDuration(preflight.data.total_seconds)}</dd><dt>Краен срок</dt><dd>{date(preflight.data.ends_at)}</dd><dt>Режим</dt><dd>{preflight.data.fullscreen_exempt ? 'Индивидуално разрешено изключение от цял екран' : 'Цял екран'}</dd></dl><p>Напускане на целия екран или скриване на страницата приключва текущия въпрос с 0 точки. Няма връщане към приключени въпроси. Изтичането на времето носи 0 точки и за запазена чернова.</p><p>Браузърът отчита само достъпните му събития. Това не блокира външни приложения и не гарантира липса на преписване.</p>
-      {session.attemptId ? <form onSubmit={e => { e.preventDefault(); void perform(async () => { const next = await api.post<ExamState>(`/attempts/${session.attemptId}/session/transfer`, { password: transferPassword, session: { browserId: session.browserId, sessionToken: session.token } }); apply(next) }) }}><label>Парола за прехвърляне на сесията<input type="password" required value={transferPassword} onChange={e => setTransferPassword(e.target.value)} /></label><button disabled={busy}>Прехвърли без промяна на сроковете</button></form> : <><label>Код за достъп<input disabled={busy} value={code} autoComplete="off" autoCapitalize="characters" spellCheck={false} onChange={e => { setCode(e.target.value.replace(/\s/g, '').toUpperCase().slice(0, 8)); setError('') }} /></label><button className="primary command-button" disabled={busy || code.length !== 8} onClick={() => void begin()}><Maximize size={18} /> Започни на цял екран</button></>}
+    {!state && preflight.data && <section className="exam-preflight"><h1>Подготовка за изпит</h1>{initialCode && code === initialCode && <p className="good" role="status">Отворен е тестът за въведения код. Прегледайте условията и натиснете „{startLabel}“.</p>}<p>{preflight.data.instructions}</p><dl><dt>Въпроси</dt><dd>{preflight.data.question_count}</dd><dt>Общо време</dt><dd>{formatDuration(preflight.data.total_seconds)}</dd><dt>Краен срок</dt><dd>{date(preflight.data.ends_at)}</dd><dt>Режим</dt><dd>{preflight.data.fullscreen_exempt ? 'Индивидуално разрешено изключение от цял екран' : mobileStart ? 'Мобилен режим' : 'Цял екран'}</dd></dl><p>Напускане на целия екран, скриване на страницата или смяна на приложение приключва текущия въпрос с 0 точки. Няма връщане към приключени въпроси. Изтичането на времето носи 0 точки и за запазена чернова.</p><p>Браузърът отчита само достъпните му събития и не може да блокира системното минимизиране или външни приложения.</p>
+      {session.attemptId ? <form onSubmit={e => { e.preventDefault(); void perform(async () => { const next = await api.post<ExamState>(`/attempts/${session.attemptId}/session/transfer`, { password: transferPassword, session: { browserId: session.browserId, sessionToken: session.token } }); apply(next) }) }}><label>Парола за прехвърляне на сесията<input type="password" required value={transferPassword} onChange={e => setTransferPassword(e.target.value)} /></label><button disabled={busy}>Прехвърли без промяна на сроковете</button></form> : <><label>Код за достъп<input disabled={busy} value={code} autoComplete="off" autoCapitalize="characters" spellCheck={false} onChange={e => { setCode(e.target.value.replace(/\s/g, '').toUpperCase().slice(0, 8)); setError('') }} /></label><button className="primary command-button" disabled={busy || code.length !== 8} onClick={() => void begin()}><Maximize size={18} /> {startLabel}</button></>}
       <button className="command-button" disabled={busy} onClick={back}><ArrowLeft size={17} /> Към тестовете</button>
     </section>}
-    {state?.status === 'in_progress' && state.question && <section className="exam-question"><p className="exam-progress">Въпрос {state.question_number} / {state.question_count} · {state.question.maximum_points} точки</p>{state.question.status === 'pending' ? <><h1>Готовност за следващия въпрос</h1><p>Времето започва след потвърждаването.</p><button className="primary command-button" disabled={busy} onClick={() => void perform(async () => { await fullscreenReady(); apply(await api.post<ExamState>(`/attempts/${state.id}/questions/open`, { fullscreenActive: document.fullscreenElement === container.current, visible: document.visibilityState === 'visible' }, session)) })}><Maximize size={18} /> Продължи на цял екран</button></> : !fullscreen && !preflight.data?.fullscreen_exempt ? <><h1>Възстановете целия екран</h1><p>Сървърният срок продължава; времето не се нулира.</p><button className="primary command-button" disabled={busy} onClick={() => void perform(fullscreenReady)}><Maximize size={18} /> Възстанови целия екран</button></> : <><div role="heading" aria-level={1} className="question-heading" ref={questionHeading} tabIndex={-1}><QuestionText value={state.question.text} /></div><WorkspaceImage api={api} id={state.question.imageId} attempt={state.id} session={session} />{['SHORT_ANSWER', 'OPEN_ANSWER'].includes(state.question.type) ? <label>Отговор<textarea className="exam-text" maxLength={30000} value={answer.text} onChange={e => setAnswer({ optionIds: [], text: e.target.value })} /></label> : <div className="exam-options">{state.question.options.map(option => <label className="exam-option" key={option.id}><input type={state.question!.type === 'MULTIPLE_CHOICE' ? 'checkbox' : 'radio'} name="exam-answer" checked={answer.optionIds.includes(option.id)} onChange={() => setAnswer({ text: '', optionIds: state.question!.type === 'MULTIPLE_CHOICE' ? answer.optionIds.includes(option.id) ? answer.optionIds.filter(id => id !== option.id) : [...answer.optionIds, option.id] : [option.id] })} />{option.text}</label>)}</div>}<button className="primary command-button" disabled={busy || offline || remaining === 0} onClick={() => void confirmAnswer()}><Check size={18} /> Потвърди отговора</button></>}
+    {state?.status === 'in_progress' && state.question && <section className="exam-question"><p className="exam-progress">Въпрос {state.question_number} / {state.question_count} · {state.question.maximum_points} точки</p>{state.question.status === 'pending' ? <><h1>Готовност за следващия въпрос</h1><p>Времето започва след потвърждаването.</p><button className="primary command-button" disabled={busy} onClick={() => void perform(async () => { await fullscreenReady(); apply(await api.post<ExamState>(`/attempts/${state.id}/questions/open`, { fullscreenActive: document.fullscreenElement === container.current, visible: document.visibilityState === 'visible' }, session)) })}><Maximize size={18} /> {withoutFullscreen ? 'Продължи' : 'Продължи на цял екран'}</button></> : !fullscreen && !withoutFullscreen ? <><h1>Възстановете целия екран</h1><p>Сървърният срок продължава; времето не се нулира.</p><button className="primary command-button" disabled={busy} onClick={() => void perform(fullscreenReady)}><Maximize size={18} /> Възстанови целия екран</button></> : <><div role="heading" aria-level={1} className="question-heading" ref={questionHeading} tabIndex={-1}><QuestionText value={state.question.text} /></div><WorkspaceImage api={api} id={state.question.imageId} attempt={state.id} session={session} />{['SHORT_ANSWER', 'OPEN_ANSWER'].includes(state.question.type) ? <label>Отговор<textarea className="exam-text" maxLength={30000} value={answer.text} onChange={e => setAnswer({ optionIds: [], text: e.target.value })} /></label> : <div className="exam-options">{state.question.options.map(option => <label className="exam-option" key={option.id}><input type={state.question!.type === 'MULTIPLE_CHOICE' ? 'checkbox' : 'radio'} name="exam-answer" checked={answer.optionIds.includes(option.id)} onChange={() => setAnswer({ text: '', optionIds: state.question!.type === 'MULTIPLE_CHOICE' ? answer.optionIds.includes(option.id) ? answer.optionIds.filter(id => id !== option.id) : [...answer.optionIds, option.id] : [option.id] })} />{option.text}</label>)}</div>}<button className="primary command-button" disabled={busy || offline || remaining === 0} onClick={() => void confirmAnswer()}><Check size={18} /> Потвърди отговора</button></>}
       <button className="command-button" disabled={busy} onClick={() => { if (window.confirm('Да предадете ли опита? Неотговорените въпроси ще получат 0 точки.')) void perform(async () => apply(await api.post<ExamState>(`/attempts/${state.id}/submit`, undefined, session))) }}><Send size={17} /> Предай опита</button>
     </section>}
     {state && state.status !== 'in_progress' && <section className="exam-finished"><Check size={42} /><h1>Опитът е предаден</h1><p>Окончателният резултат ще бъде достъпен след проверка и публикуване от учителя.</p><button className="primary command-button" onClick={back}><ArrowLeft size={17} /> Моите тестове</button></section>}

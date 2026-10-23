@@ -39,6 +39,7 @@
     "test:notifications": "node e2e/notifications.mjs",
     "test:profile": "node e2e/profile-settings.mjs",
     "test:durations": "node e2e/durations.mjs",
+    "test:mobile-exam": "node e2e/mobile-exam.mjs",
     "test:exam-navigation": "node e2e/exam-navigation.mjs",
     "test:exam-retakes": "node e2e/exam-retakes.mjs",
     "test:learner-results": "node e2e/learner-results.mjs",

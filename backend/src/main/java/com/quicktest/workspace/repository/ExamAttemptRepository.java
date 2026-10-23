@@ -35,8 +35,8 @@ public class ExamAttemptRepository {
         return store.optional("SELECT * FROM exam_attempts WHERE organization_id=? AND assignment_id=? AND student_id=? AND start_key=? FOR UPDATE", organizationId, assignment, userId, idempotencyKey);
     }
 
-    public Map<String, Object> requireAssignmentDefinition(long organizationId, long assignment) {
-        return store.one("SELECT a.*,v.definition_json FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE a.organization_id=? AND a.id=?", organizationId, assignment);
+    public Map<String, Object> lockAssignmentDefinition(long organizationId, long assignment) {
+        return store.one("SELECT a.*,v.definition_json FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE a.organization_id=? AND a.id=? FOR UPDATE", organizationId, assignment);
     }
 
     public long countActiveStudentAttempts(long userId) {
@@ -47,8 +47,8 @@ public class ExamAttemptRepository {
         return store.count("SELECT COUNT(*) FROM exam_attempts WHERE organization_id=? AND assignment_id=? AND student_id=?", organizationId, assignment, userId);
     }
 
-    public long insertAttempt(long organizationId, long assignment, long userId, long value, String idempotencyKey, String value2, String value3, String browserId, String userId2, Instant timestamp) {
-        return store.insert("INSERT INTO exam_attempts(organization_id,assignment_id,student_id,attempt_number,start_key,session_hash,auth_session_hash,browser_id,active_key,started_at) VALUES(?,?,?,?,?,?,?,?,?,?)", organizationId, assignment, userId, value, idempotencyKey, value2, value3, browserId, userId2, timestamp);
+    public long insertAttempt(long organizationId, long assignment, long userId, long value, String idempotencyKey, String value2, String value3, String browserId, String userId2, boolean mobileMode, Instant timestamp) {
+        return store.insert("INSERT INTO exam_attempts(organization_id,assignment_id,student_id,attempt_number,start_key,session_hash,auth_session_hash,browser_id,active_key,mobile_mode,started_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)", organizationId, assignment, userId, value, idempotencyKey, value2, value3, browserId, userId2, mobileMode, timestamp);
     }
 
     public long insertQuestion(long organizationId, long id, int i, String jsonValue, BigDecimal points, int value) {
@@ -124,7 +124,7 @@ public class ExamAttemptRepository {
     }
 
     public List<Map<String, Object>> findStudentAttempts(long organizationId, boolean platform, long userId) {
-        return store.rows("SELECT a.id,a.assignment_id,a.attempt_number,a.status,a.started_at,a.submitted_at,a.expired,v.title FROM exam_attempts a JOIN exam_assignments s ON s.organization_id=a.organization_id AND s.id=a.assignment_id JOIN assessment_versions v ON v.organization_id=s.organization_id AND v.id=s.version_id WHERE (a.organization_id=? OR ?) AND a.student_id=? ORDER BY a.id DESC", organizationId, platform, userId);
+        return store.rows("SELECT a.id,a.assignment_id,a.attempt_number,a.status,a.started_at,a.submitted_at,a.expired,a.mobile_mode,v.title FROM exam_attempts a JOIN exam_assignments s ON s.organization_id=a.organization_id AND s.id=a.assignment_id JOIN assessment_versions v ON v.organization_id=s.organization_id AND v.id=s.version_id WHERE (a.organization_id=? OR ?) AND a.student_id=? ORDER BY a.id DESC", organizationId, platform, userId);
     }
 
     public List<Map<String, Object>> findDueAttempts(Instant timestamp, Instant timestamp2) {

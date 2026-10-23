@@ -107,15 +107,24 @@ public class AssignmentService {
             for(var member:members) {long user=number(member,"user_id");organizations.requireActiveMember(scope,user,"STUDENT");recipients.computeIfAbsent(user,key->new LinkedHashSet<>()).add(group);}
         }
         if(recipients.isEmpty()) throw WorkspaceError.validation("Изберете поне един получател.");
-        long id=repository.insertAssignment(scope.organizationId(), request.versionId(), scope.userId(), request.startsAt(), request.endsAt(), request.maxAttempts(), request.shuffleQuestions(), request.shuffleOptions(), request.answersAfterDeadline(), clock.instant());
+        long id=repository.insertAssignment(scope.organizationId(), request.versionId(), scope.userId(), request.startsAt(), request.endsAt(), request.maxAttempts(), request.shuffleQuestions(), request.shuffleOptions(), request.answersAfterDeadline(), request.mobileAllowed(), clock.instant());
         for(var entry:assignedGroups.entrySet()) repository.insertAssignmentGroup(scope.organizationId(),id,number(entry.getValue(),"organization_id"),entry.getKey());
         for(var recipient:recipients.entrySet()) repository.insertRecipient(scope.organizationId(), id, recipient.getKey(), json.write(recipient.getValue()), request.maxAttempts());
         String code=crypto.code();repository.saveCode(codeHash(scope.organizationId(),id,code), code, id, scope.organizationId());
-        audit.write(scope.organizationId(),scope.userId(),"assignment.created",id,Map.of("recipients",recipients.size(),"version",request.versionId()));
+        audit.write(scope.organizationId(),scope.userId(),"assignment.created",id,Map.of("recipients",recipients.size(),"version",request.versionId(),"mobileAllowed",request.mobileAllowed()));
         return Map.of("id",id,"code",code,"recipients",recipients.size());
     }
     public String codeHash(long org,long assignment,String code) {return crypto.hash(org+":"+assignment+":"+code.strip().toUpperCase(Locale.ROOT));}
     public record ScheduleRequest(@NotNull Instant startsAt,@NotNull Instant endsAt) {}
+    public record MobileModeRequest(@NotNull Boolean mobileAllowed) {}
+    @Transactional
+    public void updateMobileMode(OrgAccess.Scope scope,long id,MobileModeRequest request) {
+        var assignment=teacherAccess(scope,id,true);
+        if(request==null || request.mobileAllowed()==null) throw WorkspaceError.validation("Изберете дали да е разрешено решаване от телефон.");
+        if(flag(assignment,"mobile_allowed")==request.mobileAllowed()) return;
+        repository.updateMobileMode(scope.organizationId(),id,request.mobileAllowed());
+        audit.write(scope.organizationId(),scope.userId(),"assignment.mobile_mode_updated",id,Map.of("mobileAllowed",request.mobileAllowed()));
+    }
     @Transactional
     public void updateSchedule(OrgAccess.Scope scope,long id,ScheduleRequest request) {
         teacherAccess(scope,id,false);
@@ -278,7 +287,11 @@ public class AssignmentService {
     private List<Map<String,Object>> eligibleMembers(Set<Long> groups,Long student) {
         return repository.findEligibleMembers(groups, student);
     }
-    public record AssignmentRequest(long versionId,List<Long> groupIds,List<Long> studentIds,Instant startsAt,Instant endsAt,int maxAttempts,boolean shuffleQuestions,boolean shuffleOptions,boolean answersAfterDeadline) {}
+    public record AssignmentRequest(long versionId,List<Long> groupIds,List<Long> studentIds,Instant startsAt,Instant endsAt,int maxAttempts,boolean shuffleQuestions,boolean shuffleOptions,boolean answersAfterDeadline,boolean mobileAllowed) {
+        public AssignmentRequest(long versionId,List<Long> groupIds,List<Long> studentIds,Instant startsAt,Instant endsAt,int maxAttempts,boolean shuffleQuestions,boolean shuffleOptions,boolean answersAfterDeadline) {
+            this(versionId,groupIds,studentIds,startsAt,endsAt,maxAttempts,shuffleQuestions,shuffleOptions,answersAfterDeadline,false);
+        }
+    }
     public record Accommodation(boolean fullscreenExempt,BigDecimal timeMultiplier,int maxAttempts,String reason) {}
     @Transactional public Object dispatchCode(OrgAccess.Scope scope,long id,CodeDelivery request) {
         teacherAccess(scope,id,false);

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Plus, RotateCw, RotateCcw, Ban, Copy, Mail, KeyRound, UserPlus, Trash2, Users, UserRound, Search, CalendarDays, X } from 'lucide-react'
+import { Plus, RotateCw, RotateCcw, Ban, Copy, Mail, KeyRound, UserPlus, Trash2, Users, UserRound, Search, CalendarDays, Smartphone, X } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
 import type { Assessment, Assignment, Group, Member, Version } from './types'
@@ -9,6 +9,7 @@ import { TestPicker } from './TestPicker'
 import { RecipientPicker } from './RecipientPicker'
 import { DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
 import { AssignmentScheduleDialog } from './AssignmentScheduleDialog'
+import { AssignmentMobileDialog } from './AssignmentMobileDialog'
 import { localTime, minuteBound } from './assignmentDates'
 
 const searchText = (value: string) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('bg')
@@ -52,6 +53,8 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
   const [shuffleQ, setShuffleQ] = useState(true)
   const [shuffleA, setShuffleA] = useState(false)
   const [afterDeadline, setAfterDeadline] = useState(true)
+  const [mobileAllowed, setMobileAllowed] = useState(false)
+  const [editingMobile, setEditingMobile] = useState<Assignment | null>(null)
   const [revokingCode, setRevokingCode] = useState<Assignment | null>(null)
   const [deletingAssignment, setDeletingAssignment] = useState<Assignment | null>(null)
   const [editingSchedule, setEditingSchedule] = useState<Assignment | null>(null)
@@ -73,6 +76,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
     setShuffleQ(true)
     setShuffleA(false)
     setAfterDeadline(true)
+    setMobileAllowed(false)
     setFormError(null)
     action.clearFeedback()
     setPickerKey(key => key + 1)
@@ -92,7 +96,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
     if (duplicateMessage) return invalid(duplicateMessage)
     setFormError(null)
     await action.run(async () => {
-      await api.post('/assignments', { versionId: version, groupIds, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(), maxAttempts: attempts, shuffleQuestions: shuffleQ, shuffleOptions: shuffleA, answersAfterDeadline: afterDeadline })
+      await api.post('/assignments', { versionId: version, groupIds, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(), maxAttempts: attempts, shuffleQuestions: shuffleQ, shuffleOptions: shuffleA, answersAfterDeadline: afterDeadline, mobileAllowed })
       await assignments.reload()
     }, 'Възлагането е създадено.')
   }
@@ -105,6 +109,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
         <RecipientPicker key={pickerKey} title="Групи" searchLabel="Търси групи" placeholder="Име или дисциплина" emptyMessage="Няма налични групи." options={groups.data.map(group => ({ id: group.id, name: group.name, detail: assignedGroupIds.has(group.id) ? 'Вече е възложен' : group.subject, disabled: assignedGroupIds.has(group.id) }))} selected={groupIds} toggle={id => { setGroupIds(ids => toggle(ids, id)); setFormError(null) }} disabled={action.busy} loading={groups.loading || assignments.loading} />
       {duplicateMessage && <p className="error" role="alert">{duplicateMessage}</p>}
       <div className="ws-actions"><label className="ws-check"><input type="checkbox" checked={shuffleQ} onChange={e => setShuffleQ(e.target.checked)} /> Разбъркай въпросите</label><label className="ws-check"><input type="checkbox" checked={shuffleA} onChange={e => setShuffleA(e.target.checked)} /> Разбъркай опциите</label><label className="ws-check"><input type="checkbox" checked={afterDeadline} onChange={e => setAfterDeadline(e.target.checked)} /> Верни отговори след срока</label></div>
+      <div className="ws-mobile-permission"><label className="ws-check"><input type="checkbox" checked={mobileAllowed} onChange={event => setMobileAllowed(event.target.checked)} />Разреши решаване от телефон</label><p className="ws-muted">При скриване на страницата текущият въпрос се приключва с 0 точки. Времето и броят опити остават същите.</p></div>
       <div className="ws-actions ws-assignment-form-actions"><button type="submit" className="primary command-button" disabled={action.busy || loadingVersion || tests.loading || groups.loading || assignments.loading || !!duplicateMessage}><Plus size={17} /> Възложи</button><button type="reset" className="icon-button" title="Нулирай формата" aria-label="Нулирай формата" disabled={action.busy}><RotateCcw size={17} /></button></div>
       </fieldset>
     </form>
@@ -130,10 +135,16 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
           <button className="icon-button" title="Копирай кода" aria-label="Копирай кода" disabled={action.busy || !a.access_code} onClick={() => void action.run(() => navigator.clipboard.writeText(a.access_code!), 'Кодът е копиран.')}><Copy size={17} /></button>
           <button className="icon-button" title="Изпрати кода по имейл" aria-label="Изпрати кода по имейл" disabled={action.busy || !a.access_code} onClick={() => void action.run(() => api.post(`/assignments/${a.id}/code/send`, { code: a.access_code, channel: 'email' }), 'Известията са добавени в опашката.')}><Mail size={17} /></button>
         </div></td>
-        <td><div className="ws-actions ws-assignment-actions"><button className="command-button" title="Промени датите" aria-label={`Промени датите: ${a.title}`} disabled={action.busy} onClick={() => setEditingSchedule(a)}><CalendarDays size={17} /> Дати</button><button className="command-button" title="Участници и наблюдение" aria-label="Участници и наблюдение" onClick={() => openParticipants(a.id)}><Users size={17} /> Участници</button><button className="icon-button danger" title="Отмени кода" disabled={action.busy} onClick={() => setRevokingCode(a)}><Ban size={17} /></button>{a.teacher_id === userId && <button className="icon-button danger" title="Изтрий възлагането" aria-label="Изтрий възлагането" disabled={action.busy} onClick={() => setDeletingAssignment(a)}><Trash2 size={17} /></button>}</div></td>
+        <td><div className="ws-actions ws-assignment-actions"><button className="command-button" title="Мобилен режим" aria-label={`Мобилен режим: ${a.title}`} disabled={action.busy} onClick={() => setEditingMobile(a)}><Smartphone size={17} />{a.mobile_allowed ? 'Телефон: да' : 'Телефон: не'}</button><button className="command-button" title="Промени датите" aria-label={`Промени датите: ${a.title}`} disabled={action.busy} onClick={() => setEditingSchedule(a)}><CalendarDays size={17} /> Дати</button><button className="command-button" title="Участници и наблюдение" aria-label="Участници и наблюдение" onClick={() => openParticipants(a.id)}><Users size={17} /> Участници</button><button className="icon-button danger" title="Отмени кода" disabled={action.busy} onClick={() => setRevokingCode(a)}><Ban size={17} /></button>{a.teacher_id === userId && <button className="icon-button danger" title="Изтрий възлагането" aria-label="Изтрий възлагането" disabled={action.busy} onClick={() => setDeletingAssignment(a)}><Trash2 size={17} /></button>}</div></td>
       </tr>)}</tbody>
     </table></TableContainer>{!visibleAssignments.length && !assignments.loading && !assignments.error && <Empty>{testSearch || groupSearch ? 'Няма възлагания за зададеното търсене.' : 'Няма възлагания.'}</Empty>}
     </Panel>
+    {editingMobile && <AssignmentMobileDialog assignment={editingMobile} onClose={() => setEditingMobile(null)} onSave={async allowed => {
+      const id = editingMobile.id
+      await api.put(`/assignments/${id}/mobile-mode`, { mobileAllowed: allowed })
+      assignments.setData(items => items.map(item => item.id === id ? { ...item, mobile_allowed: allowed } : item))
+      void action.run(assignments.reload, 'Мобилният режим е запазен.')
+    }} />}
     {editingSchedule && <AssignmentScheduleDialog assignment={editingSchedule} onClose={() => setEditingSchedule(null)} onSave={async schedule => {
       const id = editingSchedule.id
       await api.put(`/assignments/${id}/schedule`, schedule)
