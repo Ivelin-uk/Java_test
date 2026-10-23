@@ -15,7 +15,7 @@ export function AssignmentParticipantsPage({ api, id, back }: { api: WorkspaceAp
     {assignment && <>
       <div className="ws-assignment-context">
         <h3>{assignment.title}</h3>
-        <div className="ws-actions ws-muted"><span>Възлагане №{assignment.id}</span><span>Получатели: <output aria-label="Брой получатели">{assignment.recipients}</output></span>{!!assignment.recipient_groups?.length && <span>Групи: {assignment.recipient_groups.map(group => group.name).join(', ')}</span>}</div>
+        <div className="ws-actions ws-muted"><span>Получатели: <output aria-label="Брой получатели">{assignment.recipients}</output></span>{!!assignment.recipient_groups?.length && <span>Групи: {assignment.recipient_groups.map(group => group.name).join(', ')}</span>}</div>
         <div className="ws-actions ws-muted"><span>Начало: {date(assignment.starts_at)}</span><span>Краен срок: {date(assignment.ends_at)}</span></div>
       </div>
       <AssignmentParticipants api={api} assignment={assignment.id} endsAt={assignment.ends_at} groupAssignment={!!assignment.recipient_groups?.length} recipientsChanged={assignments.reload} />

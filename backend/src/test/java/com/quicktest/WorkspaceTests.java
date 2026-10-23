@@ -20,7 +20,6 @@ import java.util.concurrent.*;
 import static com.quicktest.workspace.WorkspaceStore.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
-import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -1620,7 +1619,7 @@ class WorkspaceTests {
         var request=new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now,now.plusSeconds(7200),3,true,true,true);
         String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
         mvc.perform(post("/api/v1/assignments").header("Authorization",bearer).header("X-Organization-Id",org).contentType("application/json").content(workspaceJson.write(request)))
-                .andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value(containsString("възлагане №"+assignment)));
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value("Тестът вече е възложен на група „Default group“. Променете съществуващото възлагане."));
         assertEquals(before,db.one("SELECT * FROM exam_assignments WHERE id=?",assignment));
         assertEquals(recipients,db.rows("SELECT * FROM assignment_recipients WHERE assignment_id=?",assignment));
         assessments.save(teaching,sourceTest(),definition(true));

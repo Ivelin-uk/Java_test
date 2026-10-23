@@ -53,7 +53,7 @@ try {
   await page.getByRole('button', { name: 'Към възлаганията', exact: true }).click()
   await assignments.waitFor(); await form.waitFor()
   assert.equal(new URL(page.url()).pathname, '/assignments')
-  await assignments.getByRole('button', { name: 'Участници във възлагане №601', exact: true }).click()
+  await assignments.getByRole('button', { name: `Участници: ${assignment.title}`, exact: true }).click()
   await participants.waitFor()
   await page.goBack(); await assignments.waitFor()
   await page.goForward(); await participants.waitFor()

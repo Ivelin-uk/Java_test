@@ -49,13 +49,13 @@ try {
   page = learner
   await learner.goto(frontend)
   await learner.getByRole('button', { name: 'Моите тестове', exact: true }).click()
-  const studentRow = id => learner.getByRole('table', { name: 'Възложени тестове', exact: true }).getByRole('row').filter({ hasText: `Възлагане №${id}` })
+  const studentRow = id => learner.getByRole('table', { name: 'Възложени тестове', exact: true }).locator('tbody tr').nth(assignments.findIndex(assignment => assignment.id === id))
   await studentRow(67).getByText('Срокът е изтекъл', { exact: true }).waitFor()
   assert.equal(await studentRow(67).getByRole('button', { name: 'Подготовка', exact: true }).isDisabled(), true)
 
   page = await session(teacher)
   await page.goto(`${frontend}/assignments`)
-  const edit = page.getByRole('button', { name: 'Промени датите на възлагане №67', exact: true })
+  const edit = page.getByRole('table', { name: 'Възлагания', exact: true }).locator('tbody tr').first().getByRole('button', { name: `Промени датите: ${assignments[0].title}`, exact: true })
   const dialog = page.getByRole('dialog', { name: 'Промени датите', exact: true })
   const start = dialog.getByLabel('Начало', { exact: true }), end = dialog.getByLabel('Краен срок', { exact: true })
   const save = dialog.getByRole('button', { name: 'Запази датите', exact: true })

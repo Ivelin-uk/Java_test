@@ -81,7 +81,7 @@
 small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-table[aria-label="Възложени тестове"] { min-width: 980px; }
 .ws-table[aria-label="Възложени тестове"] th, .ws-table[aria-label="Възложени тестове"] .command-button { white-space: nowrap; }
-.ws-assignment-teacher, .ws-assignment-reference { display: block; margin-top: 6px; color: var(--muted); }
+.ws-assignment-teacher { display: block; margin-top: 6px; color: var(--muted); }
 .ws-table .ws-assignment-active td, .ws-table .ws-assignment-active:hover td { background: var(--success-bg); }
 .ws-table .ws-assignment-expired td, .ws-table .ws-assignment-expired:hover td { background: var(--danger-bg); }
 .ws-table .ws-assignment-upcoming td, .ws-table .ws-assignment-upcoming:hover td { background: var(--warning-bg); }

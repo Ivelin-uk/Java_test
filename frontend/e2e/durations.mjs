@@ -112,7 +112,7 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   }
   await page.clock.install(); await page.clock.pauseAt(new Date())
-  await page.getByText(`Възлагане №${assignment.id}`, { exact: true }).waitFor()
+  await page.getByRole('heading', { name: 'Подготовка за изпит', exact: true }).waitFor()
   const code = page.getByLabel('Код за достъп', { exact: true })
   const begin = page.getByRole('button', { name: 'Започни на цял екран', exact: true })
   assert.equal(await begin.isDisabled(), true)

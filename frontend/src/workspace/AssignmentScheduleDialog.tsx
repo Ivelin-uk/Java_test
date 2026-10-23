@@ -59,7 +59,7 @@ export function AssignmentScheduleDialog({ assignment, onClose, onSave }: {
 
   return <dialog ref={dialog} className="delete-dialog ws-schedule-dialog" aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`} aria-busy={busy} onCancel={event => { event.preventDefault(); close() }}>
     <h2 id={`${id}-title`}>Промени датите</h2>
-    <p id={`${id}-description`}>{assignment.title} · Възлагане №{assignment.id}</p>
+    <p id={`${id}-description`}>{assignment.title}</p>
     <form noValidate onSubmit={event => { event.preventDefault(); void save() }} onChange={() => setError('')}>
       <fieldset className="delete-dialog-fields" disabled={busy}>
         <label>Начало<input ref={startInput} type="datetime-local" name="startsAt" required max={minuteBound(end, -1)} step={60} value={start} aria-invalid={!!periodError} aria-describedby={message ? `${id}-error` : undefined} onChange={event => setStart(event.target.value)} /></label>

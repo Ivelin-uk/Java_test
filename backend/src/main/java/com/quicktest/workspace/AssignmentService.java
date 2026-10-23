@@ -97,7 +97,7 @@ public class AssignmentService {
         // concurrent assignment visible after waiting, even for another version.
         for(var entry:assignedGroups.entrySet()) {
             var duplicate=repository.findGroupTestAssignment(scope.organizationId(),number(version,"assessment_id"),number(entry.getValue(),"organization_id"),entry.getKey());
-            if(duplicate.isPresent()) throw WorkspaceError.conflict("Тестът вече е възложен на група „"+string(entry.getValue(),"name")+"“ (възлагане №"+number(duplicate.get(),"id")+"). Променете съществуващото възлагане.");
+            if(duplicate.isPresent()) throw WorkspaceError.conflict("Тестът вече е възложен на група „"+string(entry.getValue(),"name")+"“. Променете съществуващото възлагане.");
         }
         Map<Long,Set<Long>> recipients=new LinkedHashMap<>();
         for(var entry:assignedGroups.entrySet()) {
