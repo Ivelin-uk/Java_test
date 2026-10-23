@@ -16,7 +16,7 @@ public class AssignmentRepository {
     }
 
     public Map<String, Object> findAssignment(long organizationId, long id, boolean lock) {
-        return store.one("SELECT a.*,v.title,v.definition_json FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE a.organization_id=? AND a.id=?"+(lock?" FOR UPDATE":""), organizationId, id);
+        return store.one("SELECT a.*,v.assessment_id,v.title,v.definition_json FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE a.organization_id=? AND a.id=?"+(lock?" FOR UPDATE":""), organizationId, id);
     }
 
     public Optional<Map<String,Object>> findAssignmentIfPresent(long organizationId,long id,boolean lock) {
@@ -82,7 +82,7 @@ public class AssignmentRepository {
     }
 
     public Map<String, Object> requireAssignableVersion(long organizationId, long versionId) {
-        return store.one("SELECT v.*,t.owner_id,t.shared,t.status FROM assessment_versions v JOIN workspace_assessments t ON t.organization_id=v.organization_id AND t.id=v.assessment_id WHERE v.organization_id=? AND v.id=?", organizationId, versionId);
+        return store.one("SELECT v.*,t.owner_id,t.shared,t.status,t.mobile_allowed FROM assessment_versions v JOIN workspace_assessments t ON t.organization_id=v.organization_id AND t.id=v.assessment_id WHERE v.organization_id=? AND v.id=? FOR UPDATE", organizationId, versionId);
     }
 
     public List<Map<String, Object>> findActiveGroupStudents(long groupWorkspace, Long group) {
@@ -123,10 +123,6 @@ public class AssignmentRepository {
 
     public int updateSchedule(long organizationId, long id, Instant startsAt, Instant endsAt) {
         return store.update("UPDATE exam_assignments SET starts_at=?,ends_at=? WHERE organization_id=? AND id=?", startsAt, endsAt, organizationId, id);
-    }
-
-    public int updateMobileMode(long organizationId, long id, boolean mobileAllowed) {
-        return store.update("UPDATE exam_assignments SET mobile_allowed=? WHERE organization_id=? AND id=?", mobileAllowed, organizationId, id);
     }
 
     public List<Map<String, Object>> lockResultDeliveries(long organizationId, long attemptId) {

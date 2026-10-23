@@ -1914,6 +1914,7 @@ class WorkspaceTests {
         assertEquals(Boolean.FALSE,assignments.preflight(learning,assignment).get("mobile_allowed"));
         assertEquals(Boolean.FALSE,assignments.list(teaching).getFirst().get("mobile_allowed"));
         assertEquals(Boolean.FALSE,assignments.list(learning).getFirst().get("mobile_allowed"));
+        long assessmentId=number(db.one("SELECT assessment_id FROM assessment_versions WHERE id=?",version),"assessment_id");
         var colleague=user(Role.TEACHER);db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,colleague.getId(),"[\"TEACHER\"]",now);
         String colleagueToken="Bearer "+auth.login(new AuthService.LoginRequest(colleague.getEmail(),"password123")).token();
         String body=workspaceJson.write(Map.of("mobileAllowed",true));
@@ -1923,23 +1924,39 @@ class WorkspaceTests {
         assignments.shareTeacher(teaching,assignment,colleague.getId(),true);
         mvc.perform(put("/api/v1/assignments/"+assignment+"/mobile-mode").header("Authorization",colleagueToken).header("X-Organization-Id",org).contentType("application/json").content(body)).andExpect(status().isForbidden());
         String teacherToken=teacherAuthorization();
-        for(String invalid:List.of("{}","{\"mobileAllowed\":null}")) mvc.perform(put("/api/v1/assignments/"+assignment+"/mobile-mode").header("Authorization",teacherToken).header("X-Organization-Id",org).contentType("application/json").content(invalid)).andExpect(status().isBadRequest());
+        for(String invalid:List.of("{}","{\"mobileAllowed\":null}")) mvc.perform(put("/api/v1/tests/"+assessmentId+"/mobile-mode").header("Authorization",teacherToken).header("X-Organization-Id",org).contentType("application/json").content(invalid)).andExpect(status().isBadRequest());
         assertFalse(flag(db.one("SELECT mobile_allowed FROM exam_assignments WHERE id=?",assignment),"mobile_allowed"));
         setMobileAllowed(true);setMobileAllowed(true);
-        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND resource_id=? AND action='assignment.mobile_mode_updated'",org,assignment));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND resource_id=? AND action='assessment.mobile_mode_updated'",org,assessmentId));
         mvc.perform(get("/api/v1/assignments/"+assignment+"/preflight").header("Authorization",authorization).header("X-Organization-Id",org)).andExpect(status().isOk()).andExpect(jsonPath("$.mobile_allowed").value(true));
         assertTrue(flag(assignments.list(teaching).getFirst(),"mobile_allowed"));assertTrue(flag(assignments.list(learning).getFirst(),"mobile_allowed"));
         setMobileAllowed(false);assertFalse(flag(assignments.preflight(learning,assignment),"mobile_allowed"));
-        assertEquals(2,db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND resource_id=? AND action='assignment.mobile_mode_updated'",org,assignment));
+        assertEquals(2,db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND resource_id=? AND action='assessment.mobile_mode_updated'",org,assessmentId));
     }
-    @Test void mobileModeCanBeChosenWhenCreatingAnAssignmentWithoutChangingTheDefault() throws Exception {
+    @Test void testMobileModeAppliesToExistingAndFutureAssignments() throws Exception {
+        long assessmentId=number(db.one("SELECT assessment_id FROM assessment_versions WHERE id=?",version),"assessment_id");
+        long secondGroup=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Second group","","Java")),"id");
+        organizations.addStudent(teaching,secondGroup,student);
+        long second=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(secondGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true,false)),"id");
+        assertFalse(flag(db.one("SELECT mobile_allowed FROM exam_assignments WHERE id=?",second),"mobile_allowed"));
+        mvc.perform(put("/api/v1/tests/"+assessmentId+"/mobile-mode").header("Authorization",teacherAuthorization()).header("X-Organization-Id",org).contentType("application/json").content(workspaceJson.write(Map.of("mobileAllowed",true)))).andExpect(status().isOk());
+        assertTrue(flag(db.one("SELECT mobile_allowed FROM workspace_assessments WHERE id=?",assessmentId),"mobile_allowed"));
+        assertTrue(flag(db.one("SELECT mobile_allowed FROM exam_assignments WHERE id=?",assignment),"mobile_allowed"));
+        assertTrue(flag(db.one("SELECT mobile_allowed FROM exam_assignments WHERE id=?",second),"mobile_allowed"));
+        assertTrue(flag(assessments.list(teaching).stream().filter(row->number(row,"id")==assessmentId).findFirst().orElseThrow(),"mobile_allowed"));
+        long thirdGroup=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Third group","","Java")),"id");
+        organizations.addStudent(teaching,thirdGroup,student);
+        long third=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(thirdGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true,false)),"id");
+        assertTrue(flag(db.one("SELECT mobile_allowed FROM exam_assignments WHERE id=?",third),"mobile_allowed"),"Future assignments inherit the test-level permission");
+    }
+    @Test void mobileModeOnAssignmentRequestCannotOverrideTestSetting() throws Exception {
         long published=freshVersion();
         var request=workspaceJson.object(workspaceJson.write(new AssignmentService.AssignmentRequest(published,List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true)));
         request.put("mobileAllowed",true);
         String response=mvc.perform(post("/api/v1/assignments").header("Authorization",teacherAuthorization()).header("X-Organization-Id",org).contentType("application/json").content(workspaceJson.write(request)))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         long created=number(workspaceJson.object(response),"id");
-        assertTrue(flag(assignments.preflight(learning,created),"mobile_allowed"));
+        assertFalse(flag(assignments.preflight(learning,created),"mobile_allowed"));
         assertFalse(flag(assignments.preflight(learning,assignment),"mobile_allowed"));
     }
     @Test void mobileStartRequiresTeacherConsentMobileClientVisibilityAndCorrectCodeBeforeConsumingAnAttempt() throws Exception {

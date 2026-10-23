@@ -15,7 +15,7 @@ public class AssessmentRepository {
     }
 
     public List<Map<String, Object>> findVisibleTests(long organizationId, boolean platform, long userId, long userId2) {
-        return store.rows("SELECT a.id,a.public_number,a.title,a.status,a.shared,a.owner_id,a.updated_at,a.definition_json FROM workspace_assessments a WHERE (a.organization_id=? OR ?) AND (a.owner_id=? OR a.shared=TRUE) AND a.status<>'archived' AND NOT EXISTS (SELECT 1 FROM assessment_library_removals r WHERE r.assessment_id=a.id AND r.user_id=?) ORDER BY a.updated_at DESC", organizationId, platform, userId, userId2);
+        return store.rows("SELECT a.id,a.public_number,a.title,a.status,a.shared,a.owner_id,a.updated_at,a.mobile_allowed,a.definition_json FROM workspace_assessments a WHERE (a.organization_id=? OR ?) AND (a.owner_id=? OR a.shared=TRUE) AND a.status<>'archived' AND NOT EXISTS (SELECT 1 FROM assessment_library_removals r WHERE r.assessment_id=a.id AND r.user_id=?) ORDER BY a.updated_at DESC", organizationId, platform, userId, userId2);
     }
 
     public Map<String, Object> requireTest(long organizationId, long id) {
@@ -92,5 +92,17 @@ public class AssessmentRepository {
 
     public int updateSharing(boolean shared, long organizationId, long id) {
         return store.update("UPDATE workspace_assessments SET shared=? WHERE organization_id=? AND id=?", shared, organizationId, id);
+    }
+
+    public int updateMobileMode(long organizationId, long id, boolean mobileAllowed) {
+        return store.update("UPDATE workspace_assessments SET mobile_allowed=? WHERE organization_id=? AND id=?", mobileAllowed, organizationId, id);
+    }
+
+    public int updateAssessmentAssignmentsMobileMode(long organizationId, long assessmentId, boolean mobileAllowed) {
+        return store.update("UPDATE exam_assignments SET mobile_allowed=? WHERE organization_id=? AND version_id IN (SELECT id FROM assessment_versions WHERE organization_id=? AND assessment_id=?)", mobileAllowed, organizationId, organizationId, assessmentId);
+    }
+
+    public long countAssessmentAssignmentsWithDifferentMobileMode(long organizationId, long assessmentId, boolean mobileAllowed) {
+        return store.count("SELECT COUNT(*) FROM exam_assignments WHERE organization_id=? AND version_id IN (SELECT id FROM assessment_versions WHERE organization_id=? AND assessment_id=?) AND (mobile_allowed IS NULL OR mobile_allowed<>?)", organizationId, organizationId, assessmentId, mobileAllowed);
     }
 }

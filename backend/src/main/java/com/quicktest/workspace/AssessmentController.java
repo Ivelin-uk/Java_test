@@ -24,13 +24,14 @@ public class AssessmentController {
     @GetMapping("/tests/{id}/versions") public Object versions(@PathVariable long id) {return assessments.versions(access.teacher(),id);}
     @PostMapping("/tests/{id}/duplicate") public Object duplicate(@PathVariable long id) {return assessments.duplicate(access.teacher(),id);}
     @PutMapping("/tests/{id}/sharing") public void sharing(@PathVariable long id,@RequestBody Sharing request) {assessments.share(access.teacher(),id,request.shared());}
+    @PutMapping("/tests/{id}/mobile-mode") public void updateMobileMode(@PathVariable long id,@Valid @RequestBody AssessmentService.MobileModeRequest request) {assessments.updateMobileMode(access.teacher(),id,request);}
     @GetMapping("/assignments") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT,student=true) public Object assignments() {return assignments.list(access.scope());}
     @PostMapping("/assignments/resolve-code") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT,teacher=false,student=true)
     public Object resolveCode(@Valid @RequestBody ResolveCode request) {return assignments.resolveCode(access.student(),request.code(),access.remoteAddress());}
     public record ResolveCode(@NotBlank @Pattern(regexp="[A-Za-z0-9]{8}") String code) {}
     @PostMapping("/assignments") public Object assign(@RequestBody AssignmentService.AssignmentRequest request) {return assignments.create(access.version(request.versionId()),request);}
     @PutMapping("/assignments/{id}/schedule") public void updateSchedule(@PathVariable long id,@Valid @RequestBody AssignmentService.ScheduleRequest request) {assignments.updateSchedule(access.teacher(),id,request);}
-    @PutMapping("/assignments/{id}/mobile-mode") public void updateMobileMode(@PathVariable long id,@Valid @RequestBody AssignmentService.MobileModeRequest request) {assignments.updateMobileMode(access.teacher(),id,request);}
+    @PutMapping("/assignments/{id}/mobile-mode") public void updateMobileModeForTest(@PathVariable long id,@Valid @RequestBody AssessmentService.MobileModeRequest request) {assignments.updateMobileMode(access.teacher(),id,request);}
     @DeleteMapping("/assignments/{id}") public void removeAssignment(@PathVariable long id) {assignments.remove(access.teacher(),id);}
     @PostMapping("/assignments/{id}/recipients") public void addRecipient(@PathVariable long id,@RequestBody OrganizationController.UserId request) {assignments.addRecipient(access.teacher(),id,request.userId());}
     @PostMapping("/assignments/{id}/recipients/{user}/extra-attempt") public Object extraAttempt(@PathVariable long id,@PathVariable long user) {return assignments.allowExtraAttempt(access.teacher(),id,user);}

@@ -34,7 +34,7 @@ export function AssignmentMobileDialog({ assignment, onClose, onSave }: {
       <fieldset className="delete-dialog-fields" disabled={busy}>
         <label className="ws-check"><input ref={checkbox} type="checkbox" checked={allowed} onChange={event => { setAllowed(event.target.checked); setError('') }} />Разреши решаване от телефон</label>
         <p className="ws-muted">На телефон не се изисква цял екран. Браузърът не може да блокира системното минимизиране, но при засечено скриване на страницата, смяна на приложение или излизане от цял екран текущият въпрос приключва с 0 точки. Сроковете и броят опити се запазват.</p>
-        <p className="ws-muted">Промяната важи за нови опити. Започнатите опити запазват режима си.</p>
+        <p className="ws-muted">Промяната важи за всички съществуващи и бъдещи възлагания на теста. Започнатите опити запазват режима си.</p>
       </fieldset>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="dialog-actions"><button type="button" className="command-button" disabled={busy} onClick={close}><X size={16} />Отказ</button><button type="submit" className="primary command-button" disabled={busy}>{busy ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}Запази режима</button></div>

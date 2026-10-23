@@ -67,9 +67,9 @@ async function screenshot(name) {
 
 async function teacherSettings() {
   const context = await contextFor(teacher)
-  const groups = [{ id: 401, name: '12А', subject: 'Java' }, { id: 402, name: '12Б', subject: 'Java' }]
-  const tests = [{ id: 202, title: 'Основи на Java', status: 'published', owner_id: teacher.user.id, shared: false, question_count: 2, total_time_seconds: 120 }]
-  const assignments = [{ ...assignment }], creates = [], saves = []
+  const groups = [{ id: 401, name: '12А', subject: 'Java' }, { id: 402, name: '12Б', subject: 'Java' }, { id: 403, name: '12В', subject: 'Java' }]
+  const tests = [{ id: 202, title: 'Основи на Java', status: 'published', owner_id: teacher.user.id, shared: false, mobile_allowed: false, question_count: 2, total_time_seconds: 120 }]
+  const assignments = [{ ...assignment, assessment_id: tests[0].id }], creates = [], saves = []
   let failSave = false
   await intercept(context, async ({ request, path, method, respond }) => {
     if (method === 'GET') {
@@ -79,9 +79,18 @@ async function teacherSettings() {
     if (method === 'POST' && path === '/api/v1/assignments') {
       const body = request.postDataJSON()
       assert.equal(typeof body.mobileAllowed, 'boolean')
+      assert.equal(body.mobileAllowed, tests[0].mobile_allowed, 'New assignments inherit the test setting')
       creates.push(body)
       assignments.push({ ...assignment, id: 301 + creates.length, assessment_id: tests[0].id, title: tests[0].title, mobile_allowed: body.mobileAllowed, recipient_groups: groups.filter(group => body.groupIds.includes(group.id)), starts_at: body.startsAt, ends_at: body.endsAt })
       await respond({ id: assignments.at(-1).id }); return true
+    }
+    if (method === 'PUT' && path === '/api/v1/tests/202/mobile-mode') {
+      const body = request.postDataJSON()
+      assert.deepEqual(Object.keys(body), ['mobileAllowed'])
+      tests[0].mobile_allowed = body.mobileAllowed
+      assignments.filter(row => row.assessment_id === tests[0].id).forEach(row => { row.mobile_allowed = body.mobileAllowed })
+      saves.push(body)
+      await respond({}); return true
     }
     if (method === 'PUT' && path === '/api/v1/assignments/301/mobile-mode') {
       const body = request.postDataJSON()
@@ -89,7 +98,8 @@ async function teacherSettings() {
       assert.equal(typeof body.mobileAllowed, 'boolean')
       saves.push(body)
       if (failSave) { failSave = false; await respond({ detail: 'Има активен опит. Опитайте отново след приключването му.' }, 409); return true }
-      assignments[0].mobile_allowed = body.mobileAllowed
+      tests[0].mobile_allowed = body.mobileAllowed
+      assignments.filter(row => row.assessment_id === tests[0].id).forEach(row => { row.mobile_allowed = body.mobileAllowed })
       await respond(assignments[0]); return true
     }
     return false
@@ -97,46 +107,52 @@ async function teacherSettings() {
   try {
     await openPage(context, '/assignments')
     const form = page.getByRole('form', { name: 'Възлагане на тест', exact: true })
-    const permission = form.getByLabel('Разреши решаване от телефон', { exact: true })
-    await permission.waitFor()
-    assert.equal(await permission.isChecked(), false, 'New assignments require explicit teacher opt-in')
-    for (const [index, allowed] of [false, true].entries()) {
-      if (index) await form.getByRole('button', { name: 'Нулирай формата', exact: true }).click()
-      assert.equal(await permission.isChecked(), false, 'Reset must restore safe default')
+    for (const [position, index] of [1, 2].entries()) {
+      if (position) await form.getByRole('button', { name: 'Нулирай формата', exact: true }).click()
       await form.getByRole('combobox', { name: 'Тест', exact: true }).fill(tests[0].title)
       await page.getByRole('listbox', { name: 'Тестове за възлагане' }).getByRole('option').click()
+      await form.getByText(/Решаване от телефон: не е разрешено/).waitFor()
       await form.getByRole('combobox', { name: 'Търси групи', exact: true }).fill(groups[index].name)
       await page.getByRole('listbox', { name: 'Групи', exact: true }).getByRole('option', { name: groups[index].name, exact: true }).click()
-      if (allowed) await permission.check()
       const request = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/v1/assignments')
       await form.getByRole('button', { name: 'Възложи', exact: true }).click()
       await request
       await page.getByText('Възлагането е създадено.', { exact: true }).last().waitFor()
-      assert.equal(creates[index].mobileAllowed, allowed)
+      assert.equal(creates[position].mobileAllowed, false)
     }
+    await page.getByRole('navigation', { name: 'Основна навигация', exact: true }).getByRole('button', { name: 'Тестове', exact: true }).click()
+    const testPermission = page.getByRole('checkbox', { name: `Разреши решаване от телефон: ${tests[0].title}`, exact: true })
+    assert.equal(await testPermission.isChecked(), false)
+    const testUpdate = page.waitForRequest(request => request.method() === 'PUT' && new URL(request.url()).pathname === '/api/v1/tests/202/mobile-mode')
+    await testPermission.click()
+    await testUpdate
+    await page.waitForFunction(() => document.querySelector('input[aria-label^="Разреши решаване от телефон:"]')?.checked)
+    assert.equal(tests[0].mobile_allowed, true)
+    assert(assignments.filter(row => row.assessment_id === tests[0].id).every(row => row.mobile_allowed), 'Enabling from the test list updates every existing assignment')
+    await page.getByRole('navigation', { name: 'Основна навигация', exact: true }).getByRole('button', { name: 'Възлагания', exact: true }).click()
     const edit = page.getByRole('button', { name: `Мобилен режим: ${assignment.title}`, exact: true })
     const dialog = page.getByRole('dialog', { name: 'Мобилен режим', exact: true })
     const allow = dialog.getByLabel('Разреши решаване от телефон', { exact: true })
     const save = dialog.getByRole('button', { name: 'Запази режима', exact: true })
-    await edit.click(); assert.equal(await allow.isChecked(), false)
-    await allow.check(); await dialog.getByRole('button', { name: 'Отказ', exact: true }).click()
-    assert.equal(saves.length, 0)
-    await edit.click(); assert.equal(await allow.isChecked(), false)
-    await allow.check(); failSave = true; await save.click()
+    await edit.click(); assert.equal(await allow.isChecked(), true)
+    const savesBeforeCancel = saves.length
+    await dialog.getByRole('button', { name: 'Отказ', exact: true }).click()
+    assert.equal(saves.length, savesBeforeCancel)
+    await edit.click(); assert.equal(await allow.isChecked(), true)
+    await allow.uncheck(); failSave = true; await save.click()
     await dialog.getByRole('alert').getByText('Има активен опит. Опитайте отново след приключването му.', { exact: true }).waitFor()
-    assert.equal(await allow.isChecked(), true, 'Server refusal must preserve the teacher selection for retry')
+    assert.equal(await allow.isChecked(), false, 'Server refusal must preserve the teacher selection for retry')
     await save.click(); await dialog.waitFor({ state: 'hidden' })
-    await page.reload(); await edit.click(); assert.equal(await allow.isChecked(), true)
+    await page.reload(); await edit.click(); assert.equal(await allow.isChecked(), false)
     for (const width of [320, 390]) for (const theme of ['light', 'dark']) {
       await page.setViewportSize({ width, height: 900 })
       await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme)
       assert.equal(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth), true)
       await screenshot(`mobile-setting-${theme}-${width}`)
     }
-    await allow.uncheck(); await save.click(); await dialog.waitFor({ state: 'hidden' })
-    await edit.click(); assert.equal(await allow.isChecked(), false)
-    assert.deepEqual(saves, [{ mobileAllowed: true }, { mobileAllowed: true }, { mobileAllowed: false }])
-    assert.deepEqual(assignments.slice(1).map(row => row.mobile_allowed), [false, true], 'Editing one assignment must not affect another')
+    await dialog.getByRole('button', { name: 'Отказ', exact: true }).click()
+    assert.deepEqual(saves, [{ mobileAllowed: true }, { mobileAllowed: false }, { mobileAllowed: false }])
+    assert(assignments.filter(row => row.assessment_id === tests[0].id).every(row => !row.mobile_allowed), 'Changing the setting from an assignment also updates all assignments of that test')
   } finally { await context.close() }
 }
 
@@ -284,7 +300,7 @@ try {
   await learnerScenario({ name: 'pagehide', width: 390, theme: 'dark', allowed: true, complete: true, leave: 'pagehide' })
   await learnerScenario({ name: 'resumed-after-disable', width: 320, theme: 'light', allowed: false, resume: true, complete: true, leave: 'pagehide' })
   assert.deepEqual(errors, [])
-  console.log('Passed: explicit teacher opt-in and safe default/reset, independent assignment permission editing/cancel/retry/persistence, mobile start with truthful fullscreen capabilities, server-approved resume after permission disabled, automatic next question, fullscreen-exit and visibility/pagehide sanctions with exact question instances, navigation keepalive, saved drafts do not suppress hiding sanctions, denied phones spend no attempts, narrow unsupported desktop stays blocked, existing individual exception, 320/390px and both themes. API fixtures only.')
+  console.log('Passed: test-list mobile permission updates existing assignments and controls future assignment defaults, assignment permission editing/cancel/retry/persistence, mobile start with truthful fullscreen capabilities, server-approved resume after permission disabled, automatic next question, fullscreen-exit and visibility/pagehide sanctions with exact question instances, navigation keepalive, saved drafts do not suppress hiding sanctions, denied phones spend no attempts, narrow unsupported desktop stays blocked, existing individual exception, 320/390px and both themes. API fixtures only.')
 } catch (error) {
   console.error('Fixture API/page errors:', errors)
   if (page && !page.isClosed()) await page.screenshot({ path: new URL('mobile-exam-failure.png', artifacts).pathname, fullPage: true })

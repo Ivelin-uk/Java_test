@@ -87,6 +87,17 @@ public class AssessmentService {
         repository.updateSharing(shared, scope.organizationId(), id);
         audit.write(scope.organizationId(),scope.userId(),"assessment.sharing_changed",id,Map.of("shared",shared));
     }
+    @Transactional
+    public void updateMobileMode(OrgAccess.Scope scope,long id,MobileModeRequest request) {
+        repository.lockTest(scope.organizationId(),id);
+        var test=get(scope,id,true);
+        if(request==null || request.mobileAllowed()==null) throw WorkspaceError.validation("Изберете дали тестът да може да се решава от телефон.");
+        boolean changed=!Objects.equals(test.get("mobile_allowed"),request.mobileAllowed());
+        repository.updateMobileMode(scope.organizationId(),id,request.mobileAllowed());
+        int assignments=repository.countAssessmentAssignmentsWithDifferentMobileMode(scope.organizationId(),id,request.mobileAllowed())>0
+                ? repository.updateAssessmentAssignmentsMobileMode(scope.organizationId(),id,request.mobileAllowed()) : 0;
+        if(changed || assignments>0) audit.write(scope.organizationId(),scope.userId(),"assessment.mobile_mode_updated",id,Map.of("mobileAllowed",request.mobileAllowed(),"assignmentsUpdated",assignments));
+    }
     public void validate(Definition definition) {
         if(definition==null || definition.title()==null || definition.title().isBlank() || definition.title().length()>190 || definition.questions()==null || definition.questions().isEmpty() || definition.questions().size()>100) throw WorkspaceError.validation("Тестът трябва да има заглавие и 1–100 въпроса.");
         validateAdditionalInformation(definition);
@@ -109,6 +120,7 @@ public class AssessmentService {
     public record Definition(String title,String description,String subject,String level,String instructions,String language,String gradingScale,BigDecimal passThreshold,List<Question> questions,String additionalInformation) {
         public Definition(String title,String description,String subject,String level,String instructions,String language,String gradingScale,BigDecimal passThreshold,List<Question> questions) {this(title,description,subject,level,instructions,language,gradingScale,passThreshold,questions,null);}
     }
+    public record MobileModeRequest(@jakarta.validation.constraints.NotNull Boolean mobileAllowed) {}
     public record Question(String type,String text,String difficulty,BigDecimal points,int timeSeconds,List<Option> options,List<String> acceptedAnswers,boolean caseInsensitive,boolean collapseWhitespace,String criteria,String explanation,Long imageId) {
         public Question(String type,String text,String difficulty,BigDecimal points,int timeSeconds,List<Option> options,List<String> acceptedAnswers,boolean caseInsensitive,boolean collapseWhitespace,String criteria,String explanation) {this(type,text,difficulty,points,timeSeconds,options,acceptedAnswers,caseInsensitive,collapseWhitespace,criteria,explanation,null);}
     }
