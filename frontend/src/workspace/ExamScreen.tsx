@@ -148,9 +148,12 @@ export function ExamScreen({ api, user, assignment, resume, initialCode = '', op
     }
     finally { busyRef.current = false; setBusy(false) }
   }
-  async function fullscreenReady() {
-    if (mobileClient && !withoutFullscreen && !preflight.data?.mobile_validated) throw new Error('Учителят не е разрешил решаване от телефон за този тест. Поискайте разрешение за мобилен режим или използвайте компютър. Опит не е изразходван.')
-    if (!withoutFullscreen && document.fullscreenElement !== container.current) {
+  async function fullscreenReady(current: Preflight | null = preflight.data): Promise<void> {
+    if (!current) throw new Error(preflight.error || 'Подготовката за теста не може да се зареди.')
+    const currentMobileStart = state ? state.mobile_mode === true : mobileClient && current.mobile_allowed === true && !current.fullscreen_exempt
+    const currentWithoutFullscreen = current.fullscreen_exempt || currentMobileStart
+    if (mobileClient && !currentWithoutFullscreen && !current.mobile_validated) throw new Error('Учителят не е разрешил решаване от телефон за този тест. Поискайте разрешение за мобилен режим или използвайте компютър. Опит не е изразходван.')
+    if (!currentWithoutFullscreen && document.fullscreenElement !== container.current) {
       if (!document.fullscreenEnabled || !container.current?.requestFullscreen) throw new Error('Този браузър не поддържа строгия режим. Опит не е изразходван.')
       await container.current.requestFullscreen()
     }
@@ -158,10 +161,13 @@ export function ExamScreen({ api, user, assignment, resume, initialCode = '', op
   }
   async function begin() {
     await perform(async () => {
-      await fullscreenReady()
+      const latestPreflight = await preflight.reload()
+      if (!latestPreflight) throw new Error('Подготовката за теста не може да се зареди.')
+      const currentMobileStart = mobileClient && latestPreflight.mobile_allowed === true && !latestPreflight.fullscreen_exempt
+      await fullscreenReady(latestPreflight)
       let next: ExamState
       try {
-        next = await api.post<ExamState>(`/assignments/${assignment}/attempts`, { code, idempotencyKey: session.startKey, browserId: session.browserId, sessionToken: session.token, mobileMode: mobileStart, fullscreenSupported: !!document.fullscreenEnabled, fullscreenActive: document.fullscreenElement === container.current, visible: document.visibilityState === 'visible' })
+        next = await api.post<ExamState>(`/assignments/${assignment}/attempts`, { code, idempotencyKey: session.startKey, browserId: session.browserId, sessionToken: session.token, mobileMode: currentMobileStart, fullscreenSupported: !!document.fullscreenEnabled, fullscreenActive: document.fullscreenElement === container.current, visible: document.visibilityState === 'visible' })
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : ''
         if (openAssignment && ['Невалиден или отменен код.', 'Твърде много грешни кодове. Опитайте след 5 минути.'].includes(message)) {

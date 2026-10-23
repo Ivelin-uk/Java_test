@@ -156,12 +156,12 @@ async function teacherSettings() {
   } finally { await context.close() }
 }
 
-async function learnerScenario({ name, width = 390, theme = 'light', mobile = true, allowed = false, exempt = false, strictSupported = false, complete = false, resume = false, leave = 'visibility' }) {
+async function learnerScenario({ name, width = 390, theme = 'light', mobile = true, allowed = false, permissionUpdatedAfterPreflight = false, exempt = false, strictSupported = false, complete = false, resume = false, leave = 'visibility' }) {
   const context = await contextFor(student, { width, theme, mobile, unsupported: !strictSupported })
   let current = 0, questionStatus = 'open', status = 'in_progress', deadline = Date.now() + 180000
   const starts = [], opens = [], answers = [], events = [], drafts = []
   const selected = { ...assignment, mobile_allowed: allowed, fullscreen_exempt: exempt }
-  const mobileMode = resume || mobile && allowed && !exempt
+  let mobileMode = resume || mobile && allowed && !exempt
   function state() {
     return { id: 601, assignment_id: selected.id, mobile_mode: mobileMode, status, server_now: new Date().toISOString(), question_number: current + 1, question_count: definitions.length, question: status === 'in_progress' ? { ...definitions[current], status: questionStatus, maximum_points: 1, time_seconds: 180, open_instance: questionStatus === 'open' ? `mobile-instance-${current}` : null, opened_at: questionStatus === 'open' ? new Date(deadline - 180000).toISOString() : null, deadline_at: questionStatus === 'open' ? new Date(deadline).toISOString() : null, draft: drafts[current] ?? null } : null }
   }
@@ -172,12 +172,13 @@ async function learnerScenario({ name, width = 390, theme = 'light', mobile = tr
     }
     if (method === 'POST' && path === `/api/v1/assignments/${selected.id}/attempts`) {
       const body = request.postDataJSON()
+      mobileMode = resume || mobile && selected.mobile_allowed && !exempt
       starts.push(body)
       assert.equal(body.code, 'ABCDEFGH'); assert.equal(body.visible, true)
       assert.equal(body.fullscreenSupported, strictSupported)
       assert.equal(body.fullscreenActive, false, 'Unsupported fullscreen must never be reported as active')
-      assert.equal(body.mobileMode, mobile && allowed && !exempt)
-      assert(mobile && allowed || exempt, `${name}: forbidden start reached the API`)
+      assert.equal(body.mobileMode, mobile && selected.mobile_allowed && !exempt)
+      assert(mobile && selected.mobile_allowed || exempt, `${name}: forbidden start reached the API`)
       await respond(state()); return true
     }
     if (method === 'PUT' && /^\/api\/v1\/attempts\/601\/questions\/\d+\/draft$/.test(path)) {
@@ -219,7 +220,7 @@ async function learnerScenario({ name, width = 390, theme = 'light', mobile = tr
     if (!resume) {
     await page.getByRole('heading', { name: 'Подготовка за изпит', exact: true }).waitFor()
     await page.getByLabel('Код за достъп', { exact: true }).fill('ABCDEFGH')
-    const canStart = mobile && allowed || exempt
+    const canStart = mobile && (allowed || permissionUpdatedAfterPreflight) || exempt
     if (!canStart) {
       assert.equal(await page.getByRole('button', { name: 'Започни теста', exact: true }).count(), 0, 'A narrow desktop viewport must not opt into mobile mode')
       const start = page.getByRole('button', { name: 'Започни на цял екран', exact: true })
@@ -230,11 +231,16 @@ async function learnerScenario({ name, width = 390, theme = 'light', mobile = tr
       await screenshot(`mobile-exam-${name}-${theme}-${width}`)
       return
     }
-    if (mobile && !exempt) await page.locator('.exam-preflight').getByText('Мобилен режим', { exact: true }).waitFor()
-    else await page.locator('.exam-preflight').getByText('Индивидуално разрешено изключение от цял екран', { exact: true }).waitFor()
-    assert.equal(await page.getByRole('button', { name: 'Започни на цял екран', exact: true }).count(), 0)
-    await screenshot(`mobile-exam-${name}-preflight-${theme}-${width}`)
-    await page.getByRole('button', { name: 'Започни теста', exact: true }).click()
+    if (permissionUpdatedAfterPreflight) {
+      selected.mobile_allowed = true
+      await page.getByRole('button', { name: 'Започни на цял екран', exact: true }).click()
+    } else {
+      if (mobile && !exempt) await page.locator('.exam-preflight').getByText('Мобилен режим', { exact: true }).waitFor()
+      else await page.locator('.exam-preflight').getByText('Индивидуално разрешено изключение от цял екран', { exact: true }).waitFor()
+      assert.equal(await page.getByRole('button', { name: 'Започни на цял екран', exact: true }).count(), 0)
+      await screenshot(`mobile-exam-${name}-preflight-${theme}-${width}`)
+      await page.getByRole('button', { name: 'Започни теста', exact: true }).click()
+    }
     }
     await page.getByRole('heading', { name: definitions[0].text, exact: true }).waitFor()
     assert.equal(starts.length, resume ? 0 : 1, 'Resuming must use the existing server-approved mode without starting another attempt')
@@ -293,7 +299,8 @@ try {
   for (const width of [320, 390]) for (const theme of ['light', 'dark']) {
     await learnerScenario({ name: 'approved', width, theme, allowed: true, complete: true })
   }
-  await learnerScenario({ name: 'not-allowed', width: 390 })
+    await learnerScenario({ name: 'permission-updated-after-preflight', allowed: false, permissionUpdatedAfterPreflight: true })
+    await learnerScenario({ name: 'not-allowed', width: 390 })
   await learnerScenario({ name: 'desktop-unsupported', width: 320, mobile: false, allowed: true })
   await learnerScenario({ name: 'individual-exception', width: 390, exempt: true })
   await learnerScenario({ name: 'fullscreen-exit', width: 390, allowed: true, complete: true, leave: 'fullscreen' })
