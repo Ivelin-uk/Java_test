@@ -28,7 +28,7 @@ const questions = [
   question(503, 'Маркирай ключовите думи.', { type: 'MULTIPLE_CHOICE', points: 3, awarded: 1, options: [option('q3-a', 'console'), option('q3-b', 'class', true), option('q3-c', 'public', true), option('q3-d', 'пример')], answer: { optionIds: ['q3-a', 'q3-b'], text: '' } }),
   question(504, 'Назови връзка между класове.', { type: 'SHORT_ANSWER', awarded: 2, answer: { optionIds: [], text: 'Моят кратък отговор е наследяване.' }, acceptedAnswers: [secretAccepted] }),
   question(505, 'Обясни принципите на обектното програмиране.', { type: 'OPEN_ANSWER', points: 3, awarded: 1, answer: { optionIds: [], text: 'Първи ред на свободния отговор.\nВтори ред с конкретен пример.' }, criteria: secretCriteria }),
-  question(506, 'Дай пример за интерфейс.', { type: 'OPEN_ANSWER', points: 1, explanation: '' }),
+  question(506, 'Дай пример за интерфейс.', { type: 'OPEN_ANSWER', points: 1, explanation: '', criteria: 'Примерен интерфейс: Runnable.' }),
   question(507, 'Всяка променлива има тип.', { type: 'TRUE_FALSE', points: 1, options: [option('q7-a', 'Вярно', true), option('q7-b', 'Невярно')], answer: { optionIds: [], text: '' }, explanation: '' }),
 ]
 const artifacts = new URL('../../.artifacts/', import.meta.url)
@@ -82,9 +82,9 @@ try {
       await card(7).waitFor()
       assert.equal(await page.getByRole('article', { name: /^Въпрос \d+$/ }).count(), 7)
       for (let number = 1; number <= 7; number++) {
-        assert.equal(await answer(number).count(), 1)
+        assert.equal(await answer(number).count(), number <= 5 ? 1 : 0)
         assert.equal(await card(number).getByRole('heading', { name: 'Верен отговор / критерии', exact: true }).count(), 1)
-        assert.equal(await card(number).getByRole('heading', { name: 'Обяснение', exact: true }).count(), 1)
+        assert.equal(await card(number).getByRole('heading', { name: 'Обяснение', exact: true }).count(), number <= 5 ? 1 : 0)
       }
       const chosenWrong = card(1).getByRole('listitem').filter({ hasText: 'Числото 42' })
       await chosenWrong.getByText('Твоят избор', { exact: true }).waitFor()
@@ -114,7 +114,18 @@ try {
         const outline = getComputedStyle(element)
         return outline.outlineStyle === 'solid' && outline.outlineWidth === '2px' && outline.outlineColor === expected
       }), true, 'A correct student choice must have a visible green outline')
+      for (const [number, token] of [[1, '--danger'], [2, '--success']]) {
+        const studentAnswer = card(number).locator('.result-review-student-answer')
+        assert.equal(await studentAnswer.evaluate((element, token) => {
+          const sample = document.createElement('span'); sample.style.color = `var(${token})`; document.body.append(sample)
+          const expected = getComputedStyle(sample).color; sample.remove()
+          return getComputedStyle(element).borderTopColor === expected
+            && getComputedStyle(element.querySelector('li')).color === expected
+        }, token), true, 'The submitted answer must use its correct/incorrect color too')
+      }
       assert.equal(await card(3).getByText('Твоят избор', { exact: true }).count(), 2)
+      assert.equal(await card(3).locator('.result-review-selected-answers > li.is-correct').filter({ hasText: 'class' }).count(), 1)
+      assert.equal(await card(3).locator('.result-review-selected-answers > li.is-incorrect').filter({ hasText: 'console' }).count(), 1)
       assert.equal(await card(3).getByRole('listitem').filter({ hasText: 'public' }).getByText('Не е избран', { exact: true }).count(), 1)
       await card(3).getByText('Частични точки', { exact: true }).waitFor()
       await card(3).getByText('1 / 3 точки', { exact: true }).waitFor()
@@ -124,9 +135,16 @@ try {
       await card(4).getByText(secretAccepted, { exact: true }).waitFor()
       await card(5).getByText('Първи ред на свободния отговор.\nВтори ред с конкретен пример.', { exact: true }).waitFor()
       await card(5).getByText(secretCriteria, { exact: true }).waitFor()
-      await card(6).getByText('Няма предаден отговор', { exact: true }).waitFor()
-      await card(7).getByText('Празен отговор', { exact: true }).waitFor()
-      for (const number of [6, 7]) await card(number).getByText('Няма добавено обяснение към този въпрос.', { exact: true }).waitFor()
+      for (const number of [6, 7]) {
+        await card(number).getByText('Без предаден отговор', { exact: true }).waitFor()
+        assert.equal(await card(number).locator('.result-review-options, .result-review-student-answer, .result-review-explanation').count(), 0, 'An unanswered question must show only the correct answer')
+        assert.equal(await card(number).locator('.result-review-answer').count(), 1)
+        assert.equal(await card(number).getByText('Няма предаден отговор', { exact: true }).count(), 0)
+        assert.equal(await card(number).getByText('Празен отговор', { exact: true }).count(), 0)
+      }
+      await card(6).getByText('Примерен интерфейс: Runnable.', { exact: true }).waitFor()
+      await card(7).getByRole('listitem').getByText('Вярно', { exact: true }).waitFor()
+      assert.equal(await card(7).getByText('Невярно', { exact: true }).count(), 0)
       await card(1).getByText(comment, { exact: true }).waitFor()
       assert.equal(await page.getByText('Скрита чернова, която не е предадена.', { exact: true }).count(), 0)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
@@ -141,6 +159,8 @@ try {
       await assertReleasedAnswers()
       await page.screenshot({ path: new URL(`result-review-${viewport.theme}-${viewport.width}.png`, artifacts).pathname, fullPage: true })
       await card(1).screenshot({ path: new URL(`result-review-question-${viewport.theme}-${viewport.width}.png`, artifacts).pathname })
+      await card(2).screenshot({ path: new URL(`result-review-correct-${viewport.theme}-${viewport.width}.png`, artifacts).pathname })
+      await card(7).screenshot({ path: new URL(`result-review-unanswered-${viewport.theme}-${viewport.width}.png`, artifacts).pathname })
 
       await page.getByRole('button', { name: 'Към моите тестове', exact: true }).click()
       await table.waitFor()
@@ -172,6 +192,11 @@ try {
       await card(5).getByText('Първи ред на свободния отговор.\nВтори ред с конкретен пример.', { exact: true }).waitFor()
       assert.equal(await card(1).getByText(comment, { exact: true }).count(), 0)
       assert.equal(await page.locator('.result-review-options .is-correct, .result-review-options .is-incorrect').count(), 0)
+      assert.equal(await page.locator('.result-review-student-answer.is-full, .result-review-student-answer.is-zero, .result-review-student-answer.is-partial, .result-review-selected-answers .is-correct, .result-review-selected-answers .is-incorrect').count(), 0)
+      await card(6).getByText('Няма предаден отговор', { exact: true }).waitFor()
+      await card(7).getByText('Празен отговор', { exact: true }).waitFor()
+      assert.equal(await card(7).getByRole('region', { name: 'Възможни отговори за въпрос 7', exact: true }).count(), 1)
+      assert.equal(await card(6).getByText('Примерен интерфейс: Runnable.', { exact: true }).count(), 0)
       await assertDedicatedPage()
       await page.screenshot({ path: new URL(`result-review-before-deadline-${viewport.theme}-${viewport.width}.png`, artifacts).pathname, fullPage: true })
 
@@ -224,7 +249,7 @@ try {
   }
   assert.deepEqual(writes, [])
   assert.deepEqual(errors, [])
-  console.log('Passed: dedicated result route, list navigation, reload/deep link, browser back/forward, released selected/correct/missed answers and partial points, short/open criteria and explanations, empty answers, teacher comment, strict permission/deadline gating including overcomplete payloads, read-only fixtures, metadata fallback, API failure/retry, responsive desktop/mobile and both themes.')
+  console.log('Passed: dedicated result route, list navigation, reload/deep link, browser back/forward, released correct/incorrect choice and submitted-answer colors, mixed selections and partial points, solution-only unanswered/blank questions, short/open criteria and explanations, teacher comment, strict permission/deadline gating including overcomplete payloads, read-only fixtures, metadata fallback, API failure/retry, responsive desktop/mobile and both themes.')
 } catch (error) {
   console.error('Fixture API/page errors:', errors, 'Unexpected writes:', writes)
   throw error

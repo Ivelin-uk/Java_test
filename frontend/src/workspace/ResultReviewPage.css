@@ -54,15 +54,28 @@
 .result-review-incorrect { color: var(--danger); }
 .result-review-missed { color: var(--muted); }
 .result-review-answer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.result-review-answer-grid.is-single-answer { grid-template-columns: minmax(0, 1fr); }
 .result-review-answer { display: grid; align-content: start; gap: 14px; min-width: 0; padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--page); }
 .result-review-answer h4, .result-review-explanation h4, .result-review-comment h4 { display: flex; align-items: flex-start; gap: 9px; }
 .result-review-answer h4 svg, .result-review-explanation h4 svg, .result-review-comment h4 svg { flex: 0 0 auto; margin-top: 2px; }
 .result-review-student-answer h4 svg { color: var(--link); }
+.result-review-student-answer.is-full { border-color: var(--success); background: var(--success-bg); }
+.result-review-student-answer.is-zero { border-color: var(--danger); background: var(--danger-bg); }
+.result-review-student-answer.is-partial { border-color: var(--warning); background: var(--warning-bg); }
+.result-review-student-answer.is-full h4 svg { color: var(--success); }
+.result-review-student-answer.is-zero h4 svg { color: var(--danger); }
+.result-review-student-answer.is-partial h4 svg { color: var(--warning); }
 .result-review-solution { border-color: var(--success); }
 .result-review-solution h4 svg { color: var(--success); }
 .result-review-answer p, .result-review-comment p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .result-review-answer ul { display: grid; gap: 9px; padding-left: 20px; margin: 0; line-height: 1.65; }
 .result-review-answer li { padding-left: 2px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.result-review-answer .result-review-selected-answers { list-style: none; padding: 0; }
+.result-review-selected-answers > li { display: flex; align-items: flex-start; gap: 8px; }
+.result-review-selected-answers > li > span { min-width: 0; }
+.result-review-selected-answers > li > svg { flex: 0 0 auto; margin-top: 4px; }
+.result-review-selected-answers > li.is-correct { color: var(--success); }
+.result-review-selected-answers > li.is-incorrect { color: var(--danger); }
 .result-review-answer small, .result-review-empty-answer { color: var(--muted); }
 .result-review-explanation, .result-review-comment { display: grid; gap: 13px; padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--subtle); overflow-wrap: anywhere; }
 .result-review-explanation .question-text > :first-child { margin-top: 0; }

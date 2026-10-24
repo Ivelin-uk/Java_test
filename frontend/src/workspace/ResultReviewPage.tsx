@@ -110,18 +110,22 @@ function ReviewedQuestion({ api, attempt, row, index, released }: { api: Workspa
   const snapshot = snapshotOf(row.definition_json)
   const answer = answerOf(row.answer_json)
   const selected = new Set(answer?.optionIds ?? [])
+  const answers = snapshot?.options.filter(option => selected.has(option.id)) ?? []
+  const hasAnswer = answers.length > 0 || Boolean(answer?.text.trim())
   const awarded = row.final_points === null || row.final_points === undefined ? null : Number(row.final_points)
   const maximum = Number(row.maximum_points)
   const scored = released && awarded !== null && Number.isFinite(awarded) && Number.isFinite(maximum)
-  const verdict = !scored ? answer ? 'Предаден отговор' : 'Без предаден отговор' : awarded === 0 ? 'Без точки' : maximum > 0 && awarded >= maximum ? 'Пълен брой точки' : 'Частични точки'
+  const verdict = !hasAnswer ? 'Без предаден отговор' : !scored ? 'Предаден отговор' : awarded === 0 ? 'Без точки' : maximum > 0 && awarded >= maximum ? 'Пълен брой точки' : 'Частични точки'
   const verdictClass = !scored ? '' : awarded === 0 ? 'is-zero' : maximum > 0 && awarded >= maximum ? 'is-full' : 'is-partial'
   const VerdictIcon = !scored ? Circle : awarded === 0 ? X : maximum > 0 && awarded >= maximum ? Check : CircleMinus
   const id = `review-question-${row.id}`
-  const answers = snapshot?.options.filter(option => selected.has(option.id)) ?? []
   const correct = released ? snapshot?.options.filter(option => option.correct === true) ?? [] : []
   const accepted = released && Array.isArray(snapshot?.question.acceptedAnswers) ? snapshot.question.acceptedAnswers.filter(value => typeof value === 'string' && value.trim()) : []
   const criteria = released && typeof snapshot?.question.criteria === 'string' ? snapshot.question.criteria.trim() : ''
   const explanation = released && typeof snapshot?.question.explanation === 'string' ? snapshot.question.explanation.trim() : ''
+  const studentAnswerClass = !released || !hasAnswer ? '' : answers.length
+    ? answers.every(option => option.correct === true) ? 'is-full' : answers.every(option => option.correct === false) ? 'is-zero' : ''
+    : verdictClass
 
   return <article className={`result-review-question ${verdictClass}`} aria-labelledby={id}>
     <header className="result-review-question-head">
@@ -132,12 +136,12 @@ function ReviewedQuestion({ api, attempt, row, index, released }: { api: Workspa
       {!snapshot ? <p className="result-review-notice"><Info size={18} aria-hidden="true" /><span>Данните за този въпрос не могат да се покажат.</span></p> : <>
         <div className="result-review-prompt"><QuestionText value={snapshot.question.text ?? ''} /></div>
         <WorkspaceImage api={api} id={snapshot.question.imageId} attempt={attempt} />
-        {snapshot.options.length > 0 && <section className="result-review-options" aria-label={`Възможни отговори за въпрос ${index + 1}`}>
+        {snapshot.options.length > 0 && (!released || hasAnswer) && <section className="result-review-options" aria-label={`Възможни отговори за въпрос ${index + 1}`}>
           <h4>Възможни отговори</h4>
           <ul>{snapshot.options.map((option, optionIndex) => {
             const chosen = selected.has(option.id)
             const isCorrect = released && option.correct === true
-            const incorrect = released && chosen && !isCorrect
+            const incorrect = released && chosen && option.correct === false
             return <li key={option.id} className={`${chosen ? 'is-selected' : ''} ${isCorrect ? 'is-correct' : ''} ${incorrect ? 'is-incorrect' : ''}`}>
               <span className="result-review-option-letter" aria-hidden="true">{String.fromCharCode(65 + optionIndex)}</span>
               <span className="result-review-option-text">{option.text}</span>
@@ -145,19 +149,19 @@ function ReviewedQuestion({ api, attempt, row, index, released }: { api: Workspa
             </li>
           })}</ul>
         </section>}
-        <div className="result-review-answer-grid">
-          <section className="result-review-answer result-review-student-answer" aria-label={`Твоят отговор на въпрос ${index + 1}`}>
+        <div className={`result-review-answer-grid ${!released || !hasAnswer ? 'is-single-answer' : ''}`}>
+          {(!released || hasAnswer) && <section className={`result-review-answer result-review-student-answer ${studentAnswerClass}`} aria-label={`Твоят отговор на въпрос ${index + 1}`}>
             <h4><FileCheck2 size={18} aria-hidden="true" />Твоят отговор</h4>
-            {!answer ? <p className="result-review-empty-answer">Няма предаден отговор</p> : answers.length ? <ul>{answers.map(option => <li key={option.id}>{option.text}</li>)}</ul> : <p className={answer.text.trim() ? '' : 'result-review-empty-answer'}>{answer.text.trim() ? answer.text : 'Празен отговор'}</p>}
+            {!answer ? <p className="result-review-empty-answer">Няма предаден отговор</p> : answers.length ? <ul className="result-review-selected-answers">{answers.map(option => <li key={option.id} className={released ? option.correct === true ? 'is-correct' : option.correct === false ? 'is-incorrect' : '' : ''}>{released && option.correct === true ? <CheckCircle2 size={16} aria-label="Верен избор" /> : released && option.correct === false ? <X size={16} aria-label="Неверен избор" /> : null}<span>{option.text}</span></li>)}</ul> : <p className={answer.text.trim() ? '' : 'result-review-empty-answer'}>{answer.text.trim() ? answer.text : 'Празен отговор'}</p>}
             {row.status !== 'answered' && <small>Статус: {label(row.status)}</small>}
-          </section>
+          </section>}
           {released && <section className="result-review-answer result-review-solution" aria-label={`Верен отговор за въпрос ${index + 1}`}>
             <h4><CheckCircle2 size={18} aria-hidden="true" />Верен отговор / критерии</h4>
             {correct.length ? <ul>{correct.map(option => <li key={option.id}>{option.text}</li>)}</ul> : accepted.length ? <ul>{accepted.map((value, acceptedIndex) => <li key={acceptedIndex}>{value}</li>)}</ul> : criteria ? <p>{criteria}</p> : <p className="result-review-empty-answer">Няма добавен верен отговор или критерии.</p>}
             {criteria && (correct.length > 0 || accepted.length > 0) && <p>{criteria}</p>}
           </section>}
         </div>
-        {released && <section className="result-review-explanation" aria-label={`Обяснение към въпрос ${index + 1}`}><h4><Info size={18} aria-hidden="true" />Обяснение</h4>{explanation ? <QuestionText value={explanation} /> : <p className="result-review-empty-answer">Няма добавено обяснение към този въпрос.</p>}</section>}
+        {released && hasAnswer && <section className="result-review-explanation" aria-label={`Обяснение към въпрос ${index + 1}`}><h4><Info size={18} aria-hidden="true" />Обяснение</h4>{explanation ? <QuestionText value={explanation} /> : <p className="result-review-empty-answer">Няма добавено обяснение към този въпрос.</p>}</section>}
       </>}
       {released && row.teacher_comment?.trim() && <section className="result-review-comment" aria-label={`Коментар от учителя за въпрос ${index + 1}`}><h4><MessageSquareText size={18} aria-hidden="true" />Коментар от учителя</h4><p>{row.teacher_comment}</p></section>}
     </div>
