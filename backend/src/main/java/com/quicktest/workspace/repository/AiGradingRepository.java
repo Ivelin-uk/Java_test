@@ -14,6 +14,16 @@ public class AiGradingRepository {
         this.store = store;
     }
 
+    private static final String AUTOMATIC_CANDIDATES = "SELECT a.id,a.organization_id,a.assignment_id,s.auto_ai_grading_user_id user_id,s.auto_ai_grading_platform_scope platform_scope FROM exam_attempts a JOIN exam_assignments s ON s.organization_id=a.organization_id AND s.id=a.assignment_id WHERE a.status='pending_review' AND s.auto_ai_grading=TRUE AND s.auto_ai_grading_user_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workspace_ai_grading_jobs j WHERE j.organization_id=a.organization_id AND j.attempt_id=a.id)";
+
+    public List<Map<String,Object>> findAutomaticCandidates() {
+        return store.rows(AUTOMATIC_CANDIDATES+" ORDER BY a.id LIMIT 25");
+    }
+
+    public Optional<Map<String,Object>> findAutomaticCandidate(long organizationId,long attemptId) {
+        return store.optional(AUTOMATIC_CANDIDATES+" AND a.organization_id=? AND a.id=?",organizationId,attemptId);
+    }
+
     public Optional<Map<String, Object>> findJobByAttemptForUpdate(long organizationId, long attemptId) {
         return store.optional("SELECT * FROM workspace_ai_grading_jobs WHERE organization_id=? AND attempt_id=? FOR UPDATE", organizationId, attemptId);
     }

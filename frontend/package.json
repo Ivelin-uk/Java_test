@@ -34,6 +34,7 @@
     "test:dashboard": "node e2e/dashboard-navigation.mjs",
     "test:assignment-dates": "node e2e/assignment-dates.mjs",
     "test:assignment-schedule": "node e2e/assignment-schedule.mjs",
+    "test:assignment-settings": "node e2e/assignment-settings.mjs",
     "test:assignment-reset": "node e2e/assignment-reset.mjs",
     "test:assignment-duplicates": "node e2e/assignment-duplicates.mjs",
     "test:notifications": "node e2e/notifications.mjs",

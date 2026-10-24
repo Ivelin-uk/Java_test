@@ -31,6 +31,7 @@ public class AssessmentController {
     public record ResolveCode(@NotBlank @Pattern(regexp="[A-Za-z0-9]{8}") String code) {}
     @PostMapping("/assignments") public Object assign(@RequestBody AssignmentService.AssignmentRequest request) {return assignments.create(access.version(request.versionId()),request);}
     @PutMapping("/assignments/{id}/schedule") public void updateSchedule(@PathVariable long id,@Valid @RequestBody AssignmentService.ScheduleRequest request) {assignments.updateSchedule(access.teacher(),id,request);}
+    @PutMapping("/assignments/{id}/settings") public void updateAssignmentSettings(@PathVariable long id,@Valid @RequestBody AssignmentService.SettingsRequest request) {assignments.updateSettings(access.teacher(),id,request);}
     @PutMapping("/assignments/{id}/mobile-mode") public void updateMobileModeForTest(@PathVariable long id,@Valid @RequestBody AssessmentService.MobileModeRequest request) {assignments.updateMobileMode(access.teacher(),id,request);}
     @DeleteMapping("/assignments/{id}") public void removeAssignment(@PathVariable long id) {assignments.remove(access.teacher(),id);}
     @PostMapping("/assignments/{id}/recipients") public void addRecipient(@PathVariable long id,@RequestBody OrganizationController.UserId request) {assignments.addRecipient(access.teacher(),id,request.userId());}

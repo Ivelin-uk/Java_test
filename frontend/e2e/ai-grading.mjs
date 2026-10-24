@@ -14,7 +14,7 @@ try {
     await context.addInitScript(auth => localStorage.setItem('quicktest.auth', JSON.stringify(auth)), auth)
     const page = await context.newPage()
     page.on('pageerror', error => errors.push(error.message))
-    const attempts = ['pending_review', 'pending_review', 'finalized', 'voided'].map((status, i) => ({ id: 501 + i, assignment_id: 301, title: 'Тест по програмиране с дълго заглавие', student_name: `Student ${i + 1}`, attempt_number: i + 1, status, submitted_at: new Date().toISOString(), ai_status: null, ai_attempts: 0, ai_error: null }))
+    const attempts = ['pending_review', 'pending_review', 'finalized', 'voided'].map((status, i) => ({ id: 501 + i, assignment_id: 301, title: 'Тест по програмиране с дълго заглавие', student_name: `Student ${i + 1}`, attempt_number: i + 1, status, result_outcome: status === 'finalized' ? 'passed' : null, submitted_at: new Date().toISOString(), ai_status: null, ai_attempts: 0, ai_error: null }))
     const jobs = new Map(), requests = [], reviews = []
     let failFirstStart = true, loseRetryResponse = true, queueError = false, holdProcessing = false
     const student = { id: 102, name: 'Student 2', email: 'student@example.test' }
@@ -33,7 +33,7 @@ try {
           if (job.status === 'queued') { job.status = 'running'; attempt.ai_status = 'running' }
           else if (job.status === 'running') {
             if (id === 502 && job.attempts === 1) { job.status = 'failed'; attempt.ai_status = 'failed'; attempt.ai_error = 'Няма наличен OpenAI API кредит.' }
-            else { job.status = 'completed'; attempt.ai_status = 'completed'; attempt.status = 'finalized'; attempt.ai_error = null }
+            else { job.status = 'completed'; attempt.ai_status = 'completed'; attempt.status = 'finalized'; attempt.result_outcome = 'passed'; attempt.ai_error = null }
           }
         }
         return respond(attempts)

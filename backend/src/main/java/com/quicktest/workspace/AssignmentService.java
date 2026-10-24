@@ -108,15 +108,30 @@ public class AssignmentService {
         }
         if(recipients.isEmpty()) throw WorkspaceError.validation("Изберете поне един получател.");
         boolean mobileAllowed=flag(version,"mobile_allowed");
-        long id=repository.insertAssignment(scope.organizationId(), request.versionId(), scope.userId(), request.startsAt(), request.endsAt(), request.maxAttempts(), request.shuffleQuestions(), request.shuffleOptions(), request.answersAfterDeadline(), mobileAllowed, clock.instant());
+        long id=repository.insertAssignment(scope.organizationId(), request.versionId(), scope.userId(), request.startsAt(), request.endsAt(), request.maxAttempts(), request.shuffleQuestions(), request.shuffleOptions(), request.answersAfterDeadline(), mobileAllowed, request.autoAiGrading(), scope.platform(), clock.instant());
         for(var entry:assignedGroups.entrySet()) repository.insertAssignmentGroup(scope.organizationId(),id,number(entry.getValue(),"organization_id"),entry.getKey());
         for(var recipient:recipients.entrySet()) repository.insertRecipient(scope.organizationId(), id, recipient.getKey(), json.write(recipient.getValue()), request.maxAttempts());
         String code=crypto.code();repository.saveCode(codeHash(scope.organizationId(),id,code), code, id, scope.organizationId());
-        audit.write(scope.organizationId(),scope.userId(),"assignment.created",id,Map.of("recipients",recipients.size(),"version",request.versionId(),"mobileAllowed",mobileAllowed));
+        audit.write(scope.organizationId(),scope.userId(),"assignment.created",id,Map.of("recipients",recipients.size(),"version",request.versionId(),"mobileAllowed",mobileAllowed,"autoAiGrading",request.autoAiGrading()));
         return Map.of("id",id,"code",code,"recipients",recipients.size());
     }
     public String codeHash(long org,long assignment,String code) {return crypto.hash(org+":"+assignment+":"+code.strip().toUpperCase(Locale.ROOT));}
     public record ScheduleRequest(@NotNull Instant startsAt,@NotNull Instant endsAt) {}
+    public record SettingsRequest(@NotNull Boolean shuffleQuestions,@NotNull Boolean shuffleOptions,@NotNull Boolean answersAfterDeadline,@NotNull Boolean autoAiGrading) {}
+    @Transactional
+    public void updateSettings(OrgAccess.Scope scope,long id,SettingsRequest request) {
+        if(!scope.roles().contains("TEACHER")) throw WorkspaceError.forbidden();
+        if(request==null || request.shuffleQuestions()==null || request.shuffleOptions()==null || request.answersAfterDeadline()==null || request.autoAiGrading()==null) throw WorkspaceError.validation("Попълнете всички настройки на възлагането.");
+        organizations.requireActiveMember(scope,scope.userId(),"TEACHER");
+        teacherAccess(scope,id,false);
+        // Match exam-start lock ordering. Existing attempt snapshots stay unchanged.
+        repository.lockRecipientIds(scope.organizationId(),id);
+        var previous=teacherAccess(scope,id,true);
+        repository.updateSettings(scope.organizationId(),id,request.shuffleQuestions(),request.shuffleOptions(),request.answersAfterDeadline(),request.autoAiGrading(),scope.userId(),scope.platform());
+        var before=new LinkedHashMap<String,Object>();
+        for(String key:List.of("shuffle_questions","shuffle_options","answers_after_deadline","auto_ai_grading")) before.put(key,flag(previous,key));
+        audit.write(scope.organizationId(),scope.userId(),"assignment.settings_updated",id,Map.of("previous",before,"settings",Map.of("shuffleQuestions",request.shuffleQuestions(),"shuffleOptions",request.shuffleOptions(),"answersAfterDeadline",request.answersAfterDeadline(),"autoAiGrading",request.autoAiGrading())));
+    }
     @Transactional
     public void updateMobileMode(OrgAccess.Scope scope,long id,AssessmentService.MobileModeRequest request) {
         var assignment=teacherAccess(scope,id,false);
@@ -284,9 +299,12 @@ public class AssignmentService {
     private List<Map<String,Object>> eligibleMembers(Set<Long> groups,Long student) {
         return repository.findEligibleMembers(groups, student);
     }
-    public record AssignmentRequest(long versionId,List<Long> groupIds,List<Long> studentIds,Instant startsAt,Instant endsAt,int maxAttempts,boolean shuffleQuestions,boolean shuffleOptions,boolean answersAfterDeadline,boolean mobileAllowed) {
+    public record AssignmentRequest(long versionId,List<Long> groupIds,List<Long> studentIds,Instant startsAt,Instant endsAt,int maxAttempts,boolean shuffleQuestions,boolean shuffleOptions,boolean answersAfterDeadline,boolean mobileAllowed,boolean autoAiGrading) {
+        public AssignmentRequest(long versionId,List<Long> groupIds,List<Long> studentIds,Instant startsAt,Instant endsAt,int maxAttempts,boolean shuffleQuestions,boolean shuffleOptions,boolean answersAfterDeadline,boolean mobileAllowed) {
+            this(versionId,groupIds,studentIds,startsAt,endsAt,maxAttempts,shuffleQuestions,shuffleOptions,answersAfterDeadline,mobileAllowed,false);
+        }
         public AssignmentRequest(long versionId,List<Long> groupIds,List<Long> studentIds,Instant startsAt,Instant endsAt,int maxAttempts,boolean shuffleQuestions,boolean shuffleOptions,boolean answersAfterDeadline) {
-            this(versionId,groupIds,studentIds,startsAt,endsAt,maxAttempts,shuffleQuestions,shuffleOptions,answersAfterDeadline,false);
+            this(versionId,groupIds,studentIds,startsAt,endsAt,maxAttempts,shuffleQuestions,shuffleOptions,answersAfterDeadline,false,false);
         }
     }
     public record Accommodation(boolean fullscreenExempt,BigDecimal timeMultiplier,int maxAttempts,String reason) {}

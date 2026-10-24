@@ -68,7 +68,7 @@ public class AssignmentRepository {
     }
 
     public List<Map<String, Object>> findTeacherAssignments(long organizationId, boolean platform, long userId, long userId2) {
-        return store.rows("SELECT a.id,a.version_id,v.assessment_id,a.teacher_id,a.starts_at,a.ends_at,a.max_attempts,a.access_code,a.mobile_allowed,v.title,(SELECT COUNT(*) FROM assignment_recipients r WHERE r.organization_id=a.organization_id AND r.assignment_id=a.id AND r.canceled=FALSE) recipients FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE (a.organization_id=? OR ?) AND (a.teacher_id=? OR EXISTS (SELECT 1 FROM assignment_teachers t WHERE t.organization_id=a.organization_id AND t.assignment_id=a.id AND t.teacher_id=?)) ORDER BY a.id DESC", organizationId, platform, userId, userId2);
+        return store.rows("SELECT a.id,a.version_id,v.assessment_id,a.teacher_id,a.starts_at,a.ends_at,a.max_attempts,a.access_code,a.mobile_allowed,a.shuffle_questions,a.shuffle_options,a.answers_after_deadline,a.auto_ai_grading,v.title,(SELECT COUNT(*) FROM assignment_recipients r WHERE r.organization_id=a.organization_id AND r.assignment_id=a.id AND r.canceled=FALSE) recipients FROM exam_assignments a JOIN assessment_versions v ON v.organization_id=a.organization_id AND v.id=a.version_id WHERE (a.organization_id=? OR ?) AND (a.teacher_id=? OR EXISTS (SELECT 1 FROM assignment_teachers t WHERE t.organization_id=a.organization_id AND t.assignment_id=a.id AND t.teacher_id=?)) ORDER BY a.id DESC", organizationId, platform, userId, userId2);
     }
 
     public List<Map<String, Object>> findRecipientSources(List<Long> assignmentIds) {
@@ -89,8 +89,12 @@ public class AssignmentRepository {
         return store.rows("SELECT g.user_id FROM group_members g JOIN memberships m ON m.organization_id=g.organization_id AND m.user_id=g.user_id JOIN users u ON u.id=g.user_id WHERE g.organization_id=? AND g.group_id=? AND g.active=TRUE AND m.status='active' AND m.roles_json LIKE '%STUDENT%' AND u.active=TRUE AND u.role='STUDENT'", groupWorkspace, group);
     }
 
-    public long insertAssignment(long organizationId, long versionId, long userId, Instant startsAt, Instant endsAt, int maxAttempts, boolean shuffleQuestions, boolean shuffleOptions, boolean answersAfterDeadline, boolean mobileAllowed, Instant timestamp) {
-        return store.insert("INSERT INTO exam_assignments(organization_id,version_id,teacher_id,starts_at,ends_at,max_attempts,shuffle_questions,shuffle_options,answers_after_deadline,mobile_allowed,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)", organizationId, versionId, userId, startsAt, endsAt, maxAttempts, shuffleQuestions, shuffleOptions, answersAfterDeadline, mobileAllowed, timestamp);
+    public long insertAssignment(long organizationId, long versionId, long userId, Instant startsAt, Instant endsAt, int maxAttempts, boolean shuffleQuestions, boolean shuffleOptions, boolean answersAfterDeadline, boolean mobileAllowed, boolean autoAiGrading, boolean platform, Instant timestamp) {
+        return store.insert("INSERT INTO exam_assignments(organization_id,version_id,teacher_id,starts_at,ends_at,max_attempts,shuffle_questions,shuffle_options,answers_after_deadline,mobile_allowed,auto_ai_grading,auto_ai_grading_user_id,auto_ai_grading_platform_scope,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", organizationId, versionId, userId, startsAt, endsAt, maxAttempts, shuffleQuestions, shuffleOptions, answersAfterDeadline, mobileAllowed, autoAiGrading, autoAiGrading ? userId : null, platform, timestamp);
+    }
+
+    public int updateSettings(long organizationId,long id,boolean shuffleQuestions,boolean shuffleOptions,boolean answersAfterDeadline,boolean autoAiGrading,long userId,boolean platform) {
+        return store.update("UPDATE exam_assignments SET shuffle_questions=?,shuffle_options=?,answers_after_deadline=?,auto_ai_grading=?,auto_ai_grading_user_id=?,auto_ai_grading_platform_scope=? WHERE organization_id=? AND id=?",shuffleQuestions,shuffleOptions,answersAfterDeadline,autoAiGrading,autoAiGrading ? userId : null,platform,organizationId,id);
     }
 
     public int insertRecipient(long organizationId, long id, Long getKey, String jsonValue, int maxAttempts) {

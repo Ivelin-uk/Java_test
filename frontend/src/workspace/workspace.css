@@ -111,6 +111,12 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-assignments-table th, .ws-assignments-table td { padding: 18px 12px; }
 .ws-assignments-table td { vertical-align: top; }
 .ws-assignment-test, .ws-assignment-period { display: grid; justify-items: start; gap: 12px; min-width: 0; }
+.ws-assignment-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--page); }
+.ws-assignment-settings .ws-check { align-items: flex-start; min-width: 0; line-height: 1.5; }
+.ws-assignment-settings input[type="checkbox"] { flex: 0 0 auto; margin-top: 3px; }
+.ws-assignment-settings > p { grid-column: 1 / -1; margin: 0; line-height: 1.6; }
+.ws-assignment-settings-dialog { width: min(660px, calc(100% - 32px)); }
+.ws-assignment-settings-dialog .ws-assignment-settings { grid-template-columns: minmax(0, 1fr); }
 .ws-assignment-title { font-size: 16px; line-height: 1.55; overflow-wrap: break-word; }
 .ws-assignment-test .command-button, .ws-assignment-edit-dates { max-width: 100%; padding: 7px 9px; font-size: 13px; text-align: left; }
 .ws-assignment-test .command-button svg, .ws-assignment-edit-dates svg { flex: 0 0 auto; }
@@ -365,6 +371,7 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-body .admin-panel { padding: 24px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
 
 @media (max-width: 760px) {
+ .ws-assignment-settings { grid-template-columns: minmax(0, 1fr); padding: 12px; }
  .ws-profile-settings { grid-template-columns: 1fr; gap: 20px; }
  .ws-profile-form { padding: 18px; }
  .ws-shell { padding: 0 16px 32px; }

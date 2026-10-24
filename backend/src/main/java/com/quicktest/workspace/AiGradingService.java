@@ -115,6 +115,7 @@ public class AiGradingService {
         if (!workers) return;
         for (var stale : repository.findStaleJobs(clock.instant().minusSeconds(600)))
             fail(number(stale, "organization_id"), number(stale, "id"), number(stale, "attempts"), "Прекъсната AI проверка. Повторете или проверете ръчно.");
+        enqueueAutomatic();
         var job = transactions.execute(tx -> {
             var next = repository.findNextJobForUpdate();
             if (next.isEmpty()) return null;
@@ -139,10 +140,56 @@ public class AiGradingService {
             transactions.executeWithoutResult(tx -> publish(scope, job, lease, result));
         } catch (Exception error) {
             log.warn("AI grading job {} failed ({})", id, error.getClass().getSimpleName());
-            String message = error instanceof ResponseStatusException response && response.getReason() != null ? response.getReason()
-                    : "AI проверката не успя. Резултатът не е публикуван. Повторете или проверете ръчно.";
-            fail(org, id, lease, message);
+            fail(org, id, lease, failureMessage(error));
         }
+    }
+
+    // Discover committed submissions durably, including timeout/submission while
+    // the worker was offline. Submission never waits on AI or consumes quota.
+    private void enqueueAutomatic() {
+        for(var candidate:repository.findAutomaticCandidates()) {
+            long org=number(candidate,"organization_id"),attemptId=number(candidate,"id");
+            try {
+                transactions.executeWithoutResult(tx->{
+                    organizations.lockQuota(org);
+                    var current=repository.findAutomaticCandidate(org,attemptId);
+                    if(current.isEmpty() || !sameAutomaticActor(candidate,current.get())) return;
+                    var scope=new OrgAccess.Scope(org,number(candidate,"user_id"),Set.of("TEACHER"),flag(candidate,"platform_scope"));
+                    // The template owns the transaction, including enqueue's quota reservation.
+                    enqueue(scope,attemptId,new Request("auto-grading-"+attemptId),false);
+                });
+            } catch(Exception error) {
+                log.warn("Automatic AI grading for attempt {} could not be queued ({})",attemptId,error.getClass().getSimpleName());
+                recordAutomaticFailure(candidate,failureMessage(error));
+            }
+        }
+    }
+
+    private boolean sameAutomaticActor(Map<String,Object> first,Map<String,Object> second) {
+        return number(first,"user_id")==number(second,"user_id") && flag(first,"platform_scope")==flag(second,"platform_scope");
+    }
+
+    private void recordAutomaticFailure(Map<String,Object> candidate,String message) {
+        long org=number(candidate,"organization_id"),attemptId=number(candidate,"id");
+        try {
+            transactions.executeWithoutResult(tx->{
+                organizations.lockQuota(org);
+                var current=repository.findAutomaticCandidate(org,attemptId);
+                if(current.isEmpty() || !sameAutomaticActor(candidate,current.get())) return;
+                var attempt=repository.findAttempt(org,attemptId,true);
+                if(!string(attempt,"status").equals("pending_review") || repository.findJobByAttemptForUpdate(org,attemptId).isPresent()) return;
+                long id=repository.insertJob(org,attemptId,number(candidate,"user_id"),flag(candidate,"platform_scope"),"auto-grading-"+attemptId,fingerprint(questions(org,attemptId)),false,clock.instant(),clock.instant());
+                repository.markFailed(message.substring(0,Math.min(message.length(),500)),clock.instant(),org,id);
+                audit.write(org,number(candidate,"user_id"),"grading.ai_auto_failed",attemptId,Map.of("job",id));
+            });
+        } catch(Exception error) {
+            log.warn("Automatic AI grading failure for attempt {} could not be recorded ({})",attemptId,error.getClass().getSimpleName());
+        }
+    }
+
+    private String failureMessage(Exception error) {
+        return error instanceof ResponseStatusException response && response.getReason()!=null ? response.getReason()
+                : "AI проверката не успя. Резултатът не е публикуван. Повторете или проверете ръчно.";
     }
 
     private void checkSnapshot(Map<String, Object> job, Map<String, Object> attempt, List<Map<String, Object>> questions) {
