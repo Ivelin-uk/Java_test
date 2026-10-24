@@ -174,9 +174,6 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-test-settings { display: grid; gap: 20px; min-width: 0; padding: 24px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
 .ws-test-settings > .ws-section-head { padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .ws-test-settings > .ws-section-head button { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; }
-.ws-test-advanced { border-top: 1px solid var(--border); padding-top: 16px; }
-.ws-test-advanced summary { cursor: pointer; font-size: 15px; font-weight: 700; color: var(--text); }
-.ws-test-advanced-fields { display: grid; gap: 20px; padding-top: 20px; min-width: 0; }
 .ws-add-questions { display: grid; gap: 12px; border-top: 1px solid var(--border); padding-top: 16px; }
 .ws-add-questions .ws-inline-form { border-bottom: 0; padding: 0; }
 .ws-add-questions .ws-inline-form label { flex: 0 1 180px; }

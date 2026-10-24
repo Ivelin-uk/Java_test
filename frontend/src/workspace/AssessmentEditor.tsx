@@ -13,6 +13,7 @@ import { QuestionText } from '../components/QuestionText'
 import { plainQuestionText, questionTextLimit } from '../components/richText'
 import { DeleteConfirmationButton, DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
 import { AiTestFields } from './AiTestFields'
+import { TestGradingFields } from './TestGradingFields'
 import { QuestionReplacementDialog } from './QuestionReplacementDialog'
 import { difficulties, generationPayload, newAiSettings, questionTypes as types, validAiSettings } from './aiSettings'
 import { useNotifications } from '../notifications'
@@ -74,7 +75,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
     if (!job?.result_json) return
     const definition = (JSON.parse(job.result_json) as { definition: Definition }).definition
     if (jobMode === 'append') { setDraft(previous => previous ? fillAiQuestions(previous, definition.questions) : previous); setShowAppendAi(false) }
-    else { setCurrent(null); setDraft(definition); setShowAi(false) }
+    else { setCurrent(null); setDraft({ ...definition, gradingScale: aiSettings.gradingScale, passThreshold: aiSettings.passThreshold }); setShowAi(false) }
     setJob(null)
   }
   const [current, setCurrent] = useState<Assessment | null>(null)
@@ -119,13 +120,13 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
         if (next.status === 'completed' && next.result_json) {
           const definition = (JSON.parse(next.result_json) as { definition: Definition }).definition
           if (jobMode === 'append') { setDraft(previous => previous ? fillAiQuestions(previous, definition.questions) : previous); setShowAppendAi(false) }
-          else { setCurrent(null); setDraft(definition); setShowAi(false) }
+          else { setCurrent(null); setDraft({ ...definition, gradingScale: aiSettings.gradingScale, passThreshold: aiSettings.passThreshold }); setShowAi(false) }
           setJob(null)
         } else setJob(next)
       }).catch(() => { if (active) setPollError('Не може да се провери AI заявката. Изчаква се връзка със сървъра.') }).finally(() => { inFlight = false })
     }, 2000)
     return () => { active = false; window.clearInterval(timer) }
-  }, [api, job, jobMode])
+  }, [api, job, jobMode, aiSettings.gradingScale, aiSettings.passThreshold])
   function openAppendAi() {
     if (!draft || saveDisabled || aiLimit < 1) return
     if (document.activeElement instanceof HTMLElement) appendTrigger.current = document.activeElement
@@ -244,7 +245,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
         setJob(await api.post<AiJob>('/ai/test-generations', { ...generationPayload(aiSettings), level: '', language: 'bg' }))
       })
     }}>
-      <AiTestFields api={api} value={aiSettings} onChange={setAiSettings} disabled={action.busy || generating} />
+      <AiTestFields api={api} value={aiSettings} onChange={setAiSettings} disabled={action.busy || generating} showGradingSettings />
       <div className="ws-actions">
         <button type="submit" className="primary command-button" disabled={action.busy || generating || !validGeneration}><Sparkles size={17} />{generating ? 'Генериране...' : 'Генерирай'}</button>
         {job && <span role="status">{label(job.status)}</span>}
@@ -285,15 +286,12 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
       <div className="ws-test-settings" role="group" aria-labelledby="test-settings-title">
       <div className="ws-section-head"><h3 id="test-settings-title">Настройки на теста</h3><button type="button" className="command-button" disabled={saveDisabled || aiLimit < 1} onClick={openAppendAi}><Sparkles size={17} /> Добави с AI</button></div>
       <div className="ws-form-grid"><label>Тема<input value={draft.title} maxLength={190} onChange={e => setDraft({ ...draft, title: e.target.value })} /></label><label>Дисциплина<input value={draft.subject ?? ''} maxLength={190} onChange={e => setDraft({ ...draft, subject: e.target.value })} /></label><label>Въпроси<input type="number" readOnly value={draft.questions.length} /></label><label>Трудност<input readOnly value={draftDifficulties.length === 1 ? difficulties[draftDifficulties[0]] : draftDifficulties.length ? difficulties.MIXED : ''} /></label></div>
+      <TestGradingFields value={draft} onChange={value => setDraft({ ...draft, ...value })} />
       <fieldset className="ws-ai-types" disabled><legend>Типове въпроси</legend><div className="ws-actions">{types.map(([key, text]) => <label className="ws-check" key={key}><input type="checkbox" readOnly checked={draft.questions.some(q => q.type === key)} />{text}</label>)}</div></fieldset>
       <div className="ws-ai-image-settings"><label className="ws-check"><input type="checkbox" disabled readOnly checked={draftImageCount > 0} />С изображения</label>{draftImageCount > 0 && <label>Въпроси с изображение<input type="number" readOnly value={draftImageCount} /></label>}</div>
       {draftDifficulties.length > 1 && <div className="ws-form-grid">{Object.entries(difficulties).filter(([key]) => key !== 'MIXED').map(([key, text]) => <label key={key}>{text}<input type="number" readOnly value={draft.questions.filter(q => q.difficulty === key).length} /></label>)}</div>}
       <label>Допълнителна информация за теста<textarea aria-label="Допълнителна информация за теста" rows={5} maxLength={20000} value={draft.additionalInformation ?? ''} onChange={e => setDraft({ ...draft, additionalInformation: e.target.value })} /></label>
-      <details className="ws-test-advanced"><summary>Настройки за изпита</summary><div className="ws-test-advanced-fields">
-        <div className="ws-form-grid"><label>Клас / ниво<input value={draft.level ?? ''} onChange={e => setDraft({ ...draft, level: e.target.value })} /></label><label>Език<select value={draft.language} onChange={e => setDraft({ ...draft, language: e.target.value })}><option value="bg">Български</option><option value="Bulgarian">Български</option><option value="en">Английски</option></select></label></div>
-        <label>Описание<textarea aria-label="Описание" value={draft.description ?? ''} onChange={e => setDraft({ ...draft, description: e.target.value })} /></label><label>Инструкции за изпита<textarea aria-label="Инструкции за изпита" value={draft.instructions ?? ''} onChange={e => setDraft({ ...draft, instructions: e.target.value })} /></label>
-        <div className="ws-form-grid"><label>Скала<select value={draft.gradingScale} onChange={e => setDraft({ ...draft, gradingScale: e.target.value })}><option value="bulgarian">Българска (2–6)</option><option value="percentage">Процент</option><option value="pass_fail">Успешен / неуспешен</option></select></label><label>Праг за успех (%)<input type="number" min={0} max={100} value={draft.passThreshold} onChange={e => setDraft({ ...draft, passThreshold: Number(e.target.value) })} /></label></div>
-      </div></details>
+      <label>Инструкции за изпита<textarea aria-label="Инструкции за изпита" value={draft.instructions ?? ''} onChange={e => setDraft({ ...draft, instructions: e.target.value })} /></label>
       <p className="ws-summary">{draft.questions.length} въпроса · {draft.questions.reduce((sum, q) => sum + q.points, 0)} точки · {duration(draft.questions)}</p>
       </div>
       {draft.questions.map((q, index) => <article className="ws-question" key={index}><div className="ws-question-head"><strong>Въпрос {index + 1}</strong><select aria-label={`Тип на въпрос ${index + 1}`} value={q.type} onChange={e => typeChange(index, e.target.value as QuestionType)}>{types.map(([type, text]) => <option key={type} value={type}>{text}</option>)}</select><button type="button" className="command-button" aria-label={`Подмени въпрос ${index + 1} с AI`} disabled={saveDisabled} onClick={() => openReplacement(index)}><Sparkles size={17} /> Подмени с AI</button><button className="icon-button danger" title="Изтрий въпрос" onClick={() => setPendingRemoval({ questionIndex: index })}><Trash2 size={17} /></button></div><QuestionPrompt disabled={saveDisabled} api={api} question={q} textChanged={text => patchQuestion(index, { text })} imageChanged={imageId => patchQuestion(index, { imageId })} uploadChanged={busy => setPendingImages(previous => previous + (busy ? 1 : -1))} /><div className="ws-form-grid"><label>Трудност<select value={q.difficulty} onChange={e => patchQuestion(index, { difficulty: e.target.value, timeSeconds: ({ EASY: 30, MEDIUM: 60, HARD: 120, VERY_HARD: 180 })[e.target.value as 'EASY'] })}><option value="EASY">Лесен</option><option value="MEDIUM">Среден</option><option value="HARD">Труден</option><option value="VERY_HARD">Много труден</option></select></label><label>Точки<input type="number" min={0.0001} step="0.1" value={q.points} onChange={e => patchQuestion(index, { points: Number(e.target.value) })} /></label><DurationInput seconds={q.timeSeconds} question={index + 1} onChange={timeSeconds => patchQuestion(index, { timeSeconds })} /></div>

@@ -7,6 +7,7 @@ const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
 const auth = { token: 'ai-page-fixture', user: { id: 101, name: 'AI Teacher', email: 'ai-page@example.test', role: 'TEACHER', active: true, passwordChangeRequired: false } }
 const question = text => ({ type: 'SINGLE_CHOICE', text, difficulty: 'MEDIUM', points: 1, timeSeconds: 60, options: [{ text: 'boolean', correct: true }, { text: 'int', correct: false }], acceptedAnswers: [], caseInsensitive: true, collapseWhitespace: true, criteria: '', explanation: 'A logical value.' })
 const additionalInformation = 'Практически задачи за логически стойности.\nБез въпроси за наследяване.'
+const selectedGrading = { gradingScale: 'percentage', passThreshold: 65 }
 const definition = { title: 'Java basics', description: 'Generated description', subject: 'Java', level: '', instructions: 'Exam instructions', language: 'bg', gradingScale: 'bulgarian', passThreshold: 50, additionalInformation, questions: [{ ...question('First generated question'), difficulty: 'EASY', imageId: 501 }, { ...question('Second generated question'), type: 'SHORT_ANSWER', options: [], acceptedAnswers: ['boolean'] }] }
 const mutations = [], errors = []
 let jobStatus = 'running', failRetry = true, failImage = true, pollCount = 0, stored = null
@@ -72,6 +73,15 @@ try {
   })
   await page.goto(frontend)
   await page.getByRole('button', { name: 'Тестове', exact: true }).click()
+  await page.getByRole('button', { name: 'Ръчен тест', exact: true }).click()
+  const manualSettings = page.getByRole('group', { name: 'Настройки на теста', exact: true })
+  await manualSettings.waitFor()
+  for (const field of ['Скала', 'Праг за успех (%)']) assert.equal(await manualSettings.getByLabel(field, { exact: true }).isVisible(), true)
+  assert.equal(await manualSettings.getByLabel('Скала', { exact: true }).inputValue(), 'bulgarian')
+  assert.equal(await manualSettings.getByLabel('Праг за успех (%)', { exact: true }).inputValue(), '50')
+  for (const field of ['Клас / ниво', 'Език', 'Описание']) assert.equal(await manualSettings.getByLabel(field, { exact: true }).count(), 0)
+  assert.equal(await page.getByText('Настройки за изпита', { exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Към библиотеката', exact: true }).click()
   await page.getByRole('button', { name: 'С AI', exact: true }).click()
   const creator = page.getByRole('region', { name: 'Създаване на тест с AI', exact: true })
   const extra = creator.getByRole('textbox', { name: 'Допълнителна информация за теста', exact: true })
@@ -120,6 +130,10 @@ try {
   await creator.getByLabel('Лесни', { exact: true }).fill('1')
   await creator.getByLabel('Средни', { exact: true }).fill('1')
   await creator.getByLabel('Трудни', { exact: true }).fill('0')
+  await creator.getByLabel('Скала', { exact: true }).selectOption(selectedGrading.gradingScale)
+  await creator.getByLabel('Праг за успех (%)', { exact: true }).fill('101')
+  assert.equal(await generate.isDisabled(), true)
+  await creator.getByLabel('Праг за успех (%)', { exact: true }).fill(String(selectedGrading.passThreshold))
   assert.equal(await generate.isDisabled(), false)
   assert.equal(mutations.length, 0)
   for (const { theme, width, height } of [{ theme: 'light', width: 1440, height: 1000 }, { theme: 'dark', width: 1440, height: 1000 }, { theme: 'dark', width: 390, height: 844 }, { theme: 'light', width: 320, height: 844 }]) {
@@ -179,7 +193,10 @@ try {
     assert.equal(await settings.getByRole('checkbox', { name: 'Няколко верни', exact: true }).isChecked(), false)
     assert.equal(await settings.getByRole('checkbox', { name: 'С изображения', exact: true }).isChecked(), true)
     assert.equal(await settings.getByLabel('Въпроси с изображение', { exact: true }).inputValue(), '1')
-    for (const advanced of ['Клас / ниво', 'Език', 'Описание', 'Инструкции за изпита', 'Скала', 'Праг за успех (%)']) assert.equal(await settings.getByLabel(advanced, { exact: true }).isVisible(), false)
+    for (const removed of ['Клас / ниво', 'Език', 'Описание']) assert.equal(await settings.getByLabel(removed, { exact: true }).count(), 0)
+    for (const visible of ['Инструкции за изпита', 'Скала', 'Праг за успех (%)']) assert.equal(await settings.getByLabel(visible, { exact: true }).isVisible(), true)
+    assert.equal(await settings.getByLabel('Скала', { exact: true }).inputValue(), selectedGrading.gradingScale)
+    assert.equal(await settings.getByLabel('Праг за успех (%)', { exact: true }).inputValue(), String(selectedGrading.passThreshold))
   }
   await assertSettings(payload.topic, payload.subject, payload.additionalInformation)
   assert.equal(stored, null)
@@ -262,15 +279,15 @@ try {
   const edited = JSON.parse(stored.definition_json)
   assert.equal(edited.description, definition.description)
   assert.equal(edited.instructions, definition.instructions)
-  assert.equal(edited.gradingScale, definition.gradingScale)
-  assert.equal(edited.passThreshold, definition.passThreshold)
+  assert.equal(edited.gradingScale, selectedGrading.gradingScale)
+  assert.equal(edited.passThreshold, selectedGrading.passThreshold)
   assert.equal(edited.questions[0].imageId, 501)
   await page.reload()
   await page.getByRole('button', { name: 'Тестове', exact: true }).click()
   await page.getByRole('button', { name: 'Редактирай теста', exact: true }).click()
   await assertSettings('Edited Java basics', 'Programming', 'Updated teacher context')
   assert.deepEqual(errors, [])
-  console.log('Passed: AI creation and editing share topic/subject/context, accurate question/type/difficulty/image summaries, save and reopen persistence, preserved advanced exam settings, bottom save validation and pending state, AI retry and image enlargement, desktop/mobile layouts in both themes. API fixtures only.')
+  console.log('Passed: manual and AI creation show grading settings, selected scale and threshold survive AI generation, save and reopen; removed fields stay hidden and existing metadata is preserved; creation/editing summaries, bottom save validation and pending state, AI retry, image enlargement and desktop/mobile layouts in both themes. API fixtures only.')
 } finally {
   await browser.close()
 }
