@@ -6,6 +6,7 @@ const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173'
 const auth = { token: 'assignment-settings-fixture', user: { id: 101, name: 'Teacher', email: 'teacher@example.test', role: 'TEACHER', active: true, passwordChangeRequired: false } }
 const test = { id: 201, title: 'Нов тест за автоматична проверка', status: 'published', owner_id: 101, shared: false }
 const group = { id: 301, name: '12А', subject: 'Java' }
+const secondGroup = { id: 302, name: '12Б', subject: 'Java' }
 const artifacts = new URL('../../.artifacts/', import.meta.url)
 await mkdir(artifacts, { recursive: true })
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined), headless: true })
@@ -14,7 +15,7 @@ try {
   for (const { width, theme } of [{ width: 1440, theme: 'light' }, { width: 390, theme: 'dark' }, { width: 320, theme: 'light' }]) {
     const context = await browser.newContext({ viewport: { width, height: 1000 } })
     await context.addInitScript(({ auth, theme }) => { localStorage.setItem('quicktest.auth', JSON.stringify(auth)); localStorage.setItem('quicktest.theme', theme) }, { auth, theme })
-    const assignments = [601, 602].map(id => ({ id, assessment_id: 401, teacher_id: 101, title: 'Вече възложен тест', starts_at: '2098-10-14T07:00:00Z', ends_at: '2098-10-14T08:00:00Z', recipients: 1, recipient_groups: [group], access_code: 'ABCD2345', shuffle_questions: true, shuffle_options: false, answers_after_deadline: true, auto_ai_grading: false }))
+    const assignments = [601, 602].map(id => ({ id, assessment_id: 401, teacher_id: 101, title: 'Вече възложен тест', starts_at: id === 601 ? '2098-10-14T07:00:00Z' : '2098-10-16T07:00:00Z', ends_at: id === 601 ? '2098-10-14T08:00:00Z' : '2098-10-16T08:00:00Z', recipients: 1, recipient_groups: [id === 601 ? group : secondGroup], individual_recipients: id === 601 ? [] : [{ id: 402, name: 'Мария Николова' }], access_code: 'ABCD2345', shuffle_questions: true, shuffle_options: false, answers_after_deadline: true, auto_ai_grading: false }))
     const errors = [], saves = [], creations = []
     let failNext = false, holdSave = false, releaseSave
     // Every API request is local; no real assignment, AI call or publication occurs.
@@ -50,6 +51,23 @@ try {
     const form = page.getByRole('form', { name: 'Възлагане на тест', exact: true })
     const table = page.getByRole('table', { name: 'Възлагания', exact: true })
     const first = table.locator('tbody tr').first(), second = table.locator('tbody tr').nth(1)
+    const filters = page.getByRole('group', { name: 'Филтри на възлаганията', exact: true })
+    await filters.getByLabel('Име на ученик', { exact: true }).fill('мария')
+    await page.getByText('1 от 2 възлагания', { exact: true }).waitFor()
+    assert.equal(await table.locator('tbody tr').count(), 1)
+    await filters.getByRole('button', { name: 'Изчисти филтъра', exact: true }).click()
+    await filters.getByLabel('Група', { exact: true }).fill('12б')
+    await page.getByText('1 от 2 възлагания', { exact: true }).waitFor()
+    assert.equal(await table.locator('tbody tr').count(), 1)
+    await filters.getByRole('button', { name: 'Изчисти филтъра', exact: true }).click()
+    await filters.getByLabel('Начало от', { exact: true }).fill('2098-10-15')
+    await filters.getByLabel('Начало до', { exact: true }).fill('2098-10-17')
+    await page.getByText('1 от 2 възлагания', { exact: true }).waitFor()
+    await filters.getByRole('button', { name: 'Изчисти филтъра', exact: true }).click()
+    await filters.getByLabel('Начало от', { exact: true }).fill('2098-10-17')
+    await filters.getByLabel('Начало до', { exact: true }).fill('2098-10-16')
+    await page.getByRole('alert').filter({ hasText: 'Началната дата' }).waitFor()
+    await filters.getByRole('button', { name: 'Изчисти филтъра', exact: true }).click()
     const edit = first.getByRole('button', { name: 'Настройки: Вече възложен тест', exact: true })
     const dialog = page.getByRole('dialog', { name: 'Настройки на възлагането', exact: true })
     const ai = dialog.getByRole('checkbox', { name: 'Автоматична проверка с AI', exact: true })

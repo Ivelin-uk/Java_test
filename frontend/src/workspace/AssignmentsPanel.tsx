@@ -63,10 +63,21 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
   const [deletingAssignment, setDeletingAssignment] = useState<Assignment | null>(null)
   const [editingSchedule, setEditingSchedule] = useState<Assignment | null>(null)
   const [testQuery, setTestQuery] = useState(''), [groupQuery, setGroupQuery] = useState('')
-  const testSearch = searchText(testQuery), groupSearch = searchText(groupQuery)
-  const visibleAssignments = assignments.data.filter(assignment =>
-    (!testSearch || searchText(assignment.title).includes(testSearch))
-    && (!groupSearch || assignment.recipient_groups?.some(group => searchText(group.name).includes(groupSearch))))
+  const [studentQuery, setStudentQuery] = useState(''), [from, setFrom] = useState(''), [to, setTo] = useState('')
+  const testSearch = searchText(testQuery), studentSearch = searchText(studentQuery), groupSearch = searchText(groupQuery)
+  const invalidRange = !!from && !!to && from > to
+  const assignmentDay = (value: string) => {
+    const date = new Date(value)
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  }
+  const visibleAssignments = assignments.data.filter(assignment => {
+    if (invalidRange) return false
+    if (testSearch && !searchText(assignment.title).includes(testSearch)) return false
+    if (studentSearch && !assignment.individual_recipients?.some(student => searchText(student.name).includes(studentSearch))) return false
+    if (groupSearch && !assignment.recipient_groups?.some(group => searchText(group.name).includes(groupSearch))) return false
+    const startDay = assignmentDay(assignment.starts_at)
+    return (!from || startDay >= from) && (!to || startDay <= to)
+  })
   const toggle = (ids: number[], value: number) => ids.includes(value) ? ids.filter(id => id !== value) : [...ids, value]
   function resetForm() {
     if (action.busy) return
@@ -118,13 +129,17 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
       </fieldset>
     </form>
     </Panel>
-    <Panel title="Възложени тестове" description="Намери тест по име или група. Променяй датите от „Период“ и отваряй участниците от съответния ред.">
-    <div className="ws-assignment-filters" role="group" aria-label="Търсене на възлагания">
+    <Panel title="Възложени тестове" description="Търси по тест, ученик, група или дата на началото на възлагането. Променяй датите от „Период“ и отваряй участниците от съответния ред.">
+    <div className="ws-assignment-filters" role="group" aria-label="Филтри на възлаганията">
       <label>Име на тест<input type="search" placeholder="Търси по име" value={testQuery} onChange={event => setTestQuery(event.target.value)} /></label>
+      <label>Име на ученик<input type="search" placeholder="Търси по име" value={studentQuery} onChange={event => setStudentQuery(event.target.value)} /></label>
       <label>Група<input type="search" placeholder="Търси по група" value={groupQuery} onChange={event => setGroupQuery(event.target.value)} /></label>
-      <button type="button" className="command-button" disabled={!testQuery && !groupQuery} onClick={() => { setTestQuery(''); setGroupQuery('') }}><X size={16} /> Изчисти филтъра</button>
+      <label>Начало от<input type="date" aria-label="Начало от" max={to || undefined} value={from} aria-invalid={invalidRange || undefined} onChange={event => setFrom(event.target.value)} /></label>
+      <label>Начало до<input type="date" aria-label="Начало до" min={from || undefined} value={to} aria-invalid={invalidRange || undefined} onChange={event => setTo(event.target.value)} /></label>
+      <button type="button" className="command-button" disabled={!testQuery && !studentQuery && !groupQuery && !from && !to} onClick={() => { setTestQuery(''); setStudentQuery(''); setGroupQuery(''); setFrom(''); setTo('') }}><X size={16} /> Изчисти филтъра</button>
       <span className="ws-summary" role="status">{visibleAssignments.length} от {assignments.data.length} възлагания</span>
     </div>
+    {invalidRange && <p className="error" role="alert">Началната дата трябва да е преди или на крайната дата.</p>}
     <TableContainer label="Възлагания — таблица"><table className="ws-table ws-assignments-table" aria-label="Възлагания">
       <thead><tr><th>Тест</th><th>Период</th><th>Възложено на</th><th>Получатели</th><th>Код за достъп</th><th>Действия</th></tr></thead>
       <tbody>{visibleAssignments.map(a => <tr key={a.id}>
@@ -146,7 +161,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
         </div></td>
         <td><div className="ws-actions ws-assignment-actions"><button className="command-button" title="Участници и наблюдение" aria-label="Участници и наблюдение" onClick={() => openParticipants(a.id)}><Users size={17} /> Участници</button>{a.teacher_id === userId && <button className="icon-button danger" title="Изтрий възлагането" aria-label="Изтрий възлагането" disabled={action.busy} onClick={() => setDeletingAssignment(a)}><Trash2 size={17} /></button>}</div></td>
       </tr>)}</tbody>
-    </table></TableContainer>{!visibleAssignments.length && !assignments.loading && !assignments.error && <Empty>{testSearch || groupSearch ? 'Няма възлагания за зададеното търсене.' : 'Няма възлагания.'}</Empty>}
+    </table></TableContainer>{!visibleAssignments.length && !assignments.loading && !assignments.error && !invalidRange && <Empty>{testSearch || studentSearch || groupSearch ? 'Няма възлагания за зададеното търсене.' : from || to ? 'Няма възлагания за избрания период.' : 'Няма възлагания.'}</Empty>}
     </Panel>
     {editingSettings && <AssignmentSettingsDialog assignment={editingSettings} onClose={() => setEditingSettings(null)} onSave={async value => {
       const id = editingSettings.id

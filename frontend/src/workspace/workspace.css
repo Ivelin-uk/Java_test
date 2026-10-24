@@ -295,6 +295,11 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-grading-filters > button, .ws-assignment-filters > button { display: inline-flex; align-items: center; gap: 6px; padding: 10px 12px; }
 .ws-grading-groups { display: block; max-width: 220px; margin-top: 6px; color: var(--muted); font-size: 14px; white-space: normal; overflow-wrap: anywhere; }
 .ws-test-import { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.ws-library-search { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--page); }
+.ws-library-search > label { flex: 1 1 300px; min-width: 0; }
+.ws-library-search-input { position: relative; }
+.ws-library-search-input > svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.ws-library-search-input > input { padding-left: 40px; }
 .ws-test-import > label { flex: 0 1 300px; min-width: 0; }
 .ws-test-import > p { flex-basis: 100%; margin: 0; font-size: 14px; }
 .ws-test-number { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
@@ -371,6 +376,8 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-body .admin-panel { padding: 24px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
 
 @media (max-width: 760px) {
+ .ws-library-search > label, .ws-library-search > button { flex-basis: 100%; }
+ .ws-library-search > .ws-summary { width: 100%; text-align: center; }
  .ws-assignment-settings { grid-template-columns: minmax(0, 1fr); padding: 12px; }
  .ws-profile-settings { grid-template-columns: 1fr; gap: 20px; }
  .ws-profile-form { padding: 18px; }
