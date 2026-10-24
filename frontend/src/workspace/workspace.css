@@ -101,18 +101,36 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-assignment-expired .ws-assignment-availability { color: var(--danger); }
 .ws-assignment-upcoming .ws-assignment-availability { color: var(--warning); }
 .ws-assignment-canceled .ws-assignment-availability { color: var(--muted); }
-.ws-table-wrap > .ws-table[aria-label="Възлагания"] { min-width: 1240px; }
-.ws-table[aria-label="Възлагания"] th:nth-child(6) { white-space: nowrap; }
-.ws-assignment-code { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ws-table-wrap > .ws-assignments-table { min-width: 1160px; table-layout: fixed; }
+.ws-assignments-table th:first-child { width: 21%; }
+.ws-assignments-table th:nth-child(2) { width: 21%; }
+.ws-assignments-table th:nth-child(3) { width: 18%; }
+.ws-assignments-table th:nth-child(4) { width: 9%; }
+.ws-assignments-table th:nth-child(5) { width: 15%; }
+.ws-assignments-table th:last-child { width: 16%; }
+.ws-assignments-table th, .ws-assignments-table td { padding: 18px 12px; }
+.ws-assignments-table td { vertical-align: top; }
+.ws-assignment-test, .ws-assignment-period { display: grid; justify-items: start; gap: 12px; min-width: 0; }
+.ws-assignment-title { font-size: 16px; line-height: 1.55; overflow-wrap: break-word; }
+.ws-assignment-test .command-button, .ws-assignment-edit-dates { max-width: 100%; padding: 7px 9px; font-size: 13px; text-align: left; }
+.ws-assignment-test .command-button svg, .ws-assignment-edit-dates svg { flex: 0 0 auto; }
+.ws-assignment-date { display: grid; gap: 4px; }
+.ws-assignment-date > span { color: var(--muted); font-size: 12px; font-weight: 600; }
+.ws-assignment-date time { display: flex; flex-wrap: wrap; gap: 4px 8px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.ws-assignment-date time > * { white-space: nowrap; }
+.ws-assignment-date time > span { color: var(--muted); }
+.ws-assignment-recipient-count { min-width: 36px; min-height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--page); }
+.ws-assignment-code { display: grid; justify-items: start; gap: 10px; min-width: 0; }
+.ws-assignment-code-actions { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; max-width: 100%; }
 .ws-assignment-code output { width: 8ch; flex: 0 0 8ch; font: 700 15px ui-monospace, monospace; color: var(--success); }
-.ws-assignment-code .icon-button { width: 32px; height: 32px; min-height: 32px; flex: 0 0 32px; padding: 0; }
-.ws-assignment-audience { display: grid; gap: 6px; min-width: 180px; max-width: 320px; }
+.ws-assignment-code .icon-button { width: 32px; height: 32px; min-width: 32px; min-height: 32px; flex: 0 0 32px; padding: 0; }
+.ws-assignment-audience { display: grid; gap: 6px; min-width: 0; max-width: 320px; }
 .ws-assignment-audience > span { display: flex; align-items: flex-start; gap: 6px; }
 .ws-assignment-audience > span > span { min-width: 0; }
 .ws-assignment-audience svg { flex: 0 0 auto; margin-top: 2px; color: var(--muted); }
 .ws-assignment-audience strong { font-weight: 700; }
-.ws-assignment-actions { display: grid; grid-template-columns: max-content max-content; gap: 8px; }
-.ws-assignment-actions .command-button { padding: 8px; font-size: 14px; }
+.ws-assignment-actions { gap: 8px; }
+.ws-assignment-actions .command-button { max-width: 100%; padding: 8px; font-size: 14px; }
 .ws-assignment-context { display: grid; gap: 12px; min-width: 0; }
 .ws-table .ws-selected-row td, .ws-table .ws-selected-row:hover td { background: var(--success-bg); }
 .ws-table .ws-selected-row td:first-child { box-shadow: inset 3px 0 var(--success); }
@@ -391,13 +409,13 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
  .ws-table-wrap .ws-table tbody tr { display: grid; min-width: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
  .ws-table-wrap .ws-table tbody td { display: grid; grid-template-columns: minmax(5.5rem, 34%) minmax(0, 1fr); align-items: start; gap: 10px; padding: 12px; border-bottom: 1px solid var(--border); }
  .ws-table-wrap .ws-table tbody td::before { content: attr(data-label); color: var(--muted); font-weight: 700; overflow-wrap: anywhere; }
+ .ws-table-wrap .ws-assignments-table tbody td { grid-template-columns: minmax(0, 1fr); gap: 8px; }
  .ws-table-wrap .ws-table tbody td[colspan] { display: block; }
  .ws-table-wrap .ws-table tbody td[colspan]::before { content: none; }
  .ws-table-wrap .ws-table tbody tr > td:last-child { border-bottom: 0; }
  .ws-table-wrap .ws-table th, .ws-table-wrap .ws-table td { width: auto !important; min-width: 0 !important; white-space: normal; }
  .ws-table-wrap .ws-table .command-button { white-space: normal; }
  .ws-table-wrap .ws-table .ws-actions { flex-wrap: wrap; }
- .ws-table-wrap .ws-table .ws-assignment-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
  .ws-form-grid { grid-template-columns: 1fr; }
  .ws-question-head { flex-wrap: wrap; }
  .ws-editor > .ws-question { padding: 16px; }

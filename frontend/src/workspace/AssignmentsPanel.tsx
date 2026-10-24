@@ -3,7 +3,7 @@ import { Plus, RotateCw, RotateCcw, Ban, Copy, Mail, KeyRound, UserPlus, Trash2,
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
 import type { Assessment, Assignment, Group, Member, Version } from './types'
-import { date, label, roles } from './types'
+import { label, roles } from './types'
 import { Empty, Feedback, Panel, SectionHead, TableContainer } from './ui'
 import { TestPicker } from './TestPicker'
 import { RecipientPicker } from './RecipientPicker'
@@ -13,6 +13,8 @@ import { AssignmentMobileDialog } from './AssignmentMobileDialog'
 import { localTime, minuteBound } from './assignmentDates'
 
 const searchText = (value: string) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('bg')
+const assignmentDate = new Intl.DateTimeFormat('bg-BG', { timeZone: 'Europe/Sofia', day: '2-digit', month: '2-digit', year: 'numeric' })
+const assignmentTime = new Intl.DateTimeFormat('bg-BG', { timeZone: 'Europe/Sofia', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 
 export function AssignmentsPanel({ api, userId, openParticipants }: { api: WorkspaceApi; userId: number; openParticipants: (assignment: number) => void }) {
   const assignments = useRemote<Assignment[]>(api, '/assignments', [])
@@ -112,19 +114,22 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
       </fieldset>
     </form>
     </Panel>
-    <Panel title="Възложени тестове" description="Намери тест по име или група. От „Действия“ можеш да промениш датите и да видиш участниците.">
+    <Panel title="Възложени тестове" description="Намери тест по име или група. Променяй датите от „Период“ и отваряй участниците от съответния ред.">
     <div className="ws-assignment-filters" role="group" aria-label="Търсене на възлагания">
       <label>Име на тест<input type="search" placeholder="Търси по име" value={testQuery} onChange={event => setTestQuery(event.target.value)} /></label>
       <label>Група<input type="search" placeholder="Търси по група" value={groupQuery} onChange={event => setGroupQuery(event.target.value)} /></label>
       <button type="button" className="command-button" disabled={!testQuery && !groupQuery} onClick={() => { setTestQuery(''); setGroupQuery('') }}><X size={16} /> Изчисти филтъра</button>
       <span className="ws-summary" role="status">{visibleAssignments.length} от {assignments.data.length} възлагания</span>
     </div>
-    <TableContainer label="Възлагания — таблица"><table className="ws-table" aria-label="Възлагания">
-      <thead><tr><th>Тест</th><th>Начало</th><th>Краен срок</th><th>Възложено на</th><th>Получатели</th><th>Код за достъп</th><th>Действия</th></tr></thead>
+    <TableContainer label="Възлагания — таблица"><table className="ws-table ws-assignments-table" aria-label="Възлагания">
+      <thead><tr><th>Тест</th><th>Период</th><th>Възложено на</th><th>Получатели</th><th>Код за достъп</th><th>Действия</th></tr></thead>
       <tbody>{visibleAssignments.map(a => <tr key={a.id}>
-        <td><div>{a.title}</div></td><td>{date(a.starts_at)}</td><td>{date(a.ends_at)}</td><td><AssignmentAudience assignment={a} /></td><td><button type="button" className="ws-text-button" title={`Участници: ${a.title}`} aria-label={`Участници: ${a.title}`} onClick={() => openParticipants(a.id)}>{a.recipients}</button></td>
+        <td><div className="ws-assignment-test"><strong className="ws-assignment-title">{a.title}</strong><button className="command-button" title="Мобилен режим" aria-label={`Мобилен режим: ${a.title}`} disabled={action.busy} onClick={() => setEditingMobile(a)}><Smartphone size={16} aria-hidden="true" />{a.mobile_allowed ? 'Телефон: да' : 'Телефон: не'}</button></div></td>
+        <td><div className="ws-assignment-period"><AssignmentDate title="Начало" value={a.starts_at} /><AssignmentDate title="Краен срок" value={a.ends_at} /><button className="command-button ws-assignment-edit-dates" title="Промени датите" aria-label={`Промени датите: ${a.title}`} disabled={action.busy} onClick={() => setEditingSchedule(a)}><CalendarDays size={16} aria-hidden="true" />Промени датите</button></div></td>
+        <td><AssignmentAudience assignment={a} /></td><td><button type="button" className="ws-text-button ws-assignment-recipient-count" title={`Участници: ${a.title}`} aria-label={`Участници: ${a.title}`} onClick={() => openParticipants(a.id)}>{a.recipients}</button></td>
         <td><div className="ws-assignment-code">
           <output aria-label={`Код за достъп: ${a.title}`}>{a.access_code || '-'}</output>
+          <div className="ws-assignment-code-actions">
           <button className="icon-button" title={a.access_code ? 'Генерирай нов код' : 'Генерирай код'} aria-label={a.access_code ? 'Генерирай нов код' : 'Генерирай код'} disabled={action.busy} onClick={() => void action.run(async () => {
             const value = await api.post<{ code: string }>(`/assignments/${a.id}/code/rotate`)
             assignments.setData(items => items.map(item => item.id === a.id ? { ...item, access_code: value.code } : item))
@@ -132,8 +137,10 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
           }, 'Кодът е генериран.')}><KeyRound size={17} /></button>
           <button className="icon-button" title="Копирай кода" aria-label="Копирай кода" disabled={action.busy || !a.access_code} onClick={() => void action.run(() => navigator.clipboard.writeText(a.access_code!), 'Кодът е копиран.')}><Copy size={17} /></button>
           <button className="icon-button" title="Изпрати кода по имейл" aria-label="Изпрати кода по имейл" disabled={action.busy || !a.access_code} onClick={() => void action.run(() => api.post(`/assignments/${a.id}/code/send`, { code: a.access_code, channel: 'email' }), 'Известията са добавени в опашката.')}><Mail size={17} /></button>
+          <button className="icon-button danger" title="Отмени кода" aria-label="Отмени кода" disabled={action.busy} onClick={() => setRevokingCode(a)}><Ban size={17} /></button>
+          </div>
         </div></td>
-        <td><div className="ws-actions ws-assignment-actions"><button className="command-button" title="Мобилен режим" aria-label={`Мобилен режим: ${a.title}`} disabled={action.busy} onClick={() => setEditingMobile(a)}><Smartphone size={17} />{a.mobile_allowed ? 'Телефон: да' : 'Телефон: не'}</button><button className="command-button" title="Промени датите" aria-label={`Промени датите: ${a.title}`} disabled={action.busy} onClick={() => setEditingSchedule(a)}><CalendarDays size={17} /> Дати</button><button className="command-button" title="Участници и наблюдение" aria-label="Участници и наблюдение" onClick={() => openParticipants(a.id)}><Users size={17} /> Участници</button><button className="icon-button danger" title="Отмени кода" disabled={action.busy} onClick={() => setRevokingCode(a)}><Ban size={17} /></button>{a.teacher_id === userId && <button className="icon-button danger" title="Изтрий възлагането" aria-label="Изтрий възлагането" disabled={action.busy} onClick={() => setDeletingAssignment(a)}><Trash2 size={17} /></button>}</div></td>
+        <td><div className="ws-actions ws-assignment-actions"><button className="command-button" title="Участници и наблюдение" aria-label="Участници и наблюдение" onClick={() => openParticipants(a.id)}><Users size={17} /> Участници</button>{a.teacher_id === userId && <button className="icon-button danger" title="Изтрий възлагането" aria-label="Изтрий възлагането" disabled={action.busy} onClick={() => setDeletingAssignment(a)}><Trash2 size={17} /></button>}</div></td>
       </tr>)}</tbody>
     </table></TableContainer>{!visibleAssignments.length && !assignments.loading && !assignments.error && <Empty>{testSearch || groupSearch ? 'Няма възлагания за зададеното търсене.' : 'Няма възлагания.'}</Empty>}
     </Panel>
@@ -161,6 +168,10 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
       await assignments.reload()
     }} />}
   </section>
+}
+function AssignmentDate({ title, value }: { title: string; value: string }) {
+  const valueDate = new Date(value)
+  return <div className="ws-assignment-date"><span>{title}</span><time dateTime={value}><strong>{assignmentDate.format(valueDate)}</strong><span>{assignmentTime.format(valueDate)}</span></time></div>
 }
 function AssignmentAudience({ assignment }: { assignment: Assignment }) {
   const groups = assignment.recipient_groups ?? [], individuals = assignment.individual_recipients ?? []
