@@ -12,7 +12,16 @@ import { FormulaDialog } from './FormulaDialog'
 import 'katex/dist/katex.min.css'
 import './richText.css'
 
-export function QuestionTextEditor({ value, onChange, disabled = false }: { value: string; onChange: (value: string) => void; disabled?: boolean }) {
+export function QuestionTextEditor({ value, onChange, disabled = false, label = 'Условие на въпроса', ariaLabel = 'Текст', toolbarLabel = 'Форматиране на условието', hint = 'Маркирай текст, за да го форматираш. За корен, дроб или уравнение избери „Формула“.', maxLength = questionTextLimit }: {
+  value: string
+  onChange: (value: string) => void
+  disabled?: boolean
+  label?: string
+  ariaLabel?: string
+  toolbarLabel?: string
+  hint?: string
+  maxLength?: number
+}) {
   const labelId = useId()
   const hintId = useId()
   const lastValue = useRef(value)
@@ -28,7 +37,7 @@ export function QuestionTextEditor({ value, onChange, disabled = false }: { valu
     ],
     content,
     editable: !disabled,
-    editorProps: { attributes: { class: 'question-text question-text-input', role: 'textbox', 'aria-label': 'Текст', 'aria-multiline': 'true', 'aria-describedby': hintId } },
+    editorProps: { attributes: { class: 'question-text question-text-input', role: 'textbox', 'aria-label': ariaLabel, 'aria-multiline': 'true', 'aria-describedby': hintId } },
     onUpdate: ({ editor }) => {
       const next = serializedQuestionText(editor.getJSON(), editor.getHTML(), editor.getText({ blockSeparator: '\n' }))
       lastValue.current = next
@@ -55,9 +64,9 @@ export function QuestionTextEditor({ value, onChange, disabled = false }: { valu
   }
 
   return <div className="question-editor-field">
-    <span id={labelId} className="question-editor-label">Условие на въпроса</span>
+    <span id={labelId} className="question-editor-label">{label}</span>
     <div className={`question-editor${disabled ? ' question-editor-disabled' : ''}`} role="group" aria-labelledby={labelId}>
-      {editor && state && <div className="question-editor-toolbar" role="toolbar" aria-label="Форматиране на условието">
+      {editor && state && <div className="question-editor-toolbar" role="toolbar" aria-label={toolbarLabel}>
         <div className="question-editor-tools">
           {button(Bold, 'Удебелен (Ctrl+B)', () => editor.chain().focus().toggleBold().run(), state.bold)}
           {button(Italic, 'Курсив (Ctrl+I)', () => editor.chain().focus().toggleItalic().run(), state.italic)}
@@ -88,8 +97,8 @@ export function QuestionTextEditor({ value, onChange, disabled = false }: { valu
       </div>}
       <EditorContent editor={editor} />
     </div>
-    <p id={hintId} className="question-editor-hint">Маркирай текст, за да го форматираш. За корен, дроб или уравнение избери „Формула“.</p>
-    {value.length > questionTextLimit && <p role="alert" className="question-editor-error">Условието с форматирането е твърде дълго. Съкрати текста (до {questionTextLimit} символа).</p>}
+    <p id={hintId} className="question-editor-hint">{hint}</p>
+    {value.length > maxLength && <p role="alert" className="question-editor-error">Текстът с форматирането е твърде дълъг. Съкрати го (до {maxLength} символа).</p>}
     {formula && editor && !disabled && <FormulaDialog initialLatex={formula.latex} onClose={() => { setFormula(null); requestAnimationFrame(() => editor.commands.focus()) }} onSave={latex => {
       if (formula.position === undefined) editor.chain().unsetSuperscript().unsetSubscript().insertInlineMath({ latex }).run()
       else editor.chain().updateInlineMath({ latex, pos: formula.position }).run()

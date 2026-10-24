@@ -48,7 +48,7 @@
 .result-review-option-markers svg { flex: 0 0 auto; }
 .result-review-options li.is-selected { border-color: var(--link); box-shadow: inset 3px 0 var(--link); }
 .result-review-selection { color: var(--link); }
-.result-review-options li.is-correct { border-color: var(--success); background: var(--success-bg); box-shadow: inset 3px 0 var(--success); }
+.result-review-options li.is-correct { border-color: var(--success); outline: 2px solid var(--success); outline-offset: 1px; background: var(--success-bg); box-shadow: inset 3px 0 var(--success); }
 .result-review-options li.is-incorrect { border-color: var(--danger); outline: 2px solid var(--danger); outline-offset: 1px; background: var(--danger-bg); box-shadow: inset 3px 0 var(--danger); }
 .result-review-correct { color: var(--success); }
 .result-review-incorrect { color: var(--danger); }

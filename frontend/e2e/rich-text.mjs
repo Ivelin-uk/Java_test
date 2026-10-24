@@ -176,7 +176,7 @@ try {
   await page.getByRole('button', { name: 'Към моите тестове', exact: true }).click()
   await page.getByRole('button', { name: 'Подготовка', exact: true }).click()
   await page.getByLabel('Код за достъп', { exact: true }).fill('ABCDEFGH')
-  await page.getByRole('button', { name: 'Започни на цял екран', exact: true }).click()
+  await page.getByRole('button', { name: 'Започни теста', exact: true }).click()
   await page.locator('.exam-question .katex').waitFor()
   assert.equal(await page.locator('.exam-question sup').innerText(), '2')
   assert.equal(await page.locator('.exam-question .question-text').textContent().then(value => value.includes(prefix)), false)

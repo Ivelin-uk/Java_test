@@ -179,10 +179,10 @@ function QuestionReview({ api, attempt, number, question: row, refresh }: { api:
         const marker = { 'selected-correct': 'Избран от ученика · верен', 'selected-wrong': 'Избран от ученика · грешен', missed: 'Пропуснат верен отговор', 'correct-option': 'Верен отговор', neutral: '' }[state]
         return <li key={o.id} className={`ws-review-choice ws-review-choice-${state}`} data-selected={selected} data-result={state}><Icon size={20} aria-hidden="true" /><div><span className="ws-review-choice-text">{o.text}</span>{marker && <span className="ws-review-choice-marker">{marker}</span>}</div></li>
       })}</ul>}
-      {submitted?.text && <pre className={`ws-student-text ws-review-text-answer ws-review-${result}`}>{submitted.text}</pre>}
+      {submitted?.text && <QuestionText value={submitted.text} className={`ws-student-text ws-review-text-answer ws-review-${result}`} />}
       {!hasAnswer && <p className="ws-review-no-answer">{submitted ? 'Предаден е празен отговор.' : 'Няма окончателен отговор.'}</p>}
     </div>
-    {draft && <details className="ws-review-details"><summary>Запазена чернова</summary><pre className="ws-student-text">{draft.text || snapshot.options.filter(o => draft.optionIds.includes(o.id)).map(o => o.text).join('\n') || 'Празна чернова'}</pre></details>}
+    {draft && <details className="ws-review-details"><summary>Запазена чернова</summary><QuestionText value={draft.text || snapshot.options.filter(o => draft.optionIds.includes(o.id)).map(o => o.text).join('\n') || 'Празна чернова'} className="ws-student-text" /></details>}
     {(snapshot.question.criteria || snapshot.question.acceptedAnswers.length > 0) && <p className="ws-review-criteria"><strong>Критерии:</strong> {snapshot.question.criteria || snapshot.question.acceptedAnswers.join(', ')}</p>}
     <details className="ws-review-details"><summary>Време на отговора</summary><p>Отворен: {date(row.opened_at)} · Срок: {date(row.deadline_at)} · Затворен: {date(row.closed_at)}</p></details>
     <form className="ws-form-grid" onSubmit={e => { e.preventDefault(); if (!validPoints || !e.currentTarget.reportValidity()) return; void action.run(async () => { await api.call(`/attempts/${attempt}/grading`, 'PATCH', { questionId: row.id, points: Number(points), comment, reason }); await refresh() }, 'Проверката е запазена.') }}>

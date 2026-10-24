@@ -253,7 +253,9 @@ async function learnerScenario({ name, width = 390, theme = 'light', mobile = tr
     await page.getByRole('heading', { name: definitions[1].text, exact: true }).waitFor()
     assert.equal(answers.length, 1); assert.equal(opens.length, 1)
     assert.deepEqual(answers[0].answer, { optionIds: ['new'], text: '' })
-    assert.equal(await page.getByLabel('Отговор', { exact: true }).inputValue(), '')
+    assert.equal(await page.getByLabel('Отговор', { exact: true }).textContent(), '')
+    assert.equal(await page.getByRole('toolbar', { name: 'Форматиране на отговора', exact: true }).count(), 1)
+    await page.getByRole('toolbar', { name: 'Форматиране на отговора', exact: true }).getByRole('button', { name: /Формула/ }).waitFor()
     assert.equal(await page.getByRole('button', { name: 'Продължи на цял екран', exact: true }).count(), 0)
     if (leave === 'fullscreen') {
       const fullscreenExit = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/events') && request.postDataJSON().type === 'fullscreen_exit')

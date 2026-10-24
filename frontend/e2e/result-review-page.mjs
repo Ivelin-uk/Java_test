@@ -96,12 +96,24 @@ try {
         const outline = getComputedStyle(element)
         return outline.outlineStyle === 'solid' && outline.outlineWidth === '2px' && outline.outlineColor === expected
       }), true, 'A wrong student choice must have a visible red outline')
-      const missed = card(1).getByRole('listitem').filter({ hasText: 'Стойността true' })
+      const missed = card(1).locator('.result-review-options li.is-correct').filter({ hasText: 'Стойността true' })
       assert.equal(await missed.getByText('Верен отговор', { exact: true }).count(), 1)
       assert.equal(await missed.getByText('Не е избран', { exact: true }).count(), 1)
-      const chosenCorrect = card(2).getByRole('listitem').filter({ hasText: 'string' })
+      assert.equal(await missed.evaluate(element => {
+        const sample = document.createElement('span'); sample.style.outline = '2px solid var(--success)'; document.body.append(sample)
+        const expected = getComputedStyle(sample).outlineColor; sample.remove()
+        const outline = getComputedStyle(element)
+        return outline.outlineStyle === 'solid' && outline.outlineWidth === '2px' && outline.outlineColor === expected
+      }), true, 'A correct answer must have a visible green outline')
+      const chosenCorrect = card(2).locator('.result-review-options li.is-correct').filter({ hasText: 'string' })
       assert.equal(await chosenCorrect.getByText('Твоят избор', { exact: true }).count(), 1)
       assert.equal(await chosenCorrect.getByText('Верен отговор', { exact: true }).count(), 1)
+      assert.equal(await chosenCorrect.evaluate(element => {
+        const sample = document.createElement('span'); sample.style.outline = '2px solid var(--success)'; document.body.append(sample)
+        const expected = getComputedStyle(sample).outlineColor; sample.remove()
+        const outline = getComputedStyle(element)
+        return outline.outlineStyle === 'solid' && outline.outlineWidth === '2px' && outline.outlineColor === expected
+      }), true, 'A correct student choice must have a visible green outline')
       assert.equal(await card(3).getByText('Твоят избор', { exact: true }).count(), 2)
       assert.equal(await card(3).getByRole('listitem').filter({ hasText: 'public' }).getByText('Не е избран', { exact: true }).count(), 1)
       await card(3).getByText('Частични точки', { exact: true }).waitFor()
