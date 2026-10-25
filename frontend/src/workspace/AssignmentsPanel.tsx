@@ -11,6 +11,7 @@ import { DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog
 import { AssignmentScheduleDialog } from './AssignmentScheduleDialog'
 import { AssignmentMobileDialog } from './AssignmentMobileDialog'
 import { AssignmentSettingsDialog, AssignmentSettingsFields } from './AssignmentSettingsDialog'
+import { AssignmentAccommodationDialog } from './AssignmentAccommodationDialog'
 import { localTime, minuteBound } from './assignmentDates'
 
 const searchText = (value: string) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('bg')
@@ -216,10 +217,6 @@ export function AssignmentParticipants({ api, assignment, endsAt, groupAssignmen
   const directory = useRemote<Member[]>(api, '/members', [])
   const [coTeacher, setCoTeacher] = useState(''), [query, setQuery] = useState('')
   const [selected, setSelected] = useState<MonitorRow | null>(null)
-  const [reason, setReason] = useState('')
-  const [exempt, setExempt] = useState(false)
-  const [multiplier, setMultiplier] = useState(1)
-  const [max, setMax] = useState<number | ''>(1)
   const [revokingTeacher, setRevokingTeacher] = useState<{ teacher_id: number; name: string } | null>(null)
   const [changingRecipient, setChangingRecipient] = useState<{ row: MonitorRow; remove: boolean } | null>(null)
   const [now, setNow] = useState(() => Date.now())
@@ -248,7 +245,7 @@ export function AssignmentParticipants({ api, assignment, endsAt, groupAssignmen
       <thead><tr><th>Обучаем</th><th>Възлагане</th><th>Опит</th><th>Статус</th><th>Разрешения</th><th>Действия</th></tr></thead>
       <tbody>{visible.map((row, index) => <tr key={`${row.student_id}-${row.attempt_id ?? 'none'}`}>
         <td>{row.name}{row.email && <div className="ws-muted">{row.email}</div>}</td><td>{!row.assigned ? 'Не е възложен' : row.canceled ? 'Премахнат' : 'Възложен'}</td><td>{row.assigned ? `${row.attempt_number ?? 0}/${row.max_attempts}` : '-'}</td><td>{row.status ? label(row.status) : 'Не е започнал'}</td>
-        <td><button disabled={!row.assigned || row.canceled || action.busy} onClick={() => { setSelected(row); setExempt(row.fullscreen_exempt); setMultiplier(Number(row.time_multiplier)); setMax(row.max_attempts); setReason(row.accommodation_reason ?? '') }}>Изключение / опити</button></td>
+        <td><button aria-haspopup="dialog" disabled={!row.assigned || row.canceled || action.busy} onClick={() => setSelected(row)}>Изключение / опити</button></td>
         <td>{groupAssignment && visible.findIndex(value => value.student_id === row.student_id) === index && <div className="ws-actions">
           {row.assigned && !row.canceled && <button className="icon-button danger" title={`Премахни възлагането за ${row.name}`} aria-label={`Премахни възлагането за ${row.name}`} disabled={action.busy} onClick={() => setChangingRecipient({ row, remove: true })}><Trash2 size={17} /></button>}
           {canAssign(row) && <button className="icon-button" title={`${row.assigned ? 'Възложи отново на' : 'Възложи теста на'} ${row.name}`} aria-label={`${row.assigned ? 'Възложи отново на' : 'Възложи теста на'} ${row.name}`} disabled={action.busy} onClick={() => setChangingRecipient({ row, remove: false })}><RotateCw size={17} /></button>}
@@ -256,12 +253,11 @@ export function AssignmentParticipants({ api, assignment, endsAt, groupAssignmen
       </tr>)}</tbody>
     </table></TableContainer>
     {!visible.length && !list.loading && !members.loading && <Empty>{search ? 'Няма намерени резултати.' : 'Няма получатели.'}</Empty>}
-    {selected && <form className="ws-inline-form" onSubmit={event => { event.preventDefault(); void action.run(async () => { await api.put(`/assignments/${assignment}/recipients/${selected.student_id}/accommodation`, { fullscreenExempt: exempt, timeMultiplier: multiplier, maxAttempts: max, reason }); setSelected(null); await list.reload() }, 'Изключението е запазено и одитирано.') }}>
-      <strong>{selected.name}</strong><label className="ws-check"><input type="checkbox" checked={exempt} onChange={event => setExempt(event.target.checked)} /> Без цял екран</label>
-      <label>Множител на времето<input type="number" min={1} max={5} step="0.25" value={multiplier} onChange={event => setMultiplier(Number(event.target.value))} /></label>
-      <label>Опити<input type="number" required min={1} max={Math.max(20, selected.max_attempts)} step={1} value={max} onChange={event => setMax(event.target.value === '' ? '' : Number(event.target.value))} /></label>
-      <label>Причина<input required value={reason} onChange={event => setReason(event.target.value)} /></label><button disabled={action.busy}>Запази</button>
-    </form>}
+    {selected && <AssignmentAccommodationDialog recipient={selected} onClose={() => setSelected(null)} onSave={async value => {
+      await api.put(`/assignments/${assignment}/recipients/${selected.student_id}/accommodation`, value)
+      list.setData(rows => rows.map(row => row.student_id === selected.student_id ? { ...row, fullscreen_exempt: value.fullscreenExempt, time_multiplier: value.timeMultiplier, max_attempts: value.maxAttempts, accommodation_reason: value.reason } : row))
+      await action.run(list.reload, 'Изключението е запазено и одитирано.')
+    }} />}
     {changingRecipient && <DeleteConfirmationDialog title={changingRecipient.remove ? 'Премахване на възлагане за ученик' : 'Повторно възлагане на ученик'} confirmLabel={changingRecipient.remove ? 'Премахни възлагането' : 'Възложи теста'} confirmIcon={changingRecipient.remove ? Trash2 : RotateCw} description={changingRecipient.remove
       ? <><strong>{changingRecipient.row.name}</strong> ще загуби достъп до теста. Активният му опит ще бъде прекратен, а историята и публикуваните резултати ще се запазят.</>
       : <>Да възложим ли теста на <strong>{changingRecipient.row.name}</strong>? Ако опитите са изчерпани, ще бъде разрешен още един. Предишните опити и резултати се запазват.</>} onCancel={() => setChangingRecipient(null)} onConfirm={async () => {
