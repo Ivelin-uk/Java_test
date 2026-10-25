@@ -208,12 +208,12 @@ public class OrganizationService {
         if(value==null || value.name()==null || value.name().isBlank() || value.name().length()>190 || value.description()==null || value.description().length()>4000 || value.subject()==null || value.subject().length()>190) throw WorkspaceError.validation("Невалидни данни за групата.");
         repository.updateGroup(value.name(), value.description(), value.subject(), org, group);audit.write(org,scope.userId(),"group.updated",group,Map.of());
     }
-    @Transactional public void deleteGroup(OrgAccess.Scope scope,long group) {
+    @Transactional(isolation=Isolation.READ_COMMITTED) public void deleteGroup(OrgAccess.Scope scope,long group) {
         var row=groupAccess(scope,group);long org=number(row,"organization_id");
         repository.lockGroup(org, group);
-        // Keep historical assignment sources and results intact while removing the group from use.
+        int affectedAssignments=groupAssignments.removeGroup(org,group,scope.userId());
         repository.deleteGroup(clock.instant(), org, group);
-        audit.write(org,scope.userId(),"group.deleted",group,Map.of("name",string(row,"name")));
+        audit.write(org,scope.userId(),"group.deleted",group,Map.of("name",string(row,"name"),"affectedAssignments",affectedAssignments));
     }
     @Transactional public void removeTeacher(OrgAccess.Scope scope,long group,long teacher) {
         groupAccess(scope,group);

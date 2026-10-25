@@ -20,8 +20,9 @@ public class AssignmentService {
     private final WorkspaceCrypto crypto;
     private final WorkspaceAudit audit;
     private final CodeRateLimiter codeLimiter;
+    private final AssignmentDeletionService deletion;
     private final Clock clock;private final NotificationService notifications;private final boolean mobileValidated;private final AssessmentService assessments;
-    public AssignmentService(AssignmentRepository repository,WorkspaceJson json,OrganizationService organizations,WorkspaceCrypto crypto,WorkspaceAudit audit,Clock clock,NotificationService notifications,CodeRateLimiter codeLimiter,AssessmentService assessments,@org.springframework.beans.factory.annotation.Value("${app.exam.mobile-validated:false}") boolean mobileValidated) {this.repository=repository;this.json=json;this.organizations=organizations;this.crypto=crypto;this.audit=audit;this.clock=clock;this.notifications=notifications;this.codeLimiter=codeLimiter;this.assessments=assessments;this.mobileValidated=mobileValidated;}
+    public AssignmentService(AssignmentRepository repository,WorkspaceJson json,OrganizationService organizations,WorkspaceCrypto crypto,WorkspaceAudit audit,Clock clock,NotificationService notifications,CodeRateLimiter codeLimiter,AssessmentService assessments,AssignmentDeletionService deletion,@org.springframework.beans.factory.annotation.Value("${app.exam.mobile-validated:false}") boolean mobileValidated) {this.repository=repository;this.json=json;this.organizations=organizations;this.crypto=crypto;this.audit=audit;this.clock=clock;this.notifications=notifications;this.codeLimiter=codeLimiter;this.assessments=assessments;this.deletion=deletion;this.mobileValidated=mobileValidated;}
     public Map<String,Object> teacherAccess(OrgAccess.Scope scope,long id,boolean lock) {
         var assignment=repository.findAssignment(scope.organizationId(), id, lock);
         if(number(assignment,"teacher_id")!=scope.userId() && repository.countSharedTeacher(scope.organizationId(), id, scope.userId())==0) throw WorkspaceError.forbidden();
@@ -173,23 +174,7 @@ public class AssignmentService {
         if(number(assignment,"teacher_id")!=scope.userId()) throw WorkspaceError.forbidden();
         // Match exam-start/code-delivery lock order before preventing new recipients.
         repository.lockRecipientIds(scope.organizationId(), id);
-        teacherAccess(scope,id,true);
-        var attempts=repository.lockAttemptIds(scope.organizationId(), id);
-        for(var attempt:attempts) {
-            long attemptId=number(attempt,"id");
-            var deliveries=repository.lockResultDeliveries(scope.organizationId(), attemptId);
-            if(deliveries.stream().anyMatch(n->string(n,"status").equals("processing"))) throw WorkspaceError.conflict("Изчакайте текущата доставка на резултат и опитайте отново.");
-            repository.deleteResultDeliveries(scope.organizationId(), scope.organizationId(), attemptId);
-            repository.deleteEvents(scope.organizationId(), attemptId);
-            repository.deleteResults(scope.organizationId(), attemptId);
-            repository.deleteQuestions(scope.organizationId(), attemptId);
-            repository.deleteAttempt(scope.organizationId(), attemptId);
-        }
-        repository.deleteCodeDeliveries(scope.organizationId(), id);
-        repository.deleteSharedTeachers(scope.organizationId(), id);
-        repository.deleteRecipients(scope.organizationId(), id);
-        repository.deleteAssignment(scope.organizationId(), id);
-        audit.write(scope.organizationId(),scope.userId(),"assignment.deleted",id,Map.of("attempts",attempts.size(),"version",number(assignment,"version_id")));
+        deletion.removeLocked(scope.organizationId(),teacherAccess(scope,id,true),scope.userId());
     }
     @Transactional
     public void accommodate(OrgAccess.Scope scope,long id,long user,Accommodation request) {

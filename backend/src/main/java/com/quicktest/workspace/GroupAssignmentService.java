@@ -14,9 +14,41 @@ public class GroupAssignmentService {
     private final WorkspaceJson json;
     private final WorkspaceAudit audit;
     private final Clock clock;
+    private final AssignmentDeletionService deletion;
 
-    public GroupAssignmentService(AssignmentRepository repository,WorkspaceJson json,WorkspaceAudit audit,Clock clock) {
+    public GroupAssignmentService(AssignmentRepository repository,WorkspaceJson json,WorkspaceAudit audit,Clock clock,AssignmentDeletionService deletion) {
         this.repository=repository;this.json=json;this.audit=audit;this.clock=clock;
+        this.deletion=deletion;
+    }
+
+    // The caller has authorized deletion and holds the group lock.
+    @Transactional(propagation=Propagation.MANDATORY)
+    public int removeGroup(long groupOrganization,long group,long actor) {
+        int affected=0;
+        for(var target:repository.findGroupAssignments(groupOrganization,group)) {
+            long org=number(target,"organization_id"),id=number(target,"assignment_id");
+            // Match membership updates and exam start: group -> recipients -> assignment -> attempts.
+            var recipients=repository.lockRecipients(org,id);
+            var found=repository.findAssignmentIfPresent(org,id,true);
+            if(found.isEmpty()) continue;
+            repository.deleteAssignmentGroup(org,id,groupOrganization,group);
+            if(repository.findAssignmentGroups(org,id).isEmpty() && recipients.stream().noneMatch(row->flag(row,"individually_assigned"))) {
+                deletion.removeLocked(org,found.get(),actor);
+            } else {
+                int removed=0;
+                for(var recipient:recipients) {
+                    var sources=new TreeSet<>(Arrays.asList(json.parse(recipient.get("source_groups_json"),Long[].class)));
+                    if(!sources.remove(group)) continue;
+                    long student=number(recipient,"student_id");
+                    if(sources.isEmpty() && !flag(recipient,"individually_assigned")) {
+                        deletion.removeRecipientLocked(org,id,student);removed++;
+                    } else repository.updateRecipientSources(org,id,student,json.write(sources));
+                }
+                audit.write(org,actor,"assignment.group_deleted",id,Map.of("group",group,"groupOrganization",groupOrganization,"removedRecipients",removed));
+            }
+            affected++;
+        }
+        return affected;
     }
 
     // The caller holds the group lock in the same membership transaction.

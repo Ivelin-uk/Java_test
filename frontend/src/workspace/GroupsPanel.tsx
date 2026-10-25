@@ -34,7 +34,7 @@ export function GroupsPanel({ api, teacher, selected, setSelected, begin, openRe
     <div className="ws-group-search"><label>Търси група<input type="search" placeholder="Име на група" value={search} onChange={event => setSearch(event.target.value)} /></label>{!groups.loading && <span className="ws-muted" role="status">{filtered.length} от {groups.data.length} групи</span>}</div>
     <TableContainer label="Групи — таблица"><table className="ws-table" aria-label="Групи"><thead><tr><th>Име</th><th>Учител</th><th>Дисциплина</th><th>Описание</th><th>Участници</th>{teacher && <><th>Код за присъединяване</th><th>Действия</th></>}</tr></thead><tbody>{filtered.map(group => <tr key={group.id}><td><button className="ws-text-button" onClick={() => setSelected(group)}>{group.name}</button></td><td>{group.teacher_name ?? '—'}</td><td>{group.subject}</td><td>{group.description}</td><td>{group.participant_count ?? '—'}</td>{teacher && <><td><GroupCode code={group.join_code} /></td><td><div className="ws-actions"><button className="command-button" aria-label="Редактирай групата" title="Редактирай групата" onClick={() => setSelected(group)}><Pencil size={17} /> Редактирай</button><button className="icon-button danger" title="Изтрий групата" onClick={() => setDeleting(group)}><Trash2 size={17} /></button></div></td></>}</tr>)}</tbody></table></TableContainer>{!filtered.length && !groups.loading && <Empty>{groups.data.length ? 'Няма групи с това име.' : 'Няма записи.'}</Empty>}
     </Panel>
-    {deleting && <GroupDeleteDialog api={api} group={deleting} close={() => setDeleting(null)} saved={async () => { await groups.reload(); notify('Групата е изтрита.', 'danger'); setDeleting(null) }} />}
+    {deleting && <GroupDeleteDialog api={api} group={deleting} close={() => setDeleting(null)} saved={async () => { await groups.reload(); notify('Групата и възлаганията ѝ са изтрити.', 'danger'); setDeleting(null) }} />}
     {creating && <GroupCreateDialog api={api} close={() => setCreating(false)} created={async () => { await groups.reload(); notify('Групата е създадена. Кодът за присъединяване е в таблицата.') }} />}
   </section>
 }
@@ -140,7 +140,7 @@ function GroupEditor({ api, group, back, saved }: { api: WorkspaceApi; group: Gr
 }
 
 function GroupDeleteDialog({ api, group, close, saved }: { api: WorkspaceApi; group: Group; close: () => void; saved: () => Promise<void> }) {
-  return <DeleteConfirmationDialog title="Изтриване на група" description={<>Да изтрием ли групата <strong>{group.name}</strong>? Възложените тестове и резултатите на учениците ще се запазят.</>} onCancel={close} onConfirm={async () => {
+  return <DeleteConfirmationDialog title="Изтриване на група" description={<>Да изтрием ли групата <strong>{group.name}</strong>? Ще бъдат изтрити и възлаганията ѝ, заедно със свързаните опити и резултати. При общо възлагане другите групи запазват достъпа, опитите и резултатите си. Самите тестове се запазват. Действието е необратимо.</>} onCancel={close} onConfirm={async () => {
     await api.remove(`/groups/${group.id}`)
     await saved()
   }} />

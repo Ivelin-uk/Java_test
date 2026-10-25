@@ -39,6 +39,10 @@ public class AssignmentRepository {
         return store.rows("SELECT group_id FROM assignment_groups WHERE organization_id=? AND assignment_id=? ORDER BY group_id",organizationId,assignment);
     }
 
+    public int deleteAssignmentGroup(long organizationId,long assignment,long groupOrganization,long group) {
+        return store.update("DELETE FROM assignment_groups WHERE organization_id=? AND assignment_id=? AND group_organization_id=? AND group_id=?",organizationId,assignment,groupOrganization,group);
+    }
+
     public int ensureRecipientMembership(long organizationId,long student,String roles,Instant createdAt) {
         return store.update("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE user_id=user_id",organizationId,student,roles,createdAt);
     }
@@ -155,6 +159,14 @@ public class AssignmentRepository {
 
     public int deleteCodeDeliveries(long organizationId, long id) {
         return store.update("DELETE FROM assignment_code_deliveries WHERE organization_id=? AND assignment_id=?", organizationId, id);
+    }
+
+    public int deleteRecipientCodeDeliveries(long org,long assignment,long student) {
+        return store.update("DELETE FROM assignment_code_deliveries WHERE organization_id=? AND assignment_id=? AND student_id=?",org,assignment,student);
+    }
+
+    public int deleteRecipient(long org,long assignment,long student) {
+        return store.update("DELETE FROM assignment_recipients WHERE organization_id=? AND assignment_id=? AND student_id=?",org,assignment,student);
     }
 
     public int deleteSharedTeachers(long organizationId, long id) {

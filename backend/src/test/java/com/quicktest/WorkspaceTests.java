@@ -930,7 +930,7 @@ class WorkspaceTests {
         assertEquals(2,number(combined,"recipients"));
         assertFalse(combined.containsKey("source_groups_json"));
     }
-    @Test void assignmentAudienceUpdatesForLaterRecipientsAndPreservesHistoricalGroups() {
+    @Test void groupDeletionRemovesAssignmentsForEarlierAndLaterRecipients() {
         long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Historical group","","Java")),"id");
         organizations.addStudent(teaching,group,student);
         long id=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(group),List.of(),now,now.plusSeconds(3600),1,false,false,true)),"id");
@@ -940,11 +940,8 @@ class WorkspaceTests {
         organizations.removeStudent(teaching,group,student);
         organizations.deleteGroup(teaching,group);
 
-        var row=assignments.list(teaching).stream().filter(a->number(a,"id")==id).findFirst().orElseThrow();
-
-        assertEquals(List.of(Map.of("id",group,"name","Historical group")),row.get("recipient_groups"));
-        assertEquals(List.of(),row.get("individual_recipients"));
-        assertEquals(2,number(row,"recipients"));
+        assertTrue(assignments.list(teaching).stream().noneMatch(a->number(a,"id")==id));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM assignment_recipients WHERE assignment_id=?",id));
         assertTrue(organizations.groups(teaching).stream().noneMatch(value->number(value,"id")==group));
     }
     @Test void assignmentCodeLookupFindsTheMatchingAssignedTestWithoutStartingAnAttempt() throws Exception {
@@ -1138,24 +1135,152 @@ class WorkspaceTests {
         mvc.perform(get("/api/v1/assignments").header("Authorization",authorization)).andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].recipient_groups").isEmpty()).andExpect(jsonPath("$[*].individual_recipients").isEmpty());
     }
-    @Test void groupDeletionHidesGroupWithoutRemovingAssignmentsRecipientsOrAttempts() throws Exception {
+    @Test void groupDeletionRemovesAssignmentsRecipientsAndActiveAttemptsWithoutDeletingTests() throws Exception {
+        long untouched=assignment;
         long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Delete group","","Java")),"id");
         organizations.addStudent(teaching,group,student);
         var assigned=assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(group),List.of(),now.minusSeconds(1),now.plusSeconds(3600),1,false,false,true));
         assignment=number(assigned,"id");code=string(assigned,"code");long attempt=number(start(startRequest()),"id");
         String teacherToken="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
         mvc.perform(delete("/api/v1/groups/"+group).header("Authorization",authorization)).andExpect(status().isForbidden());
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_assignments WHERE id=?",assignment));
         mvc.perform(delete("/api/v1/groups/"+group).header("Authorization",teacherToken)).andExpect(status().isOk());
         assertNotNull(db.one("SELECT deleted_at FROM learning_groups WHERE id=?",group).get("deleted_at"));
         assertTrue(organizations.groups(teaching).stream().noneMatch(row->number(row,"id")==group));
         assertTrue(organizations.groups(learning).stream().noneMatch(row->number(row,"id")==group));
-        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_assignments WHERE id=?",assignment));
-        assertEquals(1,db.count("SELECT COUNT(*) FROM assignment_recipients WHERE assignment_id=? AND canceled=FALSE",assignment));
-        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_attempts WHERE id=?",attempt));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_assignments WHERE id=?",assignment));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE id=?",attempt));
+        for(String table:List.of("assignment_groups","assignment_recipients","assignment_teachers","assignment_code_deliveries")) assertEquals(0,db.count("SELECT COUNT(*) FROM "+table+" WHERE assignment_id=?",assignment),table);
+        assertEquals(0,db.count("SELECT COUNT(*) FROM attempt_questions WHERE attempt_id=?",attempt));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_assignments WHERE id=?",untouched));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM assessment_versions WHERE id=?",version));
+        assertEquals(HttpStatus.NOT_FOUND,assertThrows(WorkspaceError.class,()->assignments.preflight(learning,assignment)).getStatusCode());
         mvc.perform(get("/api/v1/groups/"+group+"/summary").header("Authorization",teacherToken)).andExpect(status().isNotFound());
         mvc.perform(delete("/api/v1/groups/"+group).header("Authorization",teacherToken)).andExpect(status().isNotFound());
         assertThrows(WorkspaceError.class,()->organizations.updateGroup(teaching,group,new OrganizationService.GroupRequest("Restored","","")));
         assertThrows(WorkspaceError.class,()->assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(group),List.of(),now,now.plusSeconds(3600),1,false,false,true)));
+    }
+    @Test void groupDeletionPreservesOtherGroupsSharedStudentsAndTheirPublishedResults() {
+        var removed=enrolledStudent();organizations.addStudent(teaching,defaultGroup,removed.getId());
+        long keptGroup=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Keep group","","Java")),"id");
+        organizations.addStudent(teaching,keptGroup,student);
+        var peer=enrolledStudent();organizations.addStudent(teaching,keptGroup,peer.getId());
+        var target=assignments.create(teaching,new AssignmentService.AssignmentRequest(freshVersion(),List.of(defaultGroup,keptGroup),List.of(),now,now.plusSeconds(3600),2,false,false,true));
+        assignment=number(target,"id");code=string(target,"code");
+        assignments.dispatchCode(teaching,assignment,new AssignmentService.CodeDelivery(code,"email"));
+        var removedScope=new OrgAccess.Scope(org,removed.getId(),Set.of("STUDENT"));
+        String removedToken="Bearer "+auth.login(new AuthService.LoginRequest(removed.getEmail(),"password123")).token();
+        var removedRequest=startRequest();var removedSession=new AttemptService.Session(removedRequest.sessionToken(),removedRequest.browserId(),removedToken);
+        long removedAttempt=number(attempts.start(removedScope,assignment,removedRequest,removedToken,"127.0.0.1"),"id");
+        attempts.submit(removedScope,removedAttempt,removedSession);
+        grading.finalizeResult(teaching,removedAttempt,new GradingService.Finalize("removed-group-result","",null,null),false);
+        var activeRequest=startRequest();long removedActive=number(attempts.start(removedScope,assignment,activeRequest,removedToken,"127.0.0.1"),"id");
+        var keptRequest=startRequest();long keptAttempt=number(start(keptRequest),"id");
+        attempts.submit(learning,keptAttempt,session(keptRequest));
+        grading.finalizeResult(teaching,keptAttempt,new GradingService.Finalize("kept-group-result","",null,null),false);
+        var keptResult=db.rows("SELECT * FROM result_revisions WHERE attempt_id=?",keptAttempt);
+        var keptQuestions=db.rows("SELECT * FROM attempt_questions WHERE attempt_id=?",keptAttempt);
+        var peerScope=new OrgAccess.Scope(org,peer.getId(),Set.of("STUDENT"));
+        String peerToken="Bearer "+auth.login(new AuthService.LoginRequest(peer.getEmail(),"password123")).token();
+        var peerRequest=startRequest();var peerSession=new AttemptService.Session(peerRequest.sessionToken(),peerRequest.browserId(),peerToken);
+        long peerAttempt=number(attempts.start(peerScope,assignment,peerRequest,peerToken,"127.0.0.1"),"id");
+
+        organizations.deleteGroup(teaching,defaultGroup);
+
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_assignments WHERE id=?",assignment));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM assignment_recipients WHERE assignment_id=? AND student_id=?",assignment,removed.getId()));
+        for(long id:List.of(removedAttempt,removedActive)) {
+            assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE id=?",id));
+            assertEquals(0,db.count("SELECT COUNT(*) FROM result_revisions WHERE attempt_id=?",id));
+            assertEquals(0,db.count("SELECT COUNT(*) FROM attempt_questions WHERE attempt_id=?",id));
+        }
+        assertEquals(0,db.count("SELECT COUNT(*) FROM assignment_code_deliveries WHERE assignment_id=? AND student_id=?",assignment,removed.getId()));
+        assertEquals(keptResult,db.rows("SELECT * FROM result_revisions WHERE attempt_id=?",keptAttempt));
+        assertEquals(keptQuestions,db.rows("SELECT * FROM attempt_questions WHERE attempt_id=?",keptAttempt));
+        assertEquals("in_progress",string(attempts.getState(peerScope,peerAttempt,peerSession),"status"));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM notification_outbox WHERE organization_id=? AND revision_id=?",org,number(keptResult.getFirst(),"id")));
+        assertEquals(1,assignments.listStudentGroup(learning,keptGroup).size());
+        assertEquals(List.of(Map.of("id",keptGroup,"name","Keep group")),assignments.list(teaching).getFirst().get("recipient_groups"));
+        assertArrayEquals(new Long[]{keptGroup},db.parse(db.one("SELECT source_groups_json FROM assignment_recipients WHERE assignment_id=? AND student_id=?",assignment,student).get("source_groups_json"),Long[].class));
+        assertEquals(HttpStatus.NOT_FOUND,assertThrows(WorkspaceError.class,()->attempts.getState(removedScope,removedActive,new AttemptService.Session(activeRequest.sessionToken(),activeRequest.browserId(),removedToken))).getStatusCode());
+        assertThrows(WorkspaceError.class,()->assignments.preflight(removedScope,assignment));
+    }
+    @Test void groupDeletionPreservesLegacyIndividualRecipients() {
+        db.update("UPDATE assignment_recipients SET individually_assigned=TRUE WHERE assignment_id=?",assignment);
+        var request=startRequest();long id=number(start(request),"id");
+        organizations.deleteGroup(teaching,defaultGroup);
+        assertEquals("in_progress",string(attempts.getState(learning,id,session(request)),"status"));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_assignments WHERE id=?",assignment));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM assignment_groups WHERE assignment_id=?",assignment));
+        assertEquals(List.of(),assignments.list(teaching).getFirst().get("recipient_groups"));
+        assertEquals(1,((List<?>)assignments.list(teaching).getFirst().get("individual_recipients")).size());
+    }
+    @Test void groupDeletionRollsBackAllAssignmentsWhileAResultDeliveryIsProcessing() {
+        long first=assignment;
+        var target=assignments.create(teaching,new AssignmentService.AssignmentRequest(freshVersion(),List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true));
+        assignment=number(target,"id");code=string(target,"code");
+        var request=startRequest();long id=number(start(request),"id");attempts.submit(learning,id,session(request));
+        grading.finalizeResult(teaching,id,new GradingService.Finalize("group-delete-processing","",null,null),false);
+        db.update("UPDATE notification_outbox SET status='processing' WHERE organization_id=? AND revision_id IS NOT NULL",org);
+
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->organizations.deleteGroup(teaching,defaultGroup)).getStatusCode());
+
+        assertNull(db.one("SELECT deleted_at FROM learning_groups WHERE id=?",defaultGroup).get("deleted_at"));
+        for(long targetId:List.of(first,assignment)) {
+            assertEquals(1,db.count("SELECT COUNT(*) FROM exam_assignments WHERE id=?",targetId));
+            assertEquals(1,db.count("SELECT COUNT(*) FROM assignment_groups WHERE assignment_id=? AND group_id=?",targetId,defaultGroup));
+        }
+        assertEquals(1,db.count("SELECT COUNT(*) FROM result_revisions WHERE attempt_id=?",id));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND action IN ('group.deleted','assignment.deleted')",org));
+        db.update("UPDATE notification_outbox SET status='sent' WHERE organization_id=?",org);
+        organizations.deleteGroup(teaching,defaultGroup);
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_assignments WHERE organization_id=?",org));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM result_revisions WHERE attempt_id=?",id));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM notification_outbox WHERE organization_id=? AND revision_id IS NOT NULL",org));
+    }
+    @Test void groupDeletionFindsAssignmentsInTheirOwnWorkspaceAndPreservesUnrelatedGroups() {
+        db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",other,teacher,"[\"TEACHER\"]",now);
+        var scope=new OrgAccess.Scope(other,teacher,Set.of("TEACHER"),true);
+        long test=number(assessments.save(scope,null,definition(false)),"id"),published=number(assessments.publish(scope,test),"id");
+        long target=number(assignments.create(scope,new AssignmentService.AssignmentRequest(published,List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true)),"id");
+        long keptGroup=number(organizations.createGroup(scope,new OrganizationService.GroupRequest("Other workspace group","","")),"id");
+        organizations.addStudent(scope,keptGroup,student);
+        long kept=number(assignments.create(scope,new AssignmentService.AssignmentRequest(published,List.of(keptGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true)),"id");
+        var denied=new OrgAccess.Scope(other,user(Role.TEACHER).getId(),Set.of("TEACHER"),true);
+        assertThrows(WorkspaceError.class,()->organizations.deleteGroup(denied,defaultGroup));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_assignments WHERE id=?",target));
+
+        organizations.deleteGroup(scope,defaultGroup);
+
+        for(long id:List.of(assignment,target)) assertEquals(0,db.count("SELECT COUNT(*) FROM exam_assignments WHERE id=?",id));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_assignments WHERE id=?",kept));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM assessment_versions WHERE id=?",published));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND action='assignment.deleted' AND resource_id=?",other,target));
+    }
+    @Test void groupDeletionAndExamStartCannotLeaveAnOrphanAttempt() throws Exception {
+        var request=startRequest();var ready=new CountDownLatch(2);var go=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(2)) {
+            var starting=pool.submit(()->{ready.countDown();assertTrue(go.await(5,TimeUnit.SECONDS));try {start(request);} catch(WorkspaceError missing) {assertEquals(HttpStatus.NOT_FOUND,missing.getStatusCode());}return null;});
+            var deleting=pool.submit(()->{ready.countDown();assertTrue(go.await(5,TimeUnit.SECONDS));organizations.deleteGroup(teaching,defaultGroup);return null;});
+            assertTrue(ready.await(5,TimeUnit.SECONDS));go.countDown();
+            starting.get(15,TimeUnit.SECONDS);deleting.get(15,TimeUnit.SECONDS);
+        }
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_assignments WHERE id=?",assignment));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM assignment_recipients WHERE assignment_id=?",assignment));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=?",assignment));
+    }
+    @Test void groupDeletionAndAssignmentCreationCannotLeaveAnAssignmentForADeletedGroup() throws Exception {
+        long published=freshVersion();var ready=new CountDownLatch(2);var go=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(2)) {
+            var creating=pool.submit(()->{ready.countDown();assertTrue(go.await(5,TimeUnit.SECONDS));try {
+                assignments.create(teaching,new AssignmentService.AssignmentRequest(published,List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true));
+            } catch(WorkspaceError missing) {assertEquals(HttpStatus.NOT_FOUND,missing.getStatusCode());}return null;});
+            var deleting=pool.submit(()->{ready.countDown();assertTrue(go.await(5,TimeUnit.SECONDS));organizations.deleteGroup(teaching,defaultGroup);return null;});
+            assertTrue(ready.await(5,TimeUnit.SECONDS));go.countDown();
+            creating.get(15,TimeUnit.SECONDS);deleting.get(15,TimeUnit.SECONDS);
+        }
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_assignments WHERE organization_id=?",org));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM assignment_groups WHERE group_organization_id=? AND group_id=?",org,defaultGroup));
     }
     @Test void groupEditingAndDeletionRequireAnAssignedTeacher() {
         long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Original","","Java")),"id");
@@ -1866,8 +1991,8 @@ class WorkspaceTests {
         assignments.removeRecipient(teaching,assignment,later.getId());organizations.removeStudent(teaching,defaultGroup,later.getId());
         assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->assignments.addRecipient(teaching,assignment,later.getId())).getStatusCode());
         assignments.removeRecipient(teaching,assignment,student);organizations.deleteGroup(teaching,defaultGroup);
-        assertTrue(assignments.groupMembers(teaching,assignment).isEmpty());
-        assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->assignments.addRecipient(teaching,assignment,student)).getStatusCode());
+        assertEquals(HttpStatus.NOT_FOUND,assertThrows(WorkspaceError.class,()->assignments.groupMembers(teaching,assignment)).getStatusCode());
+        assertEquals(HttpStatus.NOT_FOUND,assertThrows(WorkspaceError.class,()->assignments.addRecipient(teaching,assignment,student)).getStatusCode());
     }
     @Test void groupRecipientManagementRequiresAuthorizedTeacherAndUnexpiredWindow() throws Exception {
         var stranger=user(Role.TEACHER);var denied=new OrgAccess.Scope(org,stranger.getId(),Set.of("TEACHER"));
@@ -2335,7 +2460,7 @@ class WorkspaceTests {
         grading.finalizeResult(teaching,id,new GradingService.Finalize("queue-weighted-correction","Updated points",null,null),true);
         row=grading.queue(teaching).stream().filter(value->number(value,"id")==id).findFirst().orElseThrow();assertEquals(2,number(row,"result_correct_answers"));assertEquals(0,decimal(row,"result_percentage").compareTo(new BigDecimal("100")));
         var outsider=new OrgAccess.Scope(org,user(Role.TEACHER).getId(),Set.of("TEACHER"));assertTrue(grading.queue(outsider).isEmpty());
-        organizations.deleteGroup(teaching,secondGroup);assertEquals(2,((List<?>)grading.queue(teaching).stream().filter(value->number(value,"id")==id).findFirst().orElseThrow().get("groups")).size());
+        organizations.deleteGroup(teaching,secondGroup);assertEquals(List.of(Map.of("id",defaultGroup,"name","12А")),grading.queue(teaching).stream().filter(value->number(value,"id")==id).findFirst().orElseThrow().get("groups"));
     }
     @Test void extraAttemptIsStudentScopedConcurrentIdempotentAndPreservesResults() throws Exception {
         var peer=enrolledStudent();organizations.addStudent(teaching,defaultGroup,peer.getId());assignments.addRecipient(teaching,assignment,peer.getId());
