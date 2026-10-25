@@ -2085,6 +2085,80 @@ class WorkspaceTests {
         assertEquals(0,db.count("SELECT COUNT(*) FROM assignment_recipients WHERE assignment_id=? AND student_id=?",assignment,next.getId()));
         assertEquals(0,db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND action='assignment.group_member_assigned'",org));
     }
+    @Test void removingAGroupMemberRevokesCurrentAndFutureAssignmentsButKeepsResults() {
+        assignments.accommodate(teaching,assignment,student,new AssignmentService.Accommodation(false,BigDecimal.ONE,2,"Retake"));
+        var first=startRequest();long published=number(start(first),"id");attempts.submit(learning,published,session(first));
+        grading.finalizeResult(teaching,published,new GradingService.Finalize("member-removal-result","",null,null),false);
+        var result=db.rows("SELECT * FROM result_revisions WHERE attempt_id=?",published);
+        var request=startRequest();long active=number(start(request),"id");
+        long future=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(freshVersion(),List.of(defaultGroup),List.of(),now.plusSeconds(60),now.plusSeconds(3600),1,false,false,true)),"id");
+        long otherGroup=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Other access","","")),"id");
+        organizations.addStudent(teaching,otherGroup,student);
+        long untouched=number(assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(otherGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true)),"id");
+
+        organizations.removeStudent(teaching,defaultGroup,student);
+
+        assertEquals("voided",string(attempts.getState(learning,active,session(request)),"status"));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE id=? AND active_key IS NOT NULL",active));
+        for(long id:List.of(assignment,future)) assertTrue(flag(db.one("SELECT canceled FROM assignment_recipients WHERE assignment_id=? AND student_id=?",id,student),"canceled"));
+        assertFalse(flag(db.one("SELECT canceled FROM assignment_recipients WHERE assignment_id=? AND student_id=?",untouched,student),"canceled"));
+        assertEquals(result,db.rows("SELECT * FROM result_revisions WHERE attempt_id=?",published));
+        assertEquals(1,grading.results(learning).size());
+        assertThrows(WorkspaceError.class,()->assignments.preflight(learning,assignment));
+        assertFalse(flag(db.one("SELECT active FROM group_members WHERE group_id=? AND user_id=?",defaultGroup,student),"active"));
+        long audits=db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND action='assignment.group_member_removed'",org);
+        organizations.removeStudent(teaching,defaultGroup,student);
+        assertEquals(audits,db.count("SELECT COUNT(*) FROM workspace_audit WHERE organization_id=? AND action='assignment.group_member_removed'",org));
+        organizations.addStudent(teaching,defaultGroup,student);
+        assertTrue(flag(db.one("SELECT canceled FROM assignment_recipients WHERE assignment_id=? AND student_id=?",assignment,student),"canceled"));
+    }
+    @Test void groupMemberRemovalPreservesOtherGroupAndIndividualAccess() {
+        long otherGroup=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Shared source","","")),"id");
+        organizations.addStudent(teaching,otherGroup,student);
+        long individual=assignment;db.update("UPDATE assignment_recipients SET individually_assigned=TRUE WHERE assignment_id=?",individual);
+        var target=assignments.create(teaching,new AssignmentService.AssignmentRequest(freshVersion(),List.of(defaultGroup,otherGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true));
+        assignment=number(target,"id");code=string(target,"code");var request=startRequest();long active=number(start(request),"id");
+        var before=db.one("SELECT * FROM exam_attempts WHERE id=?",active);
+
+        organizations.removeStudent(teaching,defaultGroup,student);
+
+        assertFalse(flag(db.one("SELECT canceled FROM assignment_recipients WHERE assignment_id=? AND student_id=?",assignment,student),"canceled"));
+        assertEquals(before,db.one("SELECT * FROM exam_attempts WHERE id=?",active));
+        organizations.removeStudent(teaching,otherGroup,student);
+        assertTrue(flag(db.one("SELECT canceled FROM assignment_recipients WHERE assignment_id=? AND student_id=?",assignment,student),"canceled"));
+        assertEquals("voided",string(attempts.getState(learning,active,session(request)),"status"));
+        assertFalse(flag(db.one("SELECT canceled FROM assignment_recipients WHERE assignment_id=? AND student_id=?",individual,student),"canceled"));
+    }
+    @Test void groupMemberManagementUsesTheGroupWorkspaceAndRejectsUnauthorizedTeachers() {
+        db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",other,teacher,"[\"TEACHER\"]",now);
+        var scope=new OrgAccess.Scope(other,teacher,Set.of("TEACHER"),true);
+        long test=number(assessments.save(scope,null,definition(false)),"id"),published=number(assessments.publish(scope,test),"id");
+        long target=number(assignments.create(scope,new AssignmentService.AssignmentRequest(published,List.of(defaultGroup),List.of(),now,now.plusSeconds(3600),1,false,false,true)),"id");
+        assertTrue(organizations.groupMembers(scope,defaultGroup).stream().anyMatch(row->number(row,"user_id")==student && flag(row,"active")));
+        var denied=new OrgAccess.Scope(other,user(Role.TEACHER).getId(),Set.of("TEACHER"),true);
+        assertThrows(WorkspaceError.class,()->organizations.groupMembers(denied,defaultGroup));
+        assertThrows(WorkspaceError.class,()->organizations.removeStudent(denied,defaultGroup,student));
+        assertThrows(WorkspaceError.class,()->organizations.removeStudent(learning,defaultGroup,student));
+        assertThrows(WorkspaceError.class,()->organizations.removeStudent(new OrgAccess.Scope(other,teacher,Set.of("TEACHER")),defaultGroup,student));
+        assertFalse(flag(db.one("SELECT canceled FROM assignment_recipients WHERE assignment_id=?",target),"canceled"));
+        assertThrows(WorkspaceError.class,()->transactions.execute(tx->{organizations.removeStudent(scope,defaultGroup,student);throw WorkspaceError.validation("Rollback");}));
+        assertTrue(flag(db.one("SELECT active FROM group_members WHERE group_id=? AND user_id=?",defaultGroup,student),"active"));
+
+        organizations.removeStudent(scope,defaultGroup,student);
+
+        for(long id:List.of(assignment,target)) assertTrue(flag(db.one("SELECT canceled FROM assignment_recipients WHERE assignment_id=?",id),"canceled"));
+        assertFalse(flag(db.one("SELECT active FROM group_members WHERE organization_id=? AND group_id=? AND user_id=?",org,defaultGroup,student),"active"));
+    }
+    @Test void concurrentGroupMemberRemovalAndExamStartLeaveNoActiveAttempt() throws Exception {
+        var request=startRequest();var ready=new CountDownLatch(2);var go=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(2)) {
+            var starting=pool.submit(()->{ready.countDown();assertTrue(go.await(5,TimeUnit.SECONDS));try {start(request);} catch(WorkspaceError denied) {assertEquals(HttpStatus.FORBIDDEN,denied.getStatusCode());}return null;});
+            var removing=pool.submit(()->{ready.countDown();assertTrue(go.await(5,TimeUnit.SECONDS));organizations.removeStudent(teaching,defaultGroup,student);return null;});
+            assertTrue(ready.await(5,TimeUnit.SECONDS));go.countDown();starting.get(15,TimeUnit.SECONDS);removing.get(15,TimeUnit.SECONDS);
+        }
+        assertTrue(flag(db.one("SELECT canceled FROM assignment_recipients WHERE assignment_id=?",assignment),"canceled"));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=? AND status='in_progress'",assignment));
+    }
     @Test void concurrentGroupAdditionAndAssignmentCreationIncludeNewMemberExactlyOnce() throws Exception {
         var next=enrolledStudent();var ready=new CountDownLatch(2);var go=new CountDownLatch(1);
         long newVersion=freshVersion();
@@ -2483,8 +2557,8 @@ class WorkspaceTests {
         assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->assignments.allowExtraAttempt(outsider,assignment,student)).getStatusCode());
         mvc.perform(post("/api/v1/assignments/"+assignment+"/recipients/"+student+"/extra-attempt").header("Authorization",authorization)).andExpect(status().isForbidden());
         assignments.removeRecipient(teaching,assignment,student);assertThrows(WorkspaceError.class,()->assignments.allowExtraAttempt(teaching,assignment,student));
-        assignments.addRecipient(teaching,assignment,student);organizations.removeStudent(teaching,defaultGroup,student);assertEquals(HttpStatus.FORBIDDEN,assertThrows(WorkspaceError.class,()->assignments.allowExtraAttempt(teaching,assignment,student)).getStatusCode());
-        organizations.addStudent(teaching,defaultGroup,student);when(clock.instant()).thenReturn(now.plusSeconds(3600));
+        assignments.addRecipient(teaching,assignment,student);organizations.removeStudent(teaching,defaultGroup,student);assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->assignments.allowExtraAttempt(teaching,assignment,student)).getStatusCode());
+        organizations.addStudent(teaching,defaultGroup,student);assignments.addRecipient(teaching,assignment,student);when(clock.instant()).thenReturn(now.plusSeconds(3600));
         assertEquals(HttpStatus.GONE,assertThrows(WorkspaceError.class,()->assignments.allowExtraAttempt(teaching,assignment,student)).getStatusCode());
     }
     @Test void resultEmailReusesLatestPublicationOnlyRetriesKnownFailuresAndProtectsResults() throws Exception {

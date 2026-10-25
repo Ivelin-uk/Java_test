@@ -127,12 +127,9 @@ try {
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.getByRole('button', { name: 'Възлагания', exact: true }).click()
   await page.getByRole('button', { name: 'Участници и наблюдение', exact: true }).click()
-  const accessDialog = await cancellation(page.getByRole('button', { name: 'Отнеми достъпа до възлагането', exact: true }), 'Отнемане на достъп', async () => assert.equal(shared.length, 1))
-  await page.getByRole('button', { name: 'Отнеми достъпа до възлагането', exact: true }).click()
-  await accessDialog.getByRole('button', { name: 'Отнеми достъпа', exact: true }).click()
-  await accessDialog.waitFor({ state: 'detached' })
-  assert.equal(shared.length, 0)
-  assert.deepEqual(mutations.at(-1), { method: 'PUT', path: `/api/v1/assignments/${assignment.id}/teachers/${colleague.teacher_id}`, body: { shared: false } })
+  assert.equal(await page.getByRole('combobox', { name: 'Сподели с учител', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Отнеми достъпа до възлагането', exact: true }).count(), 0)
+  assert.equal(shared.length, 1)
   await page.getByRole('button', { name: 'Към възлаганията', exact: true }).click()
 
   const codeDialog = await cancellation(page.getByRole('button', { name: 'Отмени кода', exact: true }), 'Отмяна на код за достъп', async () => assert.equal(codeActive, true))
@@ -155,7 +152,7 @@ try {
   assert.equal(attempt.status, 'voided')
   assert.deepEqual(mutations.at(-1), { method: 'POST', path: `/api/v1/attempts/${attempt.id}/void`, body: { reason: 'Duplicate attempt' } })
   assert.equal(await page.getByRole('button', { name: 'Анулирай опита с причина', exact: true }).isDisabled(), true)
-  assert.equal(mutations.length, 3)
+  assert.equal(mutations.length, 2)
 
   assignment.teacher_id = colleague.teacher_id
   await page.getByRole('button', { name: 'Възлагания', exact: true }).click()
@@ -210,7 +207,7 @@ try {
   await page.getByRole('button', { name: 'Възлагания', exact: true }).click()
   assert.equal(await page.getByRole('table', { name: 'Възлагания', exact: true }).locator('tbody tr').count(), 0)
   assert.deepEqual(errors, [])
-  console.log('Passed: question/option removal, code revocation, teacher access removal, attempt voiding, owner-only assignment deletion, server-error retry, busy/double-click guard, code/monitor cleanup, source-test preservation, cancel/Escape/focus, desktop/mobile and both themes. API fixtures only; no real data changed.')
+  console.log('Passed: question/option removal, code revocation, teacher sharing absent from participants, attempt voiding, owner-only assignment deletion, server-error retry, busy/double-click guard, code/monitor cleanup, source-test preservation, cancel/Escape/focus, desktop/mobile and both themes. API fixtures only; no real data changed.')
 } finally {
   await browser.close()
 }

@@ -3,10 +3,11 @@ import { ChevronDown, Square, SquareCheck, X } from 'lucide-react'
 
 interface RecipientOption { id: number; name: string; detail: string; disabled?: boolean }
 
-export function RecipientPicker({ title, searchLabel, placeholder, emptyMessage, options, selected, toggle, disabled, loading, keepOpenOnSelect = false }: {
+export function RecipientPicker({ title, searchLabel, placeholder, emptyMessage, options, selected, toggle, disabled, loading, keepOpenOnSelect = false, invalid = false }: {
   title: string; searchLabel: string; placeholder: string; emptyMessage: string; options: RecipientOption[];
   selected: number[]; toggle: (id: number) => void; disabled: boolean; loading: boolean;
   keepOpenOnSelect?: boolean;
+  invalid?: boolean;
 }) {
   const id = useId()
   const input = useRef<HTMLInputElement>(null)
@@ -33,7 +34,7 @@ export function RecipientPicker({ title, searchLabel, placeholder, emptyMessage,
   }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setOpen(false) } }}>
     <legend>{title}</legend>
     <div className="ws-recipient-control">
-      <input ref={input} id={id} role="combobox" aria-label={searchLabel} aria-expanded={expanded} aria-controls={expanded ? `${id}-results` : undefined} aria-autocomplete="list" aria-activedescendant={expanded && results[activeIndex] ? `${id}-option-${results[activeIndex].id}` : undefined} autoComplete="off" placeholder={placeholder} value={query}
+      <input ref={input} id={id} role="combobox" aria-label={searchLabel} aria-invalid={invalid || undefined} aria-expanded={expanded} aria-controls={expanded ? `${id}-results` : undefined} aria-autocomplete="list" aria-activedescendant={expanded && results[activeIndex] ? `${id}-option-${results[activeIndex].id}` : undefined} autoComplete="off" placeholder={placeholder} value={query}
         onFocus={() => setOpen(true)} onClick={() => setOpen(true)} onChange={event => { setQuery(event.target.value); setIndex(0); setOpen(true) }}
         onKeyDown={event => {
           if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {

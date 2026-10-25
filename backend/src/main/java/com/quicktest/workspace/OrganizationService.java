@@ -198,8 +198,8 @@ public class OrganizationService {
         return Map.of("id",id,"name",string(group,"name"),"alreadyMember",alreadyMember);
     }
     public List<Map<String,Object>> groupMembers(OrgAccess.Scope scope,long group) {
-        groupAccess(scope,group);
-        return repository.findGroupMembers(scope.organizationId(), group);
+        var row=groupAccess(scope,group);
+        return repository.findGroupMembers(number(row,"organization_id"), group);
     }
     public Object groupTeachers(OrgAccess.Scope scope,long group) {groupAccess(scope,group);return repository.findGroupTeachers(scope.organizationId(), group);}
     @Transactional public void updateGroup(OrgAccess.Scope scope,long group,GroupRequest value) {
@@ -232,16 +232,13 @@ public class OrganizationService {
         repository.upsertGroupMember(org,group,student);
         groupAssignments.addMember(org,group,student,actor);
     }
-    @Transactional
+    @Transactional(isolation=Isolation.READ_COMMITTED)
     public void removeStudent(OrgAccess.Scope scope,long group,long student) {
-        groupAccess(scope,group);
-        repository.deactivateGroupMember(scope.organizationId(), group, student);
-        var recipients=repository.findFutureRecipients(scope.organizationId(), student, clock.instant());
-        for(var r:recipients) {
-            List<?> sources=json.parse(r.get("source_groups_json"),List.class);
-            if(!flag(r,"individually_assigned") && sources.stream().map(Object::toString).anyMatch(v->v.equals(Long.toString(group))) && sources.stream().map(Object::toString).noneMatch(v->!v.equals(Long.toString(group)) && repository.countActiveGroupMembers(scope.organizationId(), Long.parseLong(v), student)>0)) repository.cancelRecipient(scope.organizationId(), number(r,"assignment_id"), student);
-        }
-        audit.write(scope.organizationId(),scope.userId(),"group.student_removed",group,Map.of("student",student));
+        var row=groupAccess(scope,group);long org=number(row,"organization_id");
+        repository.lockGroup(org,group);
+        repository.deactivateGroupMember(org,group,student);
+        groupAssignments.removeMember(org,group,student,scope.userId());
+        audit.write(org,scope.userId(),"group.student_removed",group,Map.of("student",student));
     }
     @Transactional
     public void addTeacher(OrgAccess.Scope scope,long group,long teacher) {

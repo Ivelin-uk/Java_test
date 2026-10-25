@@ -81,4 +81,28 @@ public class GroupAssignmentService {
             audit.write(org,actor,"assignment.group_member_assigned",id,Map.of("student",student,"group",group));
         }
     }
+
+    // Membership changes and assignment access are committed under the same group lock.
+    @Transactional(propagation=Propagation.MANDATORY)
+    public void removeMember(long groupOrganization,long group,long student,long actor) {
+        for(var target:repository.findGroupAssignments(groupOrganization,group)) {
+            long org=number(target,"organization_id"),id=number(target,"assignment_id");
+            var recipients=repository.lockRecipients(org,id);
+            if(repository.findAssignmentIfPresent(org,id,true).isEmpty()) continue;
+            var recipient=recipients.stream().filter(row->number(row,"student_id")==student).findFirst();
+            if(recipient.isEmpty() || flag(recipient.get(),"canceled") || flag(recipient.get(),"individually_assigned")) continue;
+            if(!Arrays.asList(json.parse(recipient.get().get("source_groups_json"),Long[].class)).contains(group)) continue;
+            Set<Long> groups=new TreeSet<>();
+            for(var assigned:repository.findAssignmentGroups(org,id)) groups.add(number(assigned,"group_id"));
+            if(!repository.findEligibleMembers(groups,student).isEmpty()) continue;
+            String reason="Ученикът е премахнат от групата.";
+            for(var attempt:repository.lockActiveStudentAttempts(org,id,student)) {
+                long attemptId=number(attempt,"id");
+                repository.voidAttempt(clock.instant(),reason,org,attemptId);
+                audit.write(org,actor,"attempt.voided",attemptId,Map.of("reason",reason));
+            }
+            repository.cancelRecipient(org,id,student);
+            audit.write(org,actor,"assignment.group_member_removed",id,Map.of("student",student,"group",group));
+        }
+    }
 }

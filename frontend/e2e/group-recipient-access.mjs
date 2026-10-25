@@ -133,7 +133,7 @@ try {
   await studentRow(members[1]).getByText('Премахнат', { exact: true }).waitFor()
   assert.equal(new URL(page.url()).pathname, `/assignments/${assignment.id}/participants`)
   await page.getByRole('button', { name: 'Към възлаганията', exact: true }).click()
-  await assignments.locator('tbody td').nth(4).getByText('2', { exact: true }).waitFor()
+  await assignments.getByRole('button', { name: `Участници: ${assignment.title}`, exact: true }).getByText('2', { exact: true }).waitFor()
   assert.equal(await assignments.locator('tbody tr').count(), 1)
   assert.deepEqual(errors, [])
   console.log('Passed: group-only member controls/search, outsider exclusion, removal/restore confirmation and retry, busy guard, active-attempt voiding, preserved result status, one extra attempt, later group members, active count including zero, group source preserved, no new assignment, reload persistence, desktop/mobile and both themes. API fixtures only.')

@@ -1,9 +1,9 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Plus, RotateCw, RotateCcw, Ban, Copy, Mail, KeyRound, UserPlus, Trash2, Users, UserRound, Search, CalendarDays, Smartphone, SlidersHorizontal, X } from 'lucide-react'
+import { Plus, RotateCw, RotateCcw, Ban, Copy, Mail, KeyRound, Trash2, Users, UserRound, Search, CalendarDays, Smartphone, SlidersHorizontal, X } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
-import type { Assessment, Assignment, Group, Member, Version } from './types'
-import { label, roles } from './types'
+import type { Assessment, Assignment, Group, Version } from './types'
+import { label } from './types'
 import { Empty, Feedback, Panel, SectionHead, TableContainer } from './ui'
 import { TestPicker } from './TestPicker'
 import { RecipientPicker } from './RecipientPicker'
@@ -12,7 +12,14 @@ import { AssignmentScheduleDialog } from './AssignmentScheduleDialog'
 import { AssignmentMobileDialog } from './AssignmentMobileDialog'
 import { AssignmentSettingsDialog, AssignmentSettingsFields } from './AssignmentSettingsDialog'
 import { AssignmentAccommodationDialog } from './AssignmentAccommodationDialog'
+import { AssignmentGroupMembersDialog } from './AssignmentGroupMembersDialog'
 import { localTime, minuteBound } from './assignmentDates'
+import { useNotifications } from '../notifications'
+
+type AssignmentErrorField = 'test' | 'period' | 'startsAt' | 'endsAt' | 'attempts' | 'groups'
+const assignmentFieldSelectors: Record<AssignmentErrorField, string> = {
+  test: '.ws-test-picker input', period: 'input[name="endsAt"]', startsAt: 'input[name="startsAt"]', endsAt: 'input[name="endsAt"]', attempts: 'input[name="maxAttempts"]', groups: '.ws-recipient-picker input',
+}
 
 const searchText = (value: string) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('bg')
 const assignmentDate = new Intl.DateTimeFormat('bg-BG', { timeZone: 'Europe/Sofia', day: '2-digit', month: '2-digit', year: 'numeric' })
@@ -23,14 +30,15 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
   const tests = useRemote<Assessment[]>(api, '/tests', [])
   const groups = useRemote<Group[]>(api, '/groups', [])
   const action = useAction()
+  const notify = useNotifications()
   const section = useRef<HTMLElement>(null)
-  const [formError, setFormError] = useState<{ message: string; field?: 'test' | 'period' } | null>(null)
+  const [formError, setFormError] = useState<{ message: string; field?: AssignmentErrorField } | null>(null)
   const periodErrorId = useId()
   useEffect(() => {
     if (action.error || formError) section.current?.querySelector('[role="alert"]')?.scrollIntoView({ block: 'nearest' })
-    if (formError?.field === 'test') section.current?.querySelector<HTMLInputElement>('[role="combobox"]')?.focus()
-    if (formError?.field === 'period') section.current?.querySelector<HTMLInputElement>('input[name="endsAt"]')?.focus()
+    if (formError?.field) section.current?.querySelector<HTMLInputElement>(assignmentFieldSelectors[formError.field])?.focus()
   }, [action.error, formError])
+  useEffect(() => { if (action.error) notify(action.error, 'danger') }, [action.error, notify])
   const [test, setTest] = useState<Assessment | null>(null)
   const [pickerKey, setPickerKey] = useState(0)
   const [resolved, setResolved] = useState<{ testId: number; versionId: number | null; error: string } | null>(null)
@@ -99,16 +107,17 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
   }
   async function assign() {
     if (action.busy || loadingVersion || tests.loading || groups.loading || assignments.loading) return
-    const invalid = (message: string, field?: 'test' | 'period') => setFormError({ message, field })
+    const invalid = (message: string, field?: AssignmentErrorField) => { setFormError({ message, field }); notify(message, 'danger') }
     if (!test) return invalid('Изберете тест за възлагане.', 'test')
     if (!version) return invalid(resolved?.error || 'Тестът няма запазена версия.', 'test')
     const startsAt = new Date(start), endsAt = new Date(end)
-    if (!Number.isFinite(startsAt.getTime())) return invalid('Попълнете началната дата и час.')
-    if (!Number.isFinite(endsAt.getTime())) return invalid('Попълнете крайната дата и час.')
+    if (!Number.isFinite(startsAt.getTime())) return invalid('Попълнете началната дата и час.', 'startsAt')
+    if (!Number.isFinite(endsAt.getTime())) return invalid('Попълнете крайната дата и час.', 'endsAt')
     if (startsAt >= endsAt) return invalid('Крайният срок трябва да е след началото.', 'period')
-    if (endsAt.getTime() <= Date.now()) return invalid('Крайният срок трябва да е в бъдещето.')
-    if (attempts === '' || !Number.isInteger(attempts) || attempts < 1 || attempts > 20) return invalid('Броят опити трябва да е цяло число от 1 до 20.')
-    if (!groupIds.length) return invalid('Изберете поне една група.')
+    if (endsAt.getTime() <= Date.now()) return invalid('Крайният срок трябва да е в бъдещето.', 'endsAt')
+    if (attempts === '') return invalid('Попълнете броя опити.', 'attempts')
+    if (!Number.isInteger(attempts) || attempts < 1 || attempts > 20) return invalid('Броят опити трябва да е цяло число от 1 до 20.', 'attempts')
+    if (!groupIds.length) return invalid('Изберете поне една група.', 'groups')
     if (duplicateMessage) return invalid(duplicateMessage)
     setFormError(null)
     await action.run(async () => {
@@ -120,9 +129,9 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
     <Panel title="Ново възлагане" description="1. Избери тест · 2. Задай срок и брой опити · 3. Добави групите и натисни „Възложи“.">
     <form className="ws-assignment-form" aria-label="Възлагане на тест" noValidate onChange={() => setFormError(null)} onSubmit={e => { e.preventDefault(); void assign() }} onReset={e => { e.preventDefault(); resetForm() }}>
       <fieldset className="ws-editor" disabled={action.busy}>
-      <div className="ws-form-grid"><TestPicker key={pickerKey} tests={tests.data.filter(t => t.status !== 'archived')} selected={test} select={value => { setTest(value ? { ...value } : null); setResolved(null); setFormError(null) }} disabled={action.busy || tests.loading} invalid={formError?.field === 'test'} /><label>Начало<input type="datetime-local" name="startsAt" required max={minuteBound(end, -1)} step={60} aria-invalid={!!periodError} aria-describedby={periodError ? periodErrorId : undefined} value={start} onChange={e => setStart(e.target.value)} /></label><label>Краен срок<input type="datetime-local" name="endsAt" required min={minuteBound(start, 1)} step={60} aria-invalid={!!periodError} aria-describedby={periodError ? periodErrorId : undefined} value={end} onChange={e => setEnd(e.target.value)} /></label><label>Опити<input type="number" required min={1} max={20} step={1} value={attempts} onChange={e => setAttempts(e.target.value === '' ? '' : Number(e.target.value))} /></label></div>
+      <div className="ws-form-grid"><TestPicker key={pickerKey} tests={tests.data.filter(t => t.status !== 'archived')} selected={test} select={value => { setTest(value ? { ...value } : null); setResolved(null); setFormError(null) }} disabled={action.busy || tests.loading} invalid={formError?.field === 'test'} /><label>Начало<input type="datetime-local" name="startsAt" required max={minuteBound(end, -1)} step={60} aria-invalid={!!periodError || formError?.field === 'startsAt'} aria-describedby={periodError ? periodErrorId : undefined} value={start} onChange={e => setStart(e.target.value)} /></label><label>Краен срок<input type="datetime-local" name="endsAt" required min={minuteBound(start, 1)} step={60} aria-invalid={!!periodError || formError?.field === 'endsAt'} aria-describedby={periodError ? periodErrorId : undefined} value={end} onChange={e => setEnd(e.target.value)} /></label><label>Опити<input type="number" name="maxAttempts" required min={1} max={20} step={1} aria-invalid={formError?.field === 'attempts' || undefined} value={attempts} onChange={e => setAttempts(e.target.value === '' ? '' : Number(e.target.value))} /></label></div>
       {periodError && <p id={periodErrorId} className="error" role="alert">{periodError}</p>}
-        <RecipientPicker key={pickerKey} title="Групи" searchLabel="Търси групи" placeholder="Име или дисциплина" emptyMessage="Няма налични групи." options={groups.data.map(group => ({ id: group.id, name: group.name, detail: assignedGroupIds.has(group.id) ? 'Вече е възложен' : group.subject, disabled: assignedGroupIds.has(group.id) }))} selected={groupIds} toggle={id => { setGroupIds(ids => toggle(ids, id)); setFormError(null) }} disabled={action.busy} loading={groups.loading || assignments.loading} />
+        <RecipientPicker key={pickerKey} title="Групи" searchLabel="Търси групи" placeholder="Име или дисциплина" emptyMessage="Няма налични групи." options={groups.data.map(group => ({ id: group.id, name: group.name, detail: assignedGroupIds.has(group.id) ? 'Вече е възложен' : group.subject, disabled: assignedGroupIds.has(group.id) }))} selected={groupIds} toggle={id => { setGroupIds(ids => toggle(ids, id)); setFormError(null) }} disabled={action.busy} loading={groups.loading || assignments.loading} invalid={formError?.field === 'groups'} />
       {duplicateMessage && <p className="error" role="alert">{duplicateMessage}</p>}
       <AssignmentSettingsFields value={{ shuffleQuestions: shuffleQ, shuffleOptions: shuffleA, answersAfterDeadline: afterDeadline, autoAiGrading }} onChange={value => { setShuffleQ(value.shuffleQuestions); setShuffleA(value.shuffleOptions); setAfterDeadline(value.answersAfterDeadline); setAutoAiGrading(value.autoAiGrading) }} />
       {test && <p className="ws-muted">Решаване от телефон: {test.mobile_allowed === true ? 'разрешено' : 'не е разрешено'}. Променя се от отметката „Телефон“ в списъка с тестове.</p>}
@@ -209,16 +218,46 @@ function AssignmentAudience({ assignment }: { assignment: Assignment }) {
 }
 interface MonitorRow { student_id: number; name: string; email?: string; canceled: boolean; assigned?: boolean; attempt_id: number | null; attempt_number: number | null; status: string | null; max_attempts: number; fullscreen_exempt: boolean; time_multiplier: number; accommodation_reason: string | null }
 interface AssignmentMember { student_id: number; name: string; email: string }
-export function AssignmentParticipants({ api, assignment, endsAt, groupAssignment, recipientsChanged }: { api: WorkspaceApi; assignment: number; endsAt: string; groupAssignment: boolean; recipientsChanged: () => Promise<unknown> }) {
+export function AssignmentParticipants({ api, assignment, endsAt, groups, recipientsChanged }: { api: WorkspaceApi; assignment: number; endsAt: string; groups: { id: number; name: string }[]; recipientsChanged: () => Promise<unknown> }) {
   const list = useRemote<MonitorRow[]>(api, `/assignments/${assignment}/monitoring`, [])
   const members = useRemote<AssignmentMember[]>(api, `/assignments/${assignment}/members`, [])
   const action = useAction()
-  const shared = useRemote<{ teacher_id: number; name: string }[]>(api, `/assignments/${assignment}/teachers`, [])
-  const directory = useRemote<Member[]>(api, '/members', [])
-  const [coTeacher, setCoTeacher] = useState(''), [query, setQuery] = useState('')
+  const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<MonitorRow | null>(null)
-  const [revokingTeacher, setRevokingTeacher] = useState<{ teacher_id: number; name: string } | null>(null)
+  const [managingGroup, setManagingGroup] = useState<{ id: number; name: string } | null>(null)
   const [changingRecipient, setChangingRecipient] = useState<{ row: MonitorRow; remove: boolean } | null>(null)
+  const [pollError, setPollError] = useState<string | null>(null)
+  const { setData: setMonitoring } = list
+  const pollingPaused = list.loading || action.busy || !!selected || !!changingRecipient || !!managingGroup
+  useEffect(() => {
+    if (pollingPaused) return
+    let active = true, inFlight = false, timer: ReturnType<typeof setTimeout> | undefined
+    function schedule() {
+      if (active && !document.hidden && navigator.onLine) timer = setTimeout(() => void poll(), 2000)
+    }
+    async function poll() {
+      clearTimeout(timer)
+      if (!active || inFlight || document.hidden || !navigator.onLine) return
+      inFlight = true
+      try {
+        const rows = await api.get<MonitorRow[]>(`/assignments/${assignment}/monitoring`)
+        if (active) { setMonitoring(rows); setPollError('') }
+      } catch (cause) {
+        if (active) setPollError(cause instanceof Error ? cause.message : 'Статусите не могат да се обновят. Ще опитаме отново автоматично.')
+      } finally { inFlight = false; schedule() }
+    }
+    function resume() { clearTimeout(timer); void poll() }
+    schedule()
+    document.addEventListener('visibilitychange', resume)
+    window.addEventListener('focus', resume)
+    window.addEventListener('online', resume)
+    return () => {
+      active = false; clearTimeout(timer)
+      document.removeEventListener('visibilitychange', resume)
+      window.removeEventListener('focus', resume)
+      window.removeEventListener('online', resume)
+    }
+  }, [api, assignment, pollingPaused, setMonitoring])
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer) }, [])
   const rows: MonitorRow[] = [...list.data.map(row => ({ ...row, assigned: true })), ...members.data.filter(member => !list.data.some(row => row.student_id === member.student_id)).map(member => ({
@@ -227,26 +266,22 @@ export function AssignmentParticipants({ api, assignment, endsAt, groupAssignmen
   const search = query.trim().toLocaleLowerCase()
   const visible = rows.filter(row => `${row.name} ${row.email ?? ''}`.toLocaleLowerCase().includes(search))
   const expired = new Date(endsAt).getTime() <= now
-  async function refresh() { await list.reload(); await members.reload(); await recipientsChanged() }
+  async function refresh() { await list.reload(); setPollError(''); await members.reload(); await recipientsChanged() }
   function canAssign(row: MonitorRow) {
     const attempts = list.data.filter(value => value.student_id === row.student_id && value.attempt_id !== null)
     return !expired && members.data.some(member => member.student_id === row.student_id) && !attempts.some(attempt => attempt.status === 'in_progress') && (!row.assigned || row.canceled || attempts.length >= row.max_attempts)
   }
   return <section className="ws-monitor">
-    <SectionHead title="Участници"><button className="icon-button" title="Обнови" disabled={action.busy} onClick={() => void action.run(refresh)}><RotateCw size={17} /></button></SectionHead>
-    <Feedback error={action.error || list.error || members.error || shared.error || directory.error} busy={action.busy || list.loading || members.loading} />
-    <div className="ws-actions">{shared.data.map(teacher => <span key={teacher.teacher_id}>{teacher.name}<button className="icon-button danger" title="Отнеми достъпа до възлагането" disabled={action.busy} onClick={() => setRevokingTeacher(teacher)}><Ban size={15} /></button></span>)}</div>
-    <form className="ws-inline-form" onSubmit={event => { event.preventDefault(); void action.run(async () => { await api.put(`/assignments/${assignment}/teachers/${coTeacher}`, { shared: true }); await shared.reload() }, 'Достъпът на учителя е добавен.') }}>
-      <label>Сподели с учител<select required value={coTeacher} onChange={event => setCoTeacher(event.target.value)}><option value="">Избери</option>{directory.data.filter(member => member.status === 'active' && roles(member).includes('TEACHER')).map(member => <option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select></label>
-      <button disabled={action.busy || !coTeacher}><UserPlus size={17} /> Разреши достъп</button>
-    </form>
+    <SectionHead title="Участници" description="Статусите се обновяват автоматично."><button className="icon-button" title="Обнови" disabled={action.busy} onClick={() => void action.run(refresh)}><RotateCw size={17} /></button></SectionHead>
+    <Feedback error={action.error || (pollError ?? list.error) || members.error} busy={action.busy || list.loading || members.loading} />
+    {!!groups.length && <div className="ws-actions">{groups.map(group => <button key={group.id} type="button" className="command-button" aria-haspopup="dialog" disabled={action.busy} onClick={() => setManagingGroup(group)}><Users size={17} aria-hidden="true" />Участници в {group.name}</button>)}</div>}
     <div className="ws-recipient-search"><Search size={17} aria-hidden="true" /><input type="search" aria-label="Търси член на групата" placeholder="Име или имейл" value={query} onChange={event => setQuery(event.target.value)} /></div>
     <TableContainer label="Получатели на възлагането — таблица"><table className="ws-table" aria-label="Получатели на възлагането">
       <thead><tr><th>Обучаем</th><th>Възлагане</th><th>Опит</th><th>Статус</th><th>Разрешения</th><th>Действия</th></tr></thead>
       <tbody>{visible.map((row, index) => <tr key={`${row.student_id}-${row.attempt_id ?? 'none'}`}>
         <td>{row.name}{row.email && <div className="ws-muted">{row.email}</div>}</td><td>{!row.assigned ? 'Не е възложен' : row.canceled ? 'Премахнат' : 'Възложен'}</td><td>{row.assigned ? `${row.attempt_number ?? 0}/${row.max_attempts}` : '-'}</td><td>{row.status ? label(row.status) : 'Не е започнал'}</td>
         <td><button aria-haspopup="dialog" disabled={!row.assigned || row.canceled || action.busy} onClick={() => setSelected(row)}>Изключение / опити</button></td>
-        <td>{groupAssignment && visible.findIndex(value => value.student_id === row.student_id) === index && <div className="ws-actions">
+        <td>{!!groups.length && visible.findIndex(value => value.student_id === row.student_id) === index && <div className="ws-actions">
           {row.assigned && !row.canceled && <button className="icon-button danger" title={`Премахни възлагането за ${row.name}`} aria-label={`Премахни възлагането за ${row.name}`} disabled={action.busy} onClick={() => setChangingRecipient({ row, remove: true })}><Trash2 size={17} /></button>}
           {canAssign(row) && <button className="icon-button" title={`${row.assigned ? 'Възложи отново на' : 'Възложи теста на'} ${row.name}`} aria-label={`${row.assigned ? 'Възложи отново на' : 'Възложи теста на'} ${row.name}`} disabled={action.busy} onClick={() => setChangingRecipient({ row, remove: false })}><RotateCw size={17} /></button>}
         </div>}</td>
@@ -267,9 +302,6 @@ export function AssignmentParticipants({ api, assignment, endsAt, groupAssignmen
         if (selected?.student_id === row.student_id) setSelected(null)
         await action.run(refresh, remove ? 'Възлагането за ученика е премахнато.' : 'Тестът е възложен на ученика.', remove ? 'danger' : 'success')
       }} />}
-    {revokingTeacher && <DeleteConfirmationDialog title="Отнемане на достъп" confirmLabel="Отнеми достъпа" successMessage="Достъпът на учителя е отнет." confirmIcon={Ban} description={<>Да отнемем ли достъпа на <strong>{revokingTeacher.name}</strong> до това възлагане?</>} onCancel={() => setRevokingTeacher(null)} onConfirm={async () => {
-      await api.put(`/assignments/${assignment}/teachers/${revokingTeacher.teacher_id}`, { shared: false })
-      await shared.reload()
-    }} />}
+    {managingGroup && <AssignmentGroupMembersDialog api={api} group={managingGroup} onClose={() => setManagingGroup(null)} onChanged={refresh} />}
   </section>
 }

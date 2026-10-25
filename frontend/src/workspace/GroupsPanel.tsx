@@ -146,10 +146,11 @@ function GroupDeleteDialog({ api, group, close, saved }: { api: WorkspaceApi; gr
   }} />
 }
 
-function GroupMembers({ api, group }: { api: WorkspaceApi; group: Group }) {
+export function GroupMembers({ api, group, changed, onBusyChange }: { api: WorkspaceApi; group: Pick<Group, 'id' | 'name'>; changed?: () => Promise<unknown>; onBusyChange?: (busy: boolean) => void }) {
   const members = useRemote<(Member & { active: boolean })[]>(api, `/groups/${group.id}/members`, [])
   const directory = useRemote<Member[]>(api, '/members', [])
   const action = useAction()
+  useEffect(() => { onBusyChange?.(action.busy) }, [action.busy, onBusyChange])
   const [userIds, setUserIds] = useState<number[]>([])
   const [pickerVersion, setPickerVersion] = useState(0)
   const adding = useRef(false)
@@ -179,6 +180,7 @@ function GroupMembers({ api, group }: { api: WorkspaceApi; group: Group }) {
           if (added.length) {
             notify(added.length === 1 ? 'Ученикът е добавен в групата.' : `Добавени ученици: ${added.length}.`)
             await members.reload()
+            await changed?.()
           }
         }
       }).finally(() => { adding.current = false })
@@ -194,9 +196,10 @@ function GroupMembers({ api, group }: { api: WorkspaceApi; group: Group }) {
       </tr>)}</tbody>
     </table></TableContainer>
     {!participants.length && !members.loading && !members.error && <Empty>Няма участници в групата.</Empty>}
-    {removing && <DeleteConfirmationDialog title="Премахване на ученик от група" confirmLabel="Премахни" description={<>Да премахнем ли <strong>{removing.name}</strong> ({removing.email}) от групата <strong>{group.name}</strong>? Профилът и резултатите на ученика ще се запазят.</>} onCancel={() => setRemoving(null)} onConfirm={async () => {
+    {removing && <DeleteConfirmationDialog title="Премахване на ученик от група" confirmLabel="Премахни" description={<>Да премахнем ли <strong>{removing.name}</strong> ({removing.email}) от групата <strong>{group.name}</strong>? Достъпът до тестовете, възложени само чрез тази група, ще бъде премахнат, а активните опити ще бъдат прекратени. Профилът и резултатите на ученика ще се запазят.</>} onCancel={() => setRemoving(null)} onConfirm={async () => {
       await api.remove(`/groups/${group.id}/members/${removing.user_id}`)
       await members.reload()
+      await changed?.()
       notify('Ученикът е премахнат от групата.', 'danger')
     }} />}
   </section>
