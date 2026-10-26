@@ -15,7 +15,7 @@ class GroupCodeRotationTests {
     @Test void aCodeReplacedBetweenLookupAndLockCannotEnrollAStudent() {
         var repository=mock(OrganizationRepository.class);var limiter=mock(CodeRateLimiter.class);
         var personal=mock(PersonalWorkspace.class);var audit=mock(WorkspaceAudit.class);
-        var service=new OrganizationService(repository,mock(WorkspaceJson.class),new WorkspaceCrypto(),audit,mock(NotificationService.class),Clock.systemUTC(),personal,limiter,mock(com.quicktest.workspace.GroupAssignmentService.class));
+        var service=new OrganizationService(repository,mock(WorkspaceJson.class),new WorkspaceCrypto(),audit,mock(NotificationService.class),Clock.systemUTC(),personal,limiter,mock(com.quicktest.workspace.GroupAssignmentService.class),mock(com.quicktest.workspace.TeacherEntitlementService.class));
         when(repository.findGroupByJoinCode("ABCD2345")).thenReturn(Optional.of(Map.of("id",10L,"organization_id",20L,"name","Group")));
         when(limiter.checkGroupJoin(30L,"rotation-race",true)).thenReturn(true);
         when(repository.lockGroup(20L,10L)).thenReturn(Map.of("id",10L,"join_code","EFGH6789"));

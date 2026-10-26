@@ -26,10 +26,11 @@ public class OrganizationService {
     private final PersonalWorkspace personal;
     private final CodeRateLimiter codeLimiter;
     private final GroupAssignmentService groupAssignments;
+    private final TeacherEntitlementService entitlements;
 
-    public OrganizationService(OrganizationRepository repository,WorkspaceJson json, WorkspaceCrypto crypto, WorkspaceAudit audit, NotificationService notifications, Clock clock, PersonalWorkspace personal,CodeRateLimiter codeLimiter,GroupAssignmentService groupAssignments) {
+    public OrganizationService(OrganizationRepository repository,WorkspaceJson json, WorkspaceCrypto crypto, WorkspaceAudit audit, NotificationService notifications, Clock clock, PersonalWorkspace personal,CodeRateLimiter codeLimiter,GroupAssignmentService groupAssignments,TeacherEntitlementService entitlements) {
         this.repository = repository;this.json=json; this.crypto = crypto; this.audit = audit; this.notifications = notifications; this.clock = clock; this.personal = personal;this.codeLimiter=codeLimiter;
-        this.groupAssignments=groupAssignments;
+        this.groupAssignments=groupAssignments;this.entitlements=entitlements;
     }
     public List<Map<String, Object>> organizations(long user) {
         return repository.findOrganizations(user);
@@ -154,8 +155,9 @@ public class OrganizationService {
         var row=repository.requireGroup(scope.organizationId(),scope.platform(),group);
         if(repository.countActiveGroupMembers(number(row,"organization_id"),group,scope.userId())==0) throw WorkspaceError.forbidden();
     }
-    @Transactional
+    @Transactional(isolation=Isolation.READ_COMMITTED)
     public Map<String,Object> createGroup(OrgAccess.Scope scope,GroupRequest request) {
+        entitlements.requireGroupCapacity(scope);
         String code;do {code=crypto.code();} while(repository.groupCodeExists(code));
         long id=repository.insertGroup(scope.organizationId(), request.name(), request.description(), request.subject(),code, clock.instant());
         repository.insertGroupTeacher(scope.organizationId(), id, scope.userId());

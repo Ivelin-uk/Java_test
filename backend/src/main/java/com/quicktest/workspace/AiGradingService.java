@@ -32,14 +32,15 @@ public class AiGradingService {
     private final TransactionTemplate transactions;
     private final Clock clock;
     private final boolean workers;
+    private final TeacherEntitlementService entitlements;
 
     public AiGradingService(AiGradingRepository repository,WorkspaceJson json, AiProvider provider, OrganizationService organizations,
                             AssignmentService assignments, GradingService grading, WorkspaceCrypto crypto,
-                            WorkspaceAudit audit, TransactionTemplate transactions, Clock clock,
+                            WorkspaceAudit audit, TransactionTemplate transactions, Clock clock,TeacherEntitlementService entitlements,
                             @Value("${app.workspace.workers:true}") boolean workers) {
         this.repository = repository;this.json=json; this.provider = provider; this.organizations = organizations; this.assignments = assignments;
         this.grading = grading; this.crypto = crypto; this.audit = audit; this.transactions = transactions;
-        this.clock = clock; this.workers = workers;
+        this.clock = clock; this.workers = workers;this.entitlements=entitlements;
     }
 
     @Transactional
@@ -47,6 +48,7 @@ public class AiGradingService {
         if (request.requestKey() == null || !request.requestKey().matches("[A-Za-z0-9_-]{8,80}"))
             throw WorkspaceError.validation("Невалиден ключ за AI проверка.");
         organizations.lockQuota(scope.organizationId());
+        entitlements.lock(scope);
         var attempt = authorizedAttempt(scope, attemptId, true);
         var existing = repository.findJobByAttemptForUpdate(scope.organizationId(), attemptId);
         if (existing.isPresent() && (!retry || !string(existing.get(), "status").equals("failed")
@@ -56,7 +58,7 @@ public class AiGradingService {
         var questions = questions(scope.organizationId(), attemptId);
         var targets = targets(questions);
         boolean reserved = !targets.isEmpty();
-        if (reserved) {
+        if (reserved && !entitlements.applies(scope)) {
             if (!scope.platform()) organizations.requirePaid(scope.organizationId());
             var subscription = organizations.subscription(scope.organizationId());
             if (number(subscription, "ai_used") + number(subscription, "ai_reserved") >= number(subscription, "ai_limit"))
@@ -70,6 +72,7 @@ public class AiGradingService {
         } else {
             id = repository.insertJob(scope.organizationId(), attemptId, scope.userId(), scope.platform(), request.requestKey(), fingerprint(questions), reserved, clock.instant(), clock.instant());
         }
+        if(reserved && entitlements.applies(scope)) entitlements.reserveAi(scope,"grading",id);
         audit.write(scope.organizationId(), scope.userId(), "grading.ai_queued", attemptId, Map.of("job", id));
         return safe(repository.requireJob(id));
     }
@@ -155,6 +158,7 @@ public class AiGradingService {
                     var current=repository.findAutomaticCandidate(org,attemptId);
                     if(current.isEmpty() || !sameAutomaticActor(candidate,current.get())) return;
                     var scope=new OrgAccess.Scope(org,number(candidate,"user_id"),Set.of("TEACHER"),flag(candidate,"platform_scope"));
+                    entitlements.requireAutomaticGrading(scope);
                     // The template owns the transaction, including enqueue's quota reservation.
                     enqueue(scope,attemptId,new Request("auto-grading-"+attemptId),false);
                 });
@@ -215,6 +219,7 @@ public class AiGradingService {
     private void publish(OrgAccess.Scope scope, Map<String, Object> original, long lease, AiProvider.GradedAnswers result) {
         long org = scope.organizationId(), id = number(original, "id"), attemptId = number(original, "attempt_id");
         organizations.lockQuota(org);
+        entitlements.lockAi("grading",id);
         var attempt = authorizedAttempt(scope, attemptId, true);
         var job = repository.requireJobForUpdate(org, id);
         if (!string(job, "status").equals("running") || number(job, "attempts") != lease) return;
@@ -237,6 +242,7 @@ public class AiGradingService {
     private void fail(long org, long id, long lease, String message) {
         transactions.executeWithoutResult(tx -> {
             organizations.lockQuota(org);
+            entitlements.lockAi("grading",id);
             var existing = repository.findJobForUpdate(org, id);
             if (existing.isEmpty()) return;
             var job = existing.get();
@@ -247,7 +253,7 @@ public class AiGradingService {
     }
 
     private void settleQuota(Map<String, Object> job, boolean success) {
-        if (flag(job, "quota_reserved")) repository.settleQuota(success ? 1 : 0, number(job, "organization_id"));
+        if (flag(job, "quota_reserved") && !entitlements.settleAi("grading",number(job,"id"),success)) repository.settleQuota(success ? 1 : 0, number(job, "organization_id"));
     }
 
     private Map<String, Object> safe(Map<String, Object> job) {

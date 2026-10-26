@@ -21,8 +21,9 @@ public class AssignmentService {
     private final WorkspaceAudit audit;
     private final CodeRateLimiter codeLimiter;
     private final AssignmentDeletionService deletion;
+    private final TeacherEntitlementService entitlements;
     private final Clock clock;private final NotificationService notifications;private final boolean mobileValidated;private final AssessmentService assessments;
-    public AssignmentService(AssignmentRepository repository,WorkspaceJson json,OrganizationService organizations,WorkspaceCrypto crypto,WorkspaceAudit audit,Clock clock,NotificationService notifications,CodeRateLimiter codeLimiter,AssessmentService assessments,AssignmentDeletionService deletion,@org.springframework.beans.factory.annotation.Value("${app.exam.mobile-validated:false}") boolean mobileValidated) {this.repository=repository;this.json=json;this.organizations=organizations;this.crypto=crypto;this.audit=audit;this.clock=clock;this.notifications=notifications;this.codeLimiter=codeLimiter;this.assessments=assessments;this.deletion=deletion;this.mobileValidated=mobileValidated;}
+    public AssignmentService(AssignmentRepository repository,WorkspaceJson json,OrganizationService organizations,WorkspaceCrypto crypto,WorkspaceAudit audit,Clock clock,NotificationService notifications,CodeRateLimiter codeLimiter,AssessmentService assessments,AssignmentDeletionService deletion,TeacherEntitlementService entitlements,@org.springframework.beans.factory.annotation.Value("${app.exam.mobile-validated:false}") boolean mobileValidated) {this.repository=repository;this.json=json;this.organizations=organizations;this.crypto=crypto;this.audit=audit;this.clock=clock;this.notifications=notifications;this.codeLimiter=codeLimiter;this.assessments=assessments;this.deletion=deletion;this.entitlements=entitlements;this.mobileValidated=mobileValidated;}
     public Map<String,Object> teacherAccess(OrgAccess.Scope scope,long id,boolean lock) {
         var assignment=repository.findAssignment(scope.organizationId(), id, lock);
         if(number(assignment,"teacher_id")!=scope.userId() && repository.countSharedTeacher(scope.organizationId(), id, scope.userId())==0) throw WorkspaceError.forbidden();
@@ -87,6 +88,8 @@ public class AssignmentService {
             throw WorkspaceError.validation("Тестът може да се възлага само на групи. Изберете поне една група.");
         if(!scope.platform()) organizations.requirePaid(scope.organizationId());
         if(request.startsAt()==null || request.endsAt()==null || !request.startsAt().isBefore(request.endsAt()) || !clock.instant().isBefore(request.endsAt()) || request.maxAttempts()<1 || request.maxAttempts()>20) throw WorkspaceError.validation("Невалиден период или брой опити.");
+        entitlements.requireAssignmentCapacity(scope,-1);
+        if(request.autoAiGrading()) entitlements.requireAutomaticGrading(scope);
         var version=repository.requireAssignableVersion(scope.organizationId(), request.versionId());
         if(!flag(version,"shared") && number(version,"owner_id")!=scope.userId() || string(version,"status").equals("archived")) throw WorkspaceError.forbidden();
         if(scope.platform()) organizations.requireActiveMember(scope,scope.userId(),"TEACHER");
@@ -125,6 +128,7 @@ public class AssignmentService {
         if(request==null || request.shuffleQuestions()==null || request.shuffleOptions()==null || request.answersAfterDeadline()==null || request.autoAiGrading()==null) throw WorkspaceError.validation("Попълнете всички настройки на възлагането.");
         organizations.requireActiveMember(scope,scope.userId(),"TEACHER");
         teacherAccess(scope,id,false);
+        if(request.autoAiGrading()) entitlements.requireAutomaticGrading(scope);
         // Match exam-start lock ordering. Existing attempt snapshots stay unchanged.
         repository.lockRecipientIds(scope.organizationId(),id);
         var previous=teacherAccess(scope,id,true);
@@ -138,12 +142,13 @@ public class AssignmentService {
         var assignment=teacherAccess(scope,id,false);
         assessments.updateMobileMode(scope,number(assignment,"assessment_id"),request);
     }
-    @Transactional
+    @Transactional(isolation=Isolation.READ_COMMITTED)
     public void updateSchedule(OrgAccess.Scope scope,long id,ScheduleRequest request) {
-        teacherAccess(scope,id,false);
+        var original=teacherAccess(scope,id,false);
         if(request.startsAt()==null || request.endsAt()==null || !request.startsAt().isBefore(request.endsAt()))
             throw WorkspaceError.validation("Крайният срок трябва да е след началото.");
         if(!clock.instant().isBefore(request.endsAt())) throw WorkspaceError.validation("Крайният срок трябва да е в бъдещето.");
+        if(!clock.instant().isBefore(time(original,"ends_at"))) entitlements.requireAssignmentCapacity(scope,id);
         // Serialize with exam start using recipient -> assignment -> attempt lock order.
         repository.lockRecipientIds(scope.organizationId(),id);
         var assignment=teacherAccess(scope,id,true);

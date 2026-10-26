@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, ArrowUpRight, BookOpen, ClipboardList, GraduationCap, LayoutDashboard, LogOut, Shield, UserRound, Users } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, BookOpen, ClipboardList, CreditCard, GraduationCap, LayoutDashboard, LogOut, Shield, UserRound, Users } from 'lucide-react'
 import type { AuthResponse } from '../types/models'
 import { roleLabels } from '../api/access'
 import { AdminPanel } from '../components/AdminPanel'
@@ -12,6 +12,7 @@ import { GroupsPanel } from './GroupsPanel'
 import { AssignmentsPanel } from './AssignmentsPanel'
 import { AssignmentParticipantsPage } from './AssignmentParticipantsPage'
 import { GradingPanel } from './GradingPanel'
+import { BillingPanel } from './BillingPanel'
 import { LearnerPanel } from './StudentPanel'
 import { ResultReviewPage } from './ResultReviewPage'
 import { ExamScreen } from './ExamScreen'
@@ -20,7 +21,7 @@ import { Feedback, Panel, SectionHead } from './ui'
 import './workspace.css'
 import { ThemeToggle } from '../components/ThemeToggle'
 
-type View = 'dashboard' | 'groups' | 'tests' | 'assignments' | 'grading' | 'learner' | 'profile' | 'admin'
+type View = 'dashboard' | 'groups' | 'tests' | 'assignments' | 'grading' | 'billing' | 'learner' | 'profile' | 'admin'
 
 type WorkspaceScreen = { view: View; participants: number | null; result: number | null }
 
@@ -29,11 +30,12 @@ function workspaceLocation(fallback: View): WorkspaceScreen {
   const match = path.match(/^\/assignments\/([1-9][0-9]{0,14})\/participants$/)
   if (match) return { view: 'assignments', participants: Number(match[1]), result: null }
   if (path === '/assignments') return { view: 'assignments', participants: null, result: null }
+  if (path === '/billing') return { view: 'billing', participants: null, result: null }
   const resultMatch = path.match(/^\/results\/([1-9][0-9]{0,14})$/)
   if (resultMatch) return { view: 'learner', participants: null, result: Number(resultMatch[1]) }
   if (path.startsWith('/verify-email')) return { view: 'profile', participants: null, result: null }
   const view = history.state?.examaiView
-  return { view: ['dashboard', 'groups', 'tests', 'assignments', 'grading', 'learner', 'profile', 'admin'].includes(view) ? view : fallback, participants: null, result: null }
+  return { view: ['dashboard', 'groups', 'tests', 'assignments', 'grading', 'billing', 'learner', 'profile', 'admin'].includes(view) ? view : fallback, participants: null, result: null }
 }
 
 export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: AuthResponse; logout: () => Promise<void>; onAuth: (auth: AuthResponse) => void; refreshProfile: () => Promise<void> }) {
@@ -47,7 +49,7 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
     return () => window.removeEventListener('popstate', changed)
   }, [admin])
   function navigate(next: View, participants: number | null = null) {
-    const path = next === 'assignments' ? participants === null ? '/assignments' : `/assignments/${participants}/participants` : '/'
+    const path = next === 'assignments' ? participants === null ? '/assignments' : `/assignments/${participants}/participants` : next === 'billing' ? '/billing' : '/'
     if (window.location.pathname !== path || view !== next) history.pushState({ examaiView: next }, '', path)
     setScreen({ view: next, participants, result: null })
     window.scrollTo({ top: 0 })
@@ -62,7 +64,7 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null)
   const available: { key: View; name: string; icon: typeof Users }[] = [
     ...(!admin ? [{ key: 'dashboard' as View, name: 'Табло', icon: LayoutDashboard }, { key: 'groups' as View, name: 'Групи', icon: Users }] : []),
-    ...(teacher ? [{ key: 'tests' as View, name: 'Тестове', icon: BookOpen }, { key: 'assignments' as View, name: 'Възлагания', icon: ClipboardList }, { key: 'grading' as View, name: 'Проверка', icon: GraduationCap }] : []),
+    ...(teacher ? [{ key: 'tests' as View, name: 'Тестове', icon: BookOpen }, { key: 'assignments' as View, name: 'Възлагания', icon: ClipboardList }, { key: 'grading' as View, name: 'Проверка', icon: GraduationCap }, { key: 'billing' as View, name: 'Абонамент', icon: CreditCard }] : []),
     ...(student ? [{ key: 'learner' as View, name: 'Моите тестове', icon: ClipboardList }] : []),
     ...(admin ? [{ key: 'admin' as View, name: 'Администрация', icon: Shield }] : []),
     { key: 'profile', name: 'Профил', icon: UserRound },
@@ -82,6 +84,7 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
         ? <AssignmentsPanel api={api} userId={auth.user.id} openParticipants={id => navigate('assignments', id)} />
         : <AssignmentParticipantsPage key={screen.participants} api={api} id={screen.participants} back={() => navigate('assignments')} />)}
       {actualView === 'grading' && <GradingPanel api={api} />}
+      {actualView === 'billing' && <BillingPanel key={window.location.search} api={api} checkout={new URLSearchParams(window.location.search).get('checkout')} />}
       {actualView === 'learner' && (screen.result === null
         ? <LearnerPanel api={api} openResult={openResult} begin={(assignment, attempt) => setExam({ assignment, attempt })} />
         : <ResultReviewPage key={screen.result} api={api} attempt={screen.result} back={() => navigate('learner')} />)}

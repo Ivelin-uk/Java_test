@@ -2,7 +2,7 @@
 
 ## Safety Defaults
 
-No live Stripe keys are accepted. Demo seeds never send external student mail. The SMTP adapter permits only explicitly configured recipient domains; the defaults are `example.test`, `quicktest.local`, `examai.local`. Provider credentials stay in server environment variables or ignored local configuration, never `VITE_*` values. Local fixtures and fake AI are not evidence of external-provider verification.
+Stripe defaults to test mode; live mode requires explicit separate configuration and matching live keys, prices and webhook endpoint. The initial rollout is test-only, with prices still to be chosen. Demo seeds never send external student mail. The SMTP adapter permits only explicitly configured recipient domains; the defaults are `example.test`, `quicktest.local`, `examai.local`. Provider credentials stay in server environment variables or ignored local configuration, never `VITE_*` values. Local fixtures and fake AI are not evidence of external-provider verification.
 
 ## Google OIDC
 
@@ -32,35 +32,30 @@ Google identity is keyed by `(provider, subject)`. Matching a local email never 
 
 The Google email and notification email are separate. Changing the notification address preserves the existing verified address until the new one is verified. Google client configuration and a real consent/callback test are still required. Reference: [Google OpenID Connect](https://developers.google.com/identity/openid-connect/openid-connect).
 
-## Stripe Test
+## Stripe Teacher Subscriptions
 
-Use only test-mode products/prices and keys:
+Free and Pro belong to an individual teacher. Students do not pay and are not billable seats. Team/school billing is outside the current integration. The complete setup, local verification and future live rollout are in [Stripe and Railway](STRIPE_RAILWAY.md).
+
+Set only on the backend:
 
 ```dotenv
+STRIPE_MODE=test
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
+STRIPE_PRO_MONTH_PRICE_ID=
+STRIPE_PRO_YEAR_PRICE_ID=
 BILLING_FIXTURES=false
 ```
 
-Map test `price_*` IDs to each plan's month/year prices in the platform plan editor. Enable the test customer portal with approved test plans and invoices. The organization administrator initiates Checkout; an existing Stripe subscription is managed through its server-authorized customer portal, including cancellation and payment documents. No card data is stored by ExamAI.
+Create one Pro product with fixed monthly and yearly recurring prices in the same Stripe test environment, then set the two `price_*` IDs above. Configure Customer Portal for payment methods, invoices and cancellation at period end. No amount or currency is hard-coded. With missing keys/prices, Checkout stays unavailable. Card data is entered on Stripe's hosted page, not stored by ExamAI. [Stripe Checkout subscriptions](https://docs.stripe.com/payments/checkout/build-subscriptions), [Customer Portal](https://docs.stripe.com/customer-management/integrate-customer-portal).
 
-Forward webhooks locally using the Stripe CLI:
+Authenticated teachers use `GET /api/v1/billing`, `POST /api/v1/billing/checkout` and `POST /api/v1/billing/portal`. The backend chooses the customer and permits only its configured month/year prices; the browser cannot select someone else's subscription. `/billing?checkout=success` does not grant Pro. Entitlements are based on the stored, verified paid interval.
 
-```bash
-stripe listen --forward-to http://localhost:8080/api/v1/billing/webhook
-```
+Register a public HTTPS **snapshot** endpoint at `/api/v1/billing/webhook`, API version `2026-08-26.dahlia` for the currently pinned `stripe-java:33.4.1`. Subscribe to `checkout.session.completed`, `checkout.session.expired`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid` and `invoice.payment_failed`. It uses the unmodified request body and `Stripe-Signature`, without Bearer authentication. The signing secret belongs to that exact endpoint and mode. [Stripe webhooks](https://docs.stripe.com/webhooks).
 
-Configure the returned `whsec_*` in the backend environment and restart it. Supported events: `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`. The adapter verifies the signature against the unmodified body, rejects live events, deduplicates event IDs, checks the checkout's server-owned organization metadata, locks the organization and retrieves current provider state rather than trusting event order. Only known test price mappings and one automatic-charge organizational subscription are accepted. A success-page redirect has no activation endpoint.
+Locally, run `stripe listen --forward-to http://localhost:8080/api/v1/billing/webhook`, put its returned `whsec_*` in the backend environment and restart. Compose uses port `8082`. Create the Checkout through ExamAI so its metadata and request binding exist. Repeated event IDs are deduplicated; current provider state is retrieved under an account lock so delayed and same-second events do not depend on delivery order. Paid invoice data must match the teacher's bound subscription and allowed price before extending access. A failed payment or a subscription status change alone never grants an unpaid renewal. [Subscription webhooks](https://docs.stripe.com/billing/subscriptions/webhooks).
 
-Exercise creation, duplicate delivery, same-second events, delayed older updates, past_due, downgrade and cancellation. Verify that cancellation preserves paid access through the stored interval, downgrade never deletes data, and expiration does not prevent completing/reviewing an existing attempt. [Webhooks](https://docs.stripe.com/webhooks), [subscription object](https://docs.stripe.com/api/subscriptions/object), [customer portal](https://docs.stripe.com/api/customer_portal/sessions/create).
-
-Without keys, `BILLING_FIXTURES=true` enables an explicitly labeled **local test fixture** endpoint for the platform administrator only. It is disabled when Stripe is configured and refused by the production guard. Example body for `/api/v1/platform/organizations/{id}/billing-fixtures`:
-
-```json
-{"eventId":"local-fixture-unique-id","providerTimestamp":1,"snapshot":{"planId":1,"status":"active","periodStart":"2026-10-06T00:00:00Z","paidThrough":"2026-11-06T00:00:00Z","cancelAtPeriodEnd":false}}
-```
-
-Use actual IDs from your own demo database. Fixture ordering/signature-unit tests are checked, but do not prove real Stripe delivery. Live payment support is deliberately unavailable.
+Exercise duplicate/delayed delivery, incomplete Checkout, failed renewal, cancellation and paid-through expiry. Existing data, attempts and results survive a return to Free; create/AI limits are enforced by services. Pro has a monthly UTC AI quota even with yearly billing. Switching to live later requires `STRIPE_MODE=live` and separate matching keys/prices/webhook plus a separate database; do not mix test and live bindings. The legacy organization billing adapter and fixtures remain for compatibility/tests and are not the personal teacher checkout flow. `BILLING_FIXTURES` stays false and the production guard refuses it. Local tests do not prove real provider delivery or live charging.
 
 ## SMTP And Mail Catcher
 

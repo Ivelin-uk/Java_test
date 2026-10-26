@@ -24,8 +24,8 @@ public class WorkspaceAiService {
     private static final Logger log=LoggerFactory.getLogger(WorkspaceAiService.class);
     private final WorkspaceAiRepository repository;private final AiProvider provider;private final OrganizationService organizations;
     private final AssessmentService assessments;private final TransactionTemplate transactions;private final Clock clock;private final boolean workers;
-    private final PrivateImageService images;
-    public WorkspaceAiService(WorkspaceAiRepository repository,WorkspaceJson json,AiProvider provider,OrganizationService organizations,AssessmentService assessments,TransactionTemplate transactions,Clock clock,PrivateImageService images,@Value("${app.workspace.workers:true}") boolean workers) {this.repository=repository;this.json=json;this.provider=provider;this.organizations=organizations;this.assessments=assessments;this.transactions=transactions;this.clock=clock;this.images=images;this.workers=workers;}
+    private final PrivateImageService images;private final TeacherEntitlementService entitlements;
+    public WorkspaceAiService(WorkspaceAiRepository repository,WorkspaceJson json,AiProvider provider,OrganizationService organizations,AssessmentService assessments,TransactionTemplate transactions,Clock clock,PrivateImageService images,TeacherEntitlementService entitlements,@Value("${app.workspace.workers:true}") boolean workers) {this.repository=repository;this.json=json;this.provider=provider;this.organizations=organizations;this.assessments=assessments;this.transactions=transactions;this.clock=clock;this.images=images;this.entitlements=entitlements;this.workers=workers;}
     @Transactional
     public Map<String,Object> enqueue(OrgAccess.Scope scope,Generate request) {
         if(request.topic()==null || request.topic().isBlank() || request.topic().length()>500 || request.sourceText()!=null && request.sourceText().length()>SourceMaterialService.MAX_TEXT_LENGTH || request.questionCount()<1 || request.questionCount()>20 || request.requestKey()==null || !request.requestKey().matches("[A-Za-z0-9_-]{8,80}") || !Set.of("EASY","MEDIUM","HARD","VERY_HARD","MIXED").contains(request.difficulty()) || request.language()==null || request.language().length()>80 || request.subject()!=null && request.subject().length()>190 || request.level()!=null && request.level().length()>190) throw WorkspaceError.validation("Невалидна AI заявка.");
@@ -36,8 +36,8 @@ public class WorkspaceAiService {
         if(request.difficultyCounts()!=null && (!Set.of("EASY","MEDIUM","HARD","VERY_HARD").containsAll(request.difficultyCounts().keySet()) || request.difficultyCounts().values().stream().anyMatch(n->n==null || n<0 || n>20) || request.difficultyCounts().values().stream().mapToInt(Integer::intValue).sum()!=request.questionCount())) throw WorkspaceError.validation("Сумата по трудност трябва да е равна на броя въпроси.");
         organizations.lockQuota(scope.organizationId());
         var existing=repository.findPreviousJob(scope.organizationId(), scope.userId(), request.requestKey());if(existing.isPresent()) {if(!json.parse(existing.get().get("request_json"),Generate.class).equals(request)) throw WorkspaceError.conflict("Ключът е използван за друга AI заявка.");return existing.get();}
-        reserve(scope);
-        long id=repository.insertJob(scope.organizationId(), scope.userId(), request.requestKey(), json.write(request), clock.instant(), clock.instant());return get(scope,id);
+        if(!entitlements.applies(scope)) reserve(scope);
+        long id=repository.insertJob(scope.organizationId(), scope.userId(), request.requestKey(), json.write(request), clock.instant(), clock.instant());if(entitlements.applies(scope)) entitlements.reserveAi(scope,"generation",id);return get(scope,id);
     }
     private void reserve(OrgAccess.Scope scope) {
         long org=scope.organizationId();
@@ -50,7 +50,7 @@ public class WorkspaceAiService {
     public Map<String,Object> retry(OrgAccess.Scope scope,long id) {
         organizations.lockQuota(scope.organizationId());var job=get(scope,id);
         if(!string(job,"status").equals("failed") || number(job,"attempts")>=3) throw WorkspaceError.conflict("Не може да се повтори тази заявка.");
-        reserve(scope);repository.requeueJob(clock.instant(), scope.organizationId(), id);return get(scope,id);
+        if(entitlements.applies(scope)) entitlements.reserveAi(scope,"generation",id);else reserve(scope);repository.requeueJob(clock.instant(), scope.organizationId(), id);return get(scope,id);
     }
     @Scheduled(fixedDelay=1000)
     public void process() {
@@ -101,7 +101,7 @@ public class WorkspaceAiService {
     }
     private void completeGeneration(long org,long id,long lease,long owner,AssessmentService.Definition definition,AiProvider.GeneratedTest generated,List<AiProvider.GeneratedImage> illustrated) {
         transactions.executeWithoutResult(tx->{
-            organizations.lockQuota(org);var job=repository.lockJob(org,id);
+            organizations.lockQuota(org);entitlements.lockAi("generation",id);var job=repository.lockJob(org,id);
             if(!string(job,"status").equals("running") || number(job,"attempts")!=lease) return;
             var questions=new ArrayList<>(definition.questions());
             var scope=new OrgAccess.Scope(org,owner,Set.of("TEACHER"));
@@ -114,15 +114,15 @@ public class WorkspaceAiService {
             String serialized=json.write(Map.of("definition",result,"model",generated.model(),"inputTokens",generated.inputTokens(),"outputTokens",generated.outputTokens(),
                     "imageModels",illustrated.stream().map(AiProvider.GeneratedImage::model).toList(),"imageInputTokens",illustrated.stream().mapToLong(AiProvider.GeneratedImage::inputTokens).sum(),"imageOutputTokens",illustrated.stream().mapToLong(AiProvider.GeneratedImage::outputTokens).sum()));
             repository.completeJob("completed",serialized,null,clock.instant(),org,id);
-            repository.settleQuota(1,org);
+            if(!entitlements.settleAi("generation",id,true)) repository.settleQuota(1,org);
         });
     }
     private void complete(long org,long id,long lease,String result,String error) {
         transactions.executeWithoutResult(tx->{
-            organizations.lockQuota(org);var job=repository.lockJob(org, id);
+            organizations.lockQuota(org);entitlements.lockAi("generation",id);var job=repository.lockJob(org, id);
             if(!string(job,"status").equals("running") || number(job,"attempts")!=lease) return;
             repository.completeJob(error==null?"completed":"failed", result, error, clock.instant(), org, id);
-            repository.settleQuota(error==null?1:0, org);
+            if(!entitlements.settleAi("generation",id,error==null)) repository.settleQuota(error==null?1:0, org);
         });
     }
     public record Generate(String requestKey,String topic,String subject,String level,String language,int questionCount,String difficulty,String sourceText,List<String> questionTypes,Map<String,Integer> difficultyCounts,String additionalInformation,@JsonSetter(nulls=Nulls.AS_EMPTY) int imageCount,@JsonSetter(nulls=Nulls.AS_EMPTY) boolean sourceOnly) {
