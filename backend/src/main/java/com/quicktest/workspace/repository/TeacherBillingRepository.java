@@ -11,6 +11,9 @@ public class TeacherBillingRepository {
     public TeacherBillingRepository(WorkspaceStore store) {this.store=store;}
     public Map<String,Object> lockTeacher(long user) {return store.one("SELECT u.id,p.organization_id FROM users u JOIN personal_workspaces p ON p.user_id=u.id WHERE u.id=? AND u.role='TEACHER' AND u.active=true FOR UPDATE",user);}
     public Optional<Map<String,Object>> findByUserId(long user) {return store.optional("SELECT * FROM teacher_billing_accounts WHERE user_id=?",user);}
+    public List<Map<String,Object>> findTeacherPlansForAdmin() {
+        return store.rows("SELECT u.id user_id,a.provider_status,a.stripe_mode,a.billing_period,a.paid_through,a.cancel_at_period_end FROM users u LEFT JOIN teacher_billing_accounts a ON a.user_id=u.id WHERE u.role='TEACHER' ORDER BY u.id");
+    }
     public void create(long user,long workspace,String mode,Instant now) {store.update("INSERT INTO teacher_billing_accounts(user_id,workspace_id,stripe_mode,updated_at) VALUES(?,?,?,?)",user,workspace,mode,now);}
     public Optional<Map<String,Object>> findCheckout(long user,String key) {return store.optional("SELECT * FROM teacher_checkout_requests WHERE user_id=? AND request_key=?",user,key);}
     public Optional<Map<String,Object>> pendingCheckout(long user) {return store.optional("SELECT * FROM teacher_checkout_requests WHERE user_id=? AND status='pending' ORDER BY created_at DESC LIMIT 1",user);}
@@ -19,5 +22,5 @@ public class TeacherBillingRepository {
     public void finishCheckout(long user,String key,String status) {store.update("UPDATE teacher_checkout_requests SET status=? WHERE user_id=? AND request_key=?",status,user,key);}
     public boolean seenEvent(String id) {return store.count("SELECT COUNT(*) FROM teacher_billing_events WHERE event_id=?",id)>0;}
     public void recordEvent(String id,long user,String type,long created,Instant now) {store.update("INSERT INTO teacher_billing_events(event_id,user_id,event_type,provider_timestamp,created_at) VALUES(?,?,?,?,?)",id,user,type,created,now);}
-    public void update(long user,String customer,String subscription,String status,Instant through,boolean cancel,Instant now) {store.update("UPDATE teacher_billing_accounts SET stripe_customer_id=?,stripe_subscription_id=?,provider_status=?,paid_through=?,cancel_at_period_end=?,updated_at=? WHERE user_id=?",customer,subscription,status,through,cancel,now,user);}
+    public void update(long user,String customer,String subscription,String status,String period,Instant through,boolean cancel,Instant now) {store.update("UPDATE teacher_billing_accounts SET stripe_customer_id=?,stripe_subscription_id=?,provider_status=?,billing_period=?,paid_through=?,cancel_at_period_end=?,updated_at=? WHERE user_id=?",customer,subscription,status,period,through,cancel,now,user);}
 }

@@ -20,6 +20,8 @@ public class AssignmentDeletionService {
     @Transactional(propagation=Propagation.MANDATORY)
     public void removeLocked(long org,Map<String,Object> assignment,long actor) {
         long id=number(assignment,"id");
+        if(repository.lockAssignmentNotifications(org,id).stream().anyMatch(n->string(n,"status").equals("processing"))) throw WorkspaceError.conflict("Изчакайте текущата доставка на известие и опитайте отново.");
+        repository.deleteAssignmentNotifications(org,id);
         var attempts=repository.lockAttemptIds(org,id);
         removeAttempts(org,attempts);
         repository.deleteCodeDeliveries(org,id);
@@ -31,6 +33,8 @@ public class AssignmentDeletionService {
 
     @Transactional(propagation=Propagation.MANDATORY)
     public void removeRecipientLocked(long org,long assignment,long student) {
+        if(repository.lockRecipientAssignmentNotifications(org,assignment,student).stream().anyMatch(n->string(n,"status").equals("processing"))) throw WorkspaceError.conflict("Изчакайте текущата доставка на известие и опитайте отново.");
+        repository.deleteRecipientAssignmentNotifications(org,assignment,student);
         removeAttempts(org,repository.lockStudentAttempts(org,assignment,student));
         repository.deleteRecipientCodeDeliveries(org,assignment,student);
         repository.deleteRecipient(org,assignment,student);

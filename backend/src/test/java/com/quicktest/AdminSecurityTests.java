@@ -70,6 +70,7 @@ class AdminSecurityTests {
         Session student = session(Role.STUDENT);
         for (Session actor : List.of(teacher, student)) {
             call(get("/api/admin/users"), actor.token, null, 403);
+            call(get("/api/admin/teacher-billing"), actor.token, null, 403);
             call(post("/api/admin/users"), actor.token, edit(actor.user), 403);
             call(put("/api/admin/users/" + actor.user.getId()), actor.token, edit(actor.user), 403);
             call(put("/api/admin/users/" + actor.user.getId() + "/role"), actor.token, new AdminService.RoleEdit(Role.ADMIN), 403);
@@ -80,6 +81,7 @@ class AdminSecurityTests {
             call(get("/api/admin/audit"), actor.token, null, 403);
         }
         call(get("/api/admin/users"), null, null, 401);
+        call(get("/api/admin/teacher-billing"), null, null, 401);
         call(put("/api/admin/users/" + teacher.user.getId() + "/role"), null, new AdminService.RoleEdit(Role.ADMIN), 401);
         call(delete("/api/admin/users/" + teacher.user.getId()), null, Map.of("password", "password123"), 401);
         call(get("/api/public/tests/unknown"), null, null, 401);

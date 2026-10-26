@@ -49,8 +49,9 @@ try {
       return route.fulfill({ status: 404 })
     })
     try {
-      await page.goto(frontend)
-      await page.getByRole('button', { name: 'Моите тестове', exact: true }).click()
+      const directAssignmentLink = viewport.width === 1440 && viewport.theme === 'dark'
+      await page.goto(directAssignmentLink ? `${frontend}/learner/assignments/301` : frontend)
+      if (!directAssignmentLink) await page.getByRole('button', { name: 'Моите тестове', exact: true }).click()
       const table = page.getByRole('table', { name: 'Опити и резултати', exact: true })
       const best = page.getByRole('region', { name: 'Най-високи резултати', exact: true })
       const primary = best.locator('article').nth(0)
@@ -60,6 +61,10 @@ try {
       await secondary.getByText('95.00%', { exact: true }).waitFor()
       const assigned = page.getByRole('table', { name: 'Възложени тестове', exact: true })
       const availability = assigned.locator('tbody tr')
+      if (directAssignmentLink) {
+        assert.equal(new URL(page.url()).pathname, '/learner/assignments/301')
+        await page.locator('#learner-assignment-301').waitFor()
+      }
       for (const position of [0, 1]) {
         const firstCell = availability.nth(position).getByRole('cell').first()
         assert.equal(await firstCell.getByText(title, { exact: true }).count(), 1)

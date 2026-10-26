@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Play, RotateCw, FileCheck, Clock3, CircleCheck, CircleX } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
@@ -6,13 +6,14 @@ import type { Assignment, Attempt, Result } from './types'
 import { date, label } from './types'
 import { Empty, Feedback, Panel, SectionHead, TableContainer } from './ui'
 
-export function LearnerPanel({ api, begin, openResult, groupId }: { api: WorkspaceApi; openResult: (attempt: number) => void; begin: (assignment: number, attempt?: number) => void; groupId?: number }) {
+export function LearnerPanel({ api, begin, openResult, groupId, focusAssignment }: { api: WorkspaceApi; openResult: (attempt: number) => void; begin: (assignment: number, attempt?: number) => void; groupId?: number; focusAssignment?: number }) {
   const assignments = useRemote<Assignment[]>(api, groupId === undefined ? '/assignments' : `/groups/${groupId}/assignments`, [])
   const attempts = useRemote<Attempt[]>(api, '/attempts', [])
   const results = useRemote<Result[]>(api, '/results', [])
   const action = useAction()
   const [pollError, setPollError] = useState('')
   const [now, setNow] = useState(Date.now)
+  const focusedAssignment = useRef<number | null>(null)
   const reloadAssignments = assignments.reload
   const reloadAttempts = attempts.reload
   const reloadResults = results.reload
@@ -49,6 +50,12 @@ export function LearnerPanel({ api, begin, openResult, groupId }: { api: Workspa
       window.removeEventListener('online', resume)
     }
   }, [reloadAssignments, reloadAttempts, reloadResults])
+  useEffect(() => {
+    if (!focusAssignment || assignments.loading || focusedAssignment.current === focusAssignment) return
+    if (!assignments.data.some(assignment => assignment.id === focusAssignment)) return
+    focusedAssignment.current = focusAssignment
+    document.getElementById(`learner-assignment-${focusAssignment}`)?.scrollIntoView({ block: 'center' })
+  }, [assignments.data, assignments.loading, focusAssignment])
   const assignmentIds = new Set(assignments.data.map(assignment => assignment.id))
   const visibleAttempts = groupId === undefined ? attempts.data : attempts.data.filter(attempt => assignmentIds.has(attempt.assignment_id))
   const visibleResults = groupId === undefined ? results.data : results.data.filter(result => assignmentIds.has(result.assignment_id))
@@ -74,7 +81,7 @@ export function LearnerPanel({ api, begin, openResult, groupId }: { api: Workspa
       const availability = a.canceled ? 'canceled' : new Date(a.ends_at).getTime() <= now ? 'expired' : new Date(a.starts_at).getTime() > now ? 'upcoming' : 'active'
       const availabilityLabel = { active: 'Активен', expired: 'Срокът е изтекъл', upcoming: 'Предстоящ', canceled: 'Отменен' }[availability]
       const AvailabilityIcon = availability === 'active' ? Play : availability === 'canceled' ? CircleX : Clock3
-      return <tr key={a.id} className={`ws-assignment-${availability}`}><td><div>{a.title}</div>{a.teacher_name && <small className="ws-assignment-teacher">Възложил: {a.teacher_name}</small>}</td><td><span className="ws-assignment-availability"><AvailabilityIcon size={16} aria-hidden="true" /><span>{availabilityLabel}</span></span></td><td>{date(a.starts_at)}</td><td>{date(a.ends_at)}</td><td>{assignedAttempts.length}/{a.max_attempts}</td><td>{result ? label(result.grade) + ' · опит ' + result.attempt_number : '-'}</td><td><button className="command-button" disabled={attempts.loading || !!attempts.error || !!a.canceled || !active && (exhausted || new Date(a.ends_at).getTime() <= now)} onClick={() => begin(a.id, active?.id)}><Play size={17} /> {active ? 'Продължи' : exhausted ? 'Няма оставащи опити' : 'Подготовка'}</button></td></tr>
+      return <tr id={`learner-assignment-${a.id}`} key={a.id} className={`ws-assignment-${availability}`}><td><div>{a.title}</div>{a.teacher_name && <small className="ws-assignment-teacher">Възложил: {a.teacher_name}</small>}</td><td><span className="ws-assignment-availability"><AvailabilityIcon size={16} aria-hidden="true" /><span>{availabilityLabel}</span></span></td><td>{date(a.starts_at)}</td><td>{date(a.ends_at)}</td><td>{assignedAttempts.length}/{a.max_attempts}</td><td>{result ? label(result.grade) + ' · опит ' + result.attempt_number : '-'}</td><td><button className="command-button" disabled={attempts.loading || !!attempts.error || !!a.canceled || !active && (exhausted || new Date(a.ends_at).getTime() <= now)} onClick={() => begin(a.id, active?.id)}><Play size={17} /> {active ? 'Продължи' : exhausted ? 'Няма оставащи опити' : 'Подготовка'}</button></td></tr>
     })}</tbody></table></TableContainer>{!assignments.data.length && !assignments.loading && <Empty>Нямате възложени тестове.</Empty>}
     </Panel>
     <section className="ws-best-results" aria-label="Най-високи резултати"><h3>Най-висок резултат</h3>{[...summary.values()].map(result => <article className="ws-best-result" key={result.assignment_id}>

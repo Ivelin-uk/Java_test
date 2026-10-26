@@ -23,19 +23,21 @@ import { ThemeToggle } from '../components/ThemeToggle'
 
 type View = 'dashboard' | 'groups' | 'tests' | 'assignments' | 'grading' | 'billing' | 'learner' | 'profile' | 'admin'
 
-type WorkspaceScreen = { view: View; participants: number | null; result: number | null }
+type WorkspaceScreen = { view: View; participants: number | null; result: number | null; assignment: number | null }
 
 function workspaceLocation(fallback: View): WorkspaceScreen {
   const path = window.location.pathname
   const match = path.match(/^\/assignments\/([1-9][0-9]{0,14})\/participants$/)
-  if (match) return { view: 'assignments', participants: Number(match[1]), result: null }
-  if (path === '/assignments') return { view: 'assignments', participants: null, result: null }
-  if (path === '/billing') return { view: 'billing', participants: null, result: null }
+  if (match) return { view: 'assignments', participants: Number(match[1]), result: null, assignment: null }
+  if (path === '/assignments') return { view: 'assignments', participants: null, result: null, assignment: null }
+  if (path === '/billing') return { view: 'billing', participants: null, result: null, assignment: null }
+  const assignmentMatch = path.match(/^\/learner\/assignments\/([1-9][0-9]{0,17})$/)
+  if (assignmentMatch) return { view: 'learner', participants: null, result: null, assignment: Number(assignmentMatch[1]) }
   const resultMatch = path.match(/^\/results\/([1-9][0-9]{0,14})$/)
-  if (resultMatch) return { view: 'learner', participants: null, result: Number(resultMatch[1]) }
-  if (path.startsWith('/verify-email')) return { view: 'profile', participants: null, result: null }
+  if (resultMatch) return { view: 'learner', participants: null, result: Number(resultMatch[1]), assignment: null }
+  if (path.startsWith('/verify-email')) return { view: 'profile', participants: null, result: null, assignment: null }
   const view = history.state?.examaiView
-  return { view: ['dashboard', 'groups', 'tests', 'assignments', 'grading', 'billing', 'learner', 'profile', 'admin'].includes(view) ? view : fallback, participants: null, result: null }
+  return { view: ['dashboard', 'groups', 'tests', 'assignments', 'grading', 'billing', 'learner', 'profile', 'admin'].includes(view) ? view : fallback, participants: null, result: null, assignment: null }
 }
 
 export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: AuthResponse; logout: () => Promise<void>; onAuth: (auth: AuthResponse) => void; refreshProfile: () => Promise<void> }) {
@@ -51,13 +53,13 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
   function navigate(next: View, participants: number | null = null) {
     const path = next === 'assignments' ? participants === null ? '/assignments' : `/assignments/${participants}/participants` : next === 'billing' ? '/billing' : '/'
     if (window.location.pathname !== path || view !== next) history.pushState({ examaiView: next }, '', path)
-    setScreen({ view: next, participants, result: null })
+    setScreen({ view: next, participants, result: null, assignment: null })
     window.scrollTo({ top: 0 })
   }
   function openResult(attempt: number) {
     const path = `/results/${attempt}`
     if (window.location.pathname !== path) history.pushState({ examaiView: 'learner' }, '', path)
-    setScreen({ view: 'learner', participants: null, result: attempt })
+    setScreen({ view: 'learner', participants: null, result: attempt, assignment: null })
     window.scrollTo({ top: 0 })
   }
   const [exam, setExam] = useState<{ assignment: number; attempt?: number; code?: string } | null>(null)
@@ -86,11 +88,11 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
       {actualView === 'grading' && <GradingPanel api={api} />}
       {actualView === 'billing' && <BillingPanel key={window.location.search} api={api} checkout={new URLSearchParams(window.location.search).get('checkout')} />}
       {actualView === 'learner' && (screen.result === null
-        ? <LearnerPanel api={api} openResult={openResult} begin={(assignment, attempt) => setExam({ assignment, attempt })} />
+        ? <LearnerPanel api={api} openResult={openResult} begin={(assignment, attempt) => setExam({ assignment, attempt })} focusAssignment={screen.assignment ?? undefined} />
         : <ResultReviewPage key={screen.result} api={api} attempt={screen.result} back={() => navigate('learner')} />)}
       {actualView === 'profile' && (window.location.pathname.startsWith('/verify-email')
         ? <NotificationEmailVerification api={api} back={() => navigate('profile')} />
-        : <WorkspaceProfile api={api} auth={auth} onAuth={onAuth} />)}
+        : <WorkspaceProfile api={api} auth={auth} onAuth={onAuth} onChangePlan={() => navigate('billing')} />)}
       {actualView === 'admin' && <section className="ws-section"><SectionHead title="Администрация" description="Управлявай потребителите и правата за достъп. В журнала можеш да проследиш направените промени." /><AdminPanel auth={auth} onProfileRefresh={refreshProfile} /></section>}
     </div>
   </main>

@@ -50,6 +50,14 @@ class ResendMailTests {
         assertTrue(sent.get("html").toString().contains("href=\"https://examai.up.railway.app/results/123\""));
         assertFalse(sent.get("html").toString().contains("<script>"));assertTrue(sent.get("html").toString().contains("&lt;script&gt;"));
     }
+    @Test void assignmentEmailContainsDirectStudentLinkAndEscapedMarkup() {
+        var content=MailContent.render(Map.of("notificationType","assignment_assigned","organization","Училище","test","Алгебра <script>","assignmentPath","/learner/assignments/123"),"https://examai.up.railway.app/");
+        assertEquals("ExamAI: Нов възложен тест — Алгебра <script>",content.subject());
+        assertTrue(content.text().contains("https://examai.up.railway.app/learner/assignments/123"));
+        assertTrue(content.html().contains("href=\"https://examai.up.railway.app/learner/assignments/123\""));
+        assertTrue(content.html().contains("&lt;script&gt;"));
+        assertFalse(content.html().contains("<script>"));
+    }
     @Test void providerRejectionsAreDistinguishedFromAmbiguousFailures() throws Exception {
         for(int status:List.of(400,401,403,422,429)) assertThrows(MailDeliveryRejected.class,()->new ResendMailClient(json,client(status,"secret provider error"),"fixture").send(1,"sender@example.test","student@example.test",MailContent.render(payload(),"https://example.test")));
         for(int status:List.of(409,500,503)) assertThrows(org.springframework.mail.MailSendException.class,()->new ResendMailClient(json,client(status,"secret provider error"),"fixture").send(1,"sender@example.test","student@example.test",MailContent.render(payload(),"https://example.test")));

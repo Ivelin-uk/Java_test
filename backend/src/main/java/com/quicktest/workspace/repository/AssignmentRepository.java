@@ -164,6 +164,18 @@ public class AssignmentRepository {
     public int deleteRecipientCodeDeliveries(long org,long assignment,long student) {
         return store.update("DELETE FROM assignment_code_deliveries WHERE organization_id=? AND assignment_id=? AND student_id=?",org,assignment,student);
     }
+    public List<Map<String,Object>> lockAssignmentNotifications(long org,long assignment) {
+        return store.rows("SELECT id,status FROM notification_outbox WHERE organization_id=? AND notification_type='assignment_assigned' AND payload_json LIKE ? ORDER BY id FOR UPDATE",org,"%\"assignmentPath\":\"/learner/assignments/"+assignment+"\"%");
+    }
+    public List<Map<String,Object>> lockRecipientAssignmentNotifications(long org,long assignment,long student) {
+        return store.rows("SELECT id,status FROM notification_outbox WHERE organization_id=? AND user_id=? AND notification_type='assignment_assigned' AND payload_json LIKE ? ORDER BY id FOR UPDATE",org,student,"%\"assignmentPath\":\"/learner/assignments/"+assignment+"\"%");
+    }
+    public int deleteAssignmentNotifications(long org,long assignment) {
+        return store.update("DELETE FROM notification_outbox WHERE organization_id=? AND notification_type='assignment_assigned' AND payload_json LIKE ?",org,"%\"assignmentPath\":\"/learner/assignments/"+assignment+"\"%");
+    }
+    public int deleteRecipientAssignmentNotifications(long org,long assignment,long student) {
+        return store.update("DELETE FROM notification_outbox WHERE organization_id=? AND user_id=? AND notification_type='assignment_assigned' AND payload_json LIKE ?",org,student,"%\"assignmentPath\":\"/learner/assignments/"+assignment+"\"%");
+    }
 
     public int deleteRecipient(long org,long assignment,long student) {
         return store.update("DELETE FROM assignment_recipients WHERE organization_id=? AND assignment_id=? AND student_id=?",org,assignment,student);

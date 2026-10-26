@@ -20,8 +20,9 @@ public class NotificationService {
     private final boolean workers;
     private final String adapter;
     private final MailGateway gateway;
-    public NotificationService(NotificationRepository repository,WorkspaceJson json,Clock clock,TransactionTemplate transactions,MailGateway gateway,@Value("${app.workspace.workers:true}") boolean workers,@Value("${app.mail.adapter:local}") String adapter) {
-        this.repository=repository;this.json=json;this.clock=clock;this.transactions=transactions;this.gateway=gateway;this.workers=workers;this.adapter=adapter;
+    private final String frontend;
+    public NotificationService(NotificationRepository repository,WorkspaceJson json,Clock clock,TransactionTemplate transactions,MailGateway gateway,@Value("${app.workspace.workers:true}") boolean workers,@Value("${app.mail.adapter:local}") String adapter,@Value("${app.frontend-url}") String frontend) {
+        this.repository=repository;this.json=json;this.clock=clock;this.transactions=transactions;this.gateway=gateway;this.workers=workers;this.adapter=adapter;this.frontend=frontend.replaceAll("/+$","");
     }
     public long enqueue(Long org,Long revision,Long user,String type,String email,Map<String,?> payload) {
         Map<String,Object> content=new LinkedHashMap<>(payload);content.put("notificationType",type);content.put("date",clock.instant().toString());
@@ -31,6 +32,13 @@ public class NotificationService {
         var address=repository.requireNotificationAddress(user);
         if(address.get("verified_at")==null) throw WorkspaceError.conflict("Потвърдете имейла за известия преди начало на изпит.");
         return string(address,"email");
+    }
+    public Optional<String> verifiedAddressIfPresent(long user) {
+        return repository.findVerifiedAddress(user).map(address->string(address,"email"));
+    }
+    public void enqueueAssignment(Long organization,long student,String organizationName,String test,long assignment) {
+        verifiedAddressIfPresent(student).ifPresent(email -> enqueue(organization,null,student,"assignment_assigned",email,Map.of(
+                "organization",organizationName,"test",test,"assignmentPath","/learner/assignments/"+assignment)));
     }
     @Transactional
     public Map<String,Object> ensureResultDelivery(long org,long revision,long user,Map<String,Object> payload) {

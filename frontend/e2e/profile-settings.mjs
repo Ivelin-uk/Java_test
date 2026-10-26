@@ -27,7 +27,8 @@ try {
         if (path === '/api/auth/google/config') return respond({ enabled: false, redirect: `${base}/api/auth/google/redirect` })
         if (path === '/api/v1/profile/identities') return respond([])
         if (path === '/api/v1/profile/notification-email') return respond({ email: address, verified_at: new Date().toISOString() })
-        if (['/api/v1/assignments', '/api/v1/groups', '/api/v1/grading', '/api/v1/results', '/api/admin/users', '/api/admin/permissions', '/api/admin/audit'].includes(path)) return respond([])
+        if (path === '/api/v1/billing') return respond({ plan: 'free', status: 'free', currentPeriod: null, paidThrough: null, cancelAtPeriodEnd: false, mode: 'unconfigured', checkoutAvailable: false, portalAvailable: false, prices: { month: { available: false }, year: { available: false } } })
+        if (['/api/v1/assignments', '/api/v1/groups', '/api/v1/grading', '/api/v1/results', '/api/admin/users', '/api/admin/teacher-billing', '/api/admin/permissions', '/api/admin/audit'].includes(path)) return respond([])
       }
       if (method === 'POST' && path === '/api/v1/profile/notification-email') {
         const body = request.postDataJSON()

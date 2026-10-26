@@ -2,6 +2,7 @@ package com.quicktest.admin;
 
 import com.quicktest.access.EndpointPolicy;
 import com.quicktest.auth.AuthService;
+import com.quicktest.workspace.TeacherBillingAdminService;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -15,11 +16,15 @@ import java.util.List;
 public class AdminController {
     private final AdminService admin;
     private final AuthService auth;
+    private final TeacherBillingAdminService billing;
 
-    public AdminController(AdminService admin, AuthService auth) { this.admin = admin; this.auth = auth; }
+    public AdminController(AdminService admin, AuthService auth,TeacherBillingAdminService billing) { this.admin = admin; this.auth = auth;this.billing=billing; }
 
     @GetMapping("/users")
     public List<AuthService.UserResponse> users() { return admin.users(); }
+
+    @GetMapping("/teacher-billing")
+    public List<TeacherBillingAdminService.TeacherPlan> teacherBilling() { return billing.plans(); }
 
     @PostMapping("/users")
     public AdminService.PasswordResponse createUser(@RequestHeader("Authorization") String authorization,

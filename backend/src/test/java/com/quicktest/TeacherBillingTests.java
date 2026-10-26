@@ -18,6 +18,7 @@ import static org.mockito.Mockito.*;
 @SpringBootTest(properties={"spring.datasource.url=jdbc:h2:mem:teacher_billing;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1","app.workspace.workers=false","app.stripe.pro-month-price-id=price_month","app.stripe.pro-year-price-id=price_year"})
 class TeacherBillingTests {
     @Autowired TeacherBillingService service;
+    @Autowired TeacherBillingAdminService adminBilling;
     @Autowired WorkspaceStore db;
     @Autowired WorkspaceJson json;
     @Autowired AppUserRepository users;
@@ -35,7 +36,7 @@ class TeacherBillingTests {
 
     @BeforeEach void configure() {
         when(gateway.configured()).thenReturn(true);when(gateway.mode()).thenReturn("test");
-        when(gateway.currentPrice(anyString())).thenAnswer(call->{String id=call.getArgument(0);return Map.of("id",id,"active",true,"livemode",false,"type","recurring","billing_scheme","per_unit","unit_amount",1200,"currency","eur","recurring",Map.of("interval",id.equals("price_month")?"month":"year","interval_count",1));});
+        when(gateway.currentPrice(anyString())).thenAnswer(call->{String id=call.getArgument(0);boolean month=id.equals("price_month");return Map.of("id",id,"active",true,"livemode",false,"type","recurring","billing_scheme","per_unit","unit_amount",month?700:5000,"currency","eur","recurring",Map.of("interval",month?"month":"year","interval_count",1));});
         when(gateway.verifyWebhook(anyString(),anyString())).thenAnswer(call->json.object(call.getArgument(0)));
     }
     private AppUser user(Role role) {
@@ -62,6 +63,15 @@ class TeacherBillingTests {
         event("evt_failed"+teacher.getId(),"invoice.payment_failed",invoice);assertFalse(service.isPro(teacher.getId()));
         invoice.put("status","paid");event("evt_paid"+teacher.getId(),"invoice.paid",invoice);assertTrue(service.isPro(teacher.getId()));
         assertEquals(Instant.ofEpochSecond(paidEnd),time(service.subscription(teacher.getId()).orElseThrow(),"paid_through"));
+        assertEquals("month",string(service.subscription(teacher.getId()).orElseThrow(),"billing_period"));
+        var adminPlan=adminBilling.plans().stream().filter(plan->plan.userId()==teacher.getId()).findFirst().orElseThrow();
+        assertEquals("pro",adminPlan.plan());assertEquals("month",adminPlan.period());assertEquals(700L,adminPlan.amountMinor());
+    }
+    @Test void checkoutRejectsPricesThatDoNotMatchPublishedEurPlans() {
+        AppUser account=user(Role.TEACHER);
+        when(gateway.currentPrice("price_month")).thenReturn(Map.of("id","price_month","active",true,"livemode",false,"type","recurring","billing_scheme","per_unit","unit_amount",699,"currency","eur","recurring",Map.of("interval","month","interval_count",1)));
+        assertThrows(WorkspaceError.class,()->service.checkout(account,new TeacherBillingService.Checkout("month",REQUEST)));
+        verify(gateway,never()).teacherCheckout(anyLong(),anyLong(),anyString(),anyString(),anyString(),anyString());
     }
     @Test void duplicateAndReorderedEventsUseCurrentStateAndCancellationPreservesOnlyPaidInterval() {
         start();invoice.put("status","paid");String id="evt_paid"+teacher.getId();event(id,"invoice.paid",invoice);event(id,"invoice.paid",invoice);

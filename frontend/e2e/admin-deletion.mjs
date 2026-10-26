@@ -34,6 +34,7 @@ try {
       return rejectRefresh ? respond({ detail: 'Временно недостъпен списък.' }, 503) : respond(users)
     }
     if (path === '/api/admin/permissions' && method === 'GET') return respond([])
+    if (path === '/api/admin/teacher-billing' && method === 'GET') return respond([])
     if (path === '/api/admin/audit' && method === 'GET') { auditReads++; return respond(audit) }
     const match = path.match(/^\/api\/admin\/users\/(\d+)$/)
     if (match && method === 'DELETE') {

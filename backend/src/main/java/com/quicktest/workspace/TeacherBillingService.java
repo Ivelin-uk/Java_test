@@ -37,6 +37,7 @@ public class TeacherBillingService {
         teacher(user);var account=repository.findByUserId(user.getId()).orElse(Map.of());
         Map<String,Object> result=new LinkedHashMap<>();result.put("plan",paid(account)?"pro":"free");
         result.put("status",string(account,"provider_status").isBlank()?"free":string(account,"provider_status"));
+        result.put("currentPeriod",paid(account)?string(account,"billing_period"):null);
         result.put("paidThrough",account.get("paid_through"));result.put("cancelAtPeriodEnd",flag(account,"cancel_at_period_end"));
         result.put("mode",gateway.configured()?gateway.mode():"unconfigured");
         var month=priceDescription("month");var year=priceDescription("year");
@@ -144,7 +145,7 @@ public class TeacherBillingService {
         if(!latest.isBlank()) through=paidInvoiceThrough(gateway.currentInvoice(identifier(latest,"in_")),subscriptionId,customer,price,through);
         // An older paid renewal may arrive after the current invoice failed; only its paid line can extend access.
         if(type.equals("invoice.paid") && !string(object,"id").equals(latest)) through=paidInvoiceThrough(gateway.currentInvoice(identifier(string(object,"id"),"in_")),subscriptionId,customer,price,through);
-        repository.update(user,customer,subscriptionId,string(current,"status"),through,flag(current,"cancel_at_period_end"),clock.instant());
+        repository.update(user,customer,subscriptionId,string(current,"status"),string(request,"billing_period"),through,flag(current,"cancel_at_period_end"),clock.instant());
         repository.finishCheckout(user,string(request,"request_key"),"complete");
         repository.recordEvent(eventId,user,type,epoch(event,"created"),clock.instant());
         audit.write(number(account,"workspace_id"),user,"teacher_billing.subscription_updated",null,Map.of("status",string(current,"status"),"event",eventId));
@@ -183,7 +184,8 @@ public class TeacherBillingService {
     private Map<String,Object> verifiedPrice(String period) {
         String id=priceId(period);if(!gateway.configured() || id.isBlank()) throw WorkspaceError.conflict("Плащанията още не са настроени. Свържи се с поддръжката.");
         var price=gateway.currentPrice(identifier(id,"price_"));verifyMode(price);var recurring=obj(price.get("recurring"));
-        if(!string(price,"id").equals(id) || !flag(price,"active") || !string(price,"type").equals("recurring") || !string(recurring,"interval").equals(period) || epoch(recurring,"interval_count")!=1 || !string(price,"billing_scheme").equals("per_unit") || price.get("unit_amount")==null) throw WorkspaceError.conflict("Цената за този абонамент не е конфигурирана правилно.");
+        long expectedAmount=period.equals("month")?700:5000;
+        if(!string(price,"id").equals(id) || !flag(price,"active") || !string(price,"type").equals("recurring") || !string(recurring,"interval").equals(period) || epoch(recurring,"interval_count")!=1 || !string(price,"billing_scheme").equals("per_unit") || !(price.get("unit_amount") instanceof Number amount) || amount.longValue()!=expectedAmount || !string(price,"currency").equalsIgnoreCase("eur")) throw WorkspaceError.conflict("Настрой Stripe с цена €"+(expectedAmount/100)+" EUR за "+(period.equals("month")?"месец":"година")+" и опитай отново.");
         return price;
     }
     private Map<String,Object> subscriptionItem(Map<String,Object> subscription) {Object items=obj(subscription.get("items")).get("data");if(!(items instanceof List<?> list) || list.size()!=1) throw WorkspaceError.forbidden();return obj(list.getFirst());}

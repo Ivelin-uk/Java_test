@@ -116,6 +116,9 @@ public class AssignmentService {
         for(var entry:assignedGroups.entrySet()) repository.insertAssignmentGroup(scope.organizationId(),id,number(entry.getValue(),"organization_id"),entry.getKey());
         for(var recipient:recipients.entrySet()) repository.insertRecipient(scope.organizationId(), id, recipient.getKey(), json.write(recipient.getValue()), request.maxAttempts());
         String code=crypto.code();repository.saveCode(codeHash(scope.organizationId(),id,code), code, id, scope.organizationId());
+        String organization=scope.platform()?"ExamAI":string(repository.requireOrganizationName(scope.organizationId()),"name");
+        String title=string(repository.findAssignment(scope.organizationId(),id,false),"title");
+        for(long student:recipients.keySet()) notifications.enqueueAssignment(scope.organizationId(),student,organization,title,id);
         audit.write(scope.organizationId(),scope.userId(),"assignment.created",id,Map.of("recipients",recipients.size(),"version",request.versionId(),"mobileAllowed",mobileAllowed,"autoAiGrading",request.autoAiGrading()));
         return Map.of("id",id,"code",code,"recipients",recipients.size());
     }
@@ -261,6 +264,7 @@ public class AssignmentService {
         } else {
             repository.insertRecipient(scope.organizationId(), id, student, json.write(sources), maxAttempts);
         }
+        notifications.enqueueAssignment(scope.organizationId(),student,scope.platform()?"ExamAI":string(repository.requireOrganizationName(scope.organizationId()),"name"),string(assignment,"title"),id);
         audit.write(scope.organizationId(),scope.userId(),"assignment.recipient_assigned",id,Map.of("student",student,"maxAttempts",maxAttempts));
     }
     @Transactional public void removeRecipient(OrgAccess.Scope scope,long id,long student) {

@@ -8,9 +8,9 @@ const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
 const teacher = { token: 'billing-fixture', user: { id: 101, name: 'Учител', email: 'teacher@example.test', role: 'TEACHER', active: true, passwordChangeRequired: false, roleSelectionRequired: false } }
 const free = { groups: 1, activeAssignments: 5, aiCredits: 5 }, pro = { groups: 20, activeAssignments: 100, aiCredits: 100 }
 const initial = {
-  plan: 'free', status: 'free', paidThrough: null, cancelAtPeriodEnd: false,
+  plan: 'free', status: 'free', currentPeriod: null, paidThrough: null, cancelAtPeriodEnd: false,
   mode: 'test', checkoutAvailable: true, portalAvailable: false,
-  prices: { month: { available: true, amountMinor: 1500, currency: 'eur' }, year: { available: true, amountMinor: 15000, currency: 'eur' } },
+  prices: { month: { available: true, amountMinor: 700, currency: 'eur' }, year: { available: true, amountMinor: 5000, currency: 'eur' } },
   limits: free, usage: { groups: 1, activeAssignments: 2, aiCredits: 3 }, plans: { free, pro },
 }
 const artifacts = new URL('../../.artifacts/', import.meta.url)
@@ -91,6 +91,15 @@ try {
   await unconfigured.page.getByRole('heading', { name: 'ExamAI Free', exact: true }).waitFor()
   await unconfigured.context.close()
 
+  const profile = await fixture()
+  await profile.page.goto(frontend)
+  await profile.page.getByRole('navigation', { name: 'Основна навигация' }).getByRole('button', { name: 'Профил', exact: true }).click()
+  const planCard = profile.page.getByRole('region', { name: 'План и плащане', exact: true })
+  await planCard.getByText('Избран план: ExamAI Free', { exact: true }).waitFor()
+  await planCard.getByRole('button', { name: 'Планове и плащане', exact: true }).click()
+  await profile.page.getByRole('heading', { name: 'Абонамент', exact: true }).waitFor()
+  await profile.context.close()
+
   const mobile = await fixture({ billing: { ...initial, mode: 'unconfigured', checkoutAvailable: false, prices: { month: { available: false }, year: { available: false } } }, viewport: { width: 390, height: 844 }, theme: 'dark' })
   await mobile.page.goto(`${frontend}/billing`)
   await mobile.page.getByRole('heading', { name: 'ExamAI Free', exact: true }).waitFor()
@@ -130,7 +139,7 @@ try {
   const yearly = await fixture()
   await yearly.page.goto(`${frontend}/billing`)
   await yearly.page.getByRole('button', { name: 'Годишно', exact: true }).click()
-  await yearly.page.getByText('150,00', { exact: false }).waitFor()
+  await yearly.page.getByText('50,00', { exact: false }).waitFor()
   await yearly.page.getByRole('button', { name: 'Изпробвай Pro в Stripe', exact: true }).click()
   await yearly.page.getByRole('heading', { name: 'Fixture checkout', exact: true }).waitFor()
   assert.equal(yearly.state.requests.find(request => request.path === '/api/v1/billing/checkout').data.period, 'year')
@@ -144,13 +153,14 @@ try {
   assert.equal(await returned.page.getByText('Pro е активен', { exact: true }).count(), 0)
   assert.equal(await returned.page.getByRole('button', { name: 'Изпробвай Pro в Stripe', exact: true }).isDisabled(), true)
   assert.equal(new URL(returned.page.url()).search, '?checkout=success')
-  returned.state.billing = { ...returned.state.billing, plan: 'pro', status: 'active', limits: pro, portalAvailable: true, paidThrough: '2027-02-26T12:00:00Z' }
+  returned.state.billing = { ...returned.state.billing, plan: 'pro', status: 'active', currentPeriod: 'month', limits: pro, portalAvailable: true, paidThrough: '2027-02-26T12:00:00Z' }
   await returned.page.getByText('Pro е активен', { exact: true }).waitFor({ timeout: 6000 })
   await returned.page.getByRole('heading', { name: 'ExamAI Pro', exact: true }).waitFor()
+  await returned.page.getByText('Период: месечен — 7,00 €.', { exact: false }).waitFor()
   await returned.page.getByRole('progressbar', { name: 'AI кредити този месец: 3 от 100', exact: true }).waitFor()
   assert.equal(returned.state.requests.filter(request => request.path === '/api/v1/billing/checkout').length, 0)
   returned.state.failPortal = 1
-  const portal = returned.page.getByRole('button', { name: 'Управлявай абонамента', exact: true })
+  const portal = returned.page.getByRole('button', { name: 'Управлявай / смени плана', exact: true })
   await portal.click()
   await returned.page.getByRole('alert').getByText('Порталът временно не е достъпен.', { exact: true }).waitFor()
   await portal.click()

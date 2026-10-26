@@ -1,12 +1,13 @@
-import { useRef, useState } from 'react'
-import { ArrowLeft, Check, KeyRound, Link, Mail, Send } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowLeft, Check, CreditCard, KeyRound, Link, Mail, Send } from 'lucide-react'
 import type { AuthResponse } from '../types/models'
 import { api as authApi } from '../api/client'
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
 import { Feedback, SectionHead } from './ui'
+import type { TeacherBilling } from './billingTypes'
 
-export function WorkspaceProfile({ api, auth, onAuth }: { api: WorkspaceApi; auth: AuthResponse; onAuth: (next: AuthResponse) => void }) {
+export function WorkspaceProfile({ api, auth, onAuth, onChangePlan }: { api: WorkspaceApi; auth: AuthResponse; onAuth: (next: AuthResponse) => void; onChangePlan: () => void }) {
   const address = useRemote<{ email: string; verified_at: string | null } | null>(api, '/profile/notification-email', null)
   const google = useRemote<{ enabled: boolean; redirect?: string }>(api, '/api/auth/google/config', { enabled: false })
   const identities = useRemote<{ provider: string; linked_at: string }[]>(api, '/profile/identities', [])
@@ -23,8 +24,35 @@ export function WorkspaceProfile({ api, auth, onAuth }: { api: WorkspaceApi; aut
   const [newPassword, setNewPassword] = useState('')
   const [confirmation, setConfirmation] = useState('')
   const [formError, setFormError] = useState('')
+  const [billing, setBilling] = useState<TeacherBilling | null>(null)
+  const [billingLoading, setBillingLoading] = useState(auth.user.role === 'TEACHER')
+  const [billingError, setBillingError] = useState('')
+  useEffect(() => {
+    if (auth.user.role !== 'TEACHER') return
+    let active = true
+    api.get<TeacherBilling>('/billing')
+      .then(value => { if (active) { setBilling(value); setBillingError('') } })
+      .catch(cause => { if (active) setBillingError(cause instanceof Error ? cause.message : 'Планът не може да се зареди.') })
+      .finally(() => { if (active) setBillingLoading(false) })
+    return () => { active = false }
+  }, [api, auth.user.role])
+  const currentPeriod = billing?.currentPeriod ?? null
+  const currentPrice = billing && currentPeriod ? billing.prices[currentPeriod] : null
+  const priceText = currentPrice?.amountMinor !== undefined && currentPrice.currency
+    ? new Intl.NumberFormat('bg-BG', { style: 'currency', currency: currentPrice.currency.toUpperCase() }).format(currentPrice.amountMinor / 100)
+    : ''
   return <section className="ws-section" aria-label="Моят профил">
     <SectionHead title="Моят профил" description="Управлявай имейла за известия, паролата и свързания Google акаунт." />
+    {auth.user.role === 'TEACHER' && <section className="ws-profile-form" aria-label="План и плащане">
+      <h3><CreditCard size={17} aria-hidden="true" /> План и плащане</h3>
+      <Feedback error={billingError} busy={billingLoading} />
+      {billing && <>
+        <p><strong>Избран план:</strong> ExamAI {billing.plan === 'pro' ? 'Pro' : 'Free'}{billing.cancelAtPeriodEnd ? ' — прекратява се в края на периода' : ''}</p>
+        <p><strong>Период:</strong> {currentPeriod ? `${currentPeriod === 'month' ? 'Месечен' : 'Годишен'}${priceText ? ` — ${priceText} / ${currentPeriod === 'month' ? 'месец' : 'година'}` : ''}` : 'Безплатен план'}</p>
+        <p><strong>Валиден до:</strong> {billing.paidThrough ? new Date(billing.paidThrough).toLocaleDateString('bg-BG') : 'Няма активен платен период'}</p>
+      </>}
+      <button type="button" className="primary command-button" onClick={onChangePlan}><CreditCard size={17} aria-hidden="true" />Планове и плащане</button>
+    </section>}
     <div className="ws-profile-settings">
     <form className="ws-profile-form" aria-label="Смяна на имейл за известия" onSubmit={event => {
       event.preventDefault()

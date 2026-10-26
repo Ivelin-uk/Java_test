@@ -15,6 +15,7 @@ import type {
   PermissionChange,
   AuditEntry,
 } from '../types/models'
+import type { AdminTeacherPlan } from '../workspace/billingTypes'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
@@ -70,6 +71,7 @@ export const api = {
   changePassword: (token: string, currentPassword: string, newPassword: string) =>
     request<AuthResponse>('/api/auth/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }, token),
   users: (token: string) => request<User[]>('/api/admin/users', {}, token),
+  teacherBilling: (token: string) => request<AdminTeacherPlan[]>('/api/admin/teacher-billing', {}, token),
   createUser: (token: string, payload: UserEdit) => request<PasswordResponse>('/api/admin/users', { method: 'POST', body: JSON.stringify(payload) }, token),
   updateUser: (token: string, id: number, payload: UserEdit) => request<User>(`/api/admin/users/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, token),
   deleteUser: (token: string, id: number, password: string) => request<void>(`/api/admin/users/${id}`, { method: 'DELETE', body: JSON.stringify({ password }) }, token),

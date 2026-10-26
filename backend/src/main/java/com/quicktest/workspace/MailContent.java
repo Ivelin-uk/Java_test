@@ -20,6 +20,9 @@ public record MailContent(String subject,String text,String html) {
             subject="ExamAI: Покана за "+string(payload,"organization");body="Покана: "+origin+"/#invitation="+string(payload,"token")+"\nВалидна до: "+string(payload,"expires_at");
         } else if(type.equals("assignment_code")) {
             subject="ExamAI: Код за тест";body="Организация: "+string(payload,"organization")+"\nТест: "+string(payload,"test")+"\nКод: "+string(payload,"code")+"\nВход: "+origin;
+        } else if(type.equals("assignment_assigned")) {
+            subject="ExamAI: Нов възложен тест — "+string(payload,"test");
+            body="Организация: "+string(payload,"organization")+"\nВъзложен ти е тест: "+string(payload,"test")+"\n\nОтвори теста: "+origin+string(payload,"assignmentPath")+"\nВлез с ученическия си профил, за да го прегледаш и започнеш.";
         } else {
             subject="ExamAI: "+(type.equals("notification_email")?"Потвърждение на имейл":"Възстановяване на парола");
             body="Линк: "+origin+(type.equals("notification_email")?"/verify-email?token=":"/reset-password?token=")+string(payload,"token")+"\nВалиден до: "+string(payload,"expires_at");
@@ -27,6 +30,9 @@ public record MailContent(String subject,String text,String html) {
         String html="<div lang=\"bg\" style=\"font-family:Arial,sans-serif;line-height:1.6;color:#172c35\"><h2>"+HtmlUtils.htmlEscape(subject)+"</h2><p>"+HtmlUtils.htmlEscape(body).replace("\n","<br>")+"</p>";
         if(type.equals("final_result") && string(payload,"protectedPath").matches("/results/[1-9][0-9]{0,17}")) {
             html+="<p><a href=\""+HtmlUtils.htmlEscape(origin+string(payload,"protectedPath"))+"\" style=\"display:inline-block;padding:12px 20px;background:#1d4ed8;color:#fff;text-decoration:none;border-radius:6px\">Преглед на теста и резултата</a></p>";
+        }
+        if(type.equals("assignment_assigned") && string(payload,"assignmentPath").matches("/learner/assignments/[1-9][0-9]{0,17}")) {
+            html+="<p><a href=\""+HtmlUtils.htmlEscape(origin+string(payload,"assignmentPath"))+"\" style=\"display:inline-block;padding:12px 20px;background:#1d4ed8;color:#fff;text-decoration:none;border-radius:6px\">Отвори възложения тест</a></p>";
         }
         return new MailContent(subject.replaceAll("[\\r\\n]"," "),body,html+"</div>");
     }

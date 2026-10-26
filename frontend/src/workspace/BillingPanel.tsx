@@ -2,24 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, Check, CircleCheck, Clock3, CreditCard, FlaskConical, LoaderCircle, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { Feedback, SectionHead } from './ui'
+import type { BillingPeriod, BillingPrice, TeacherBilling } from './billingTypes'
 import './billing.css'
 
-type Period = 'month' | 'year'
+type Period = BillingPeriod
 type Quotas = { groups: number; activeAssignments: number; aiCredits: number }
-type Price = { available: boolean; amountMinor?: number; currency?: string }
-type Billing = {
-  plan: 'free' | 'pro'
-  status: string
-  paidThrough: string | null
-  cancelAtPeriodEnd: boolean
-  mode: 'test' | 'live' | 'unconfigured'
-  checkoutAvailable: boolean
-  portalAvailable: boolean
-  prices: Record<Period, Price>
-  limits: Quotas
-  usage: Quotas
-  plans?: { free: Quotas; pro: Quotas }
-}
+type Price = BillingPrice
+type Billing = TeacherBilling
 
 const statusLabels: Record<string, string> = {
   free: 'Безплатен план', active: 'Активен', trialing: 'Пробен период',
@@ -143,6 +132,8 @@ export function BillingPanel({ api, checkout }: { api: WorkspaceApi; checkout: s
 
   const price = billing?.prices[period]
   const amount = price ? formattedPrice(price) : null
+  const currentPeriod = billing?.currentPeriod ?? null
+  const currentPrice = billing && currentPeriod ? formattedPrice(billing.prices[currentPeriod]) : null
   const paidThrough = formattedDate(billing?.paidThrough ?? null)
   const pending = confirmation === 'waiting'
   const quotaRows: { key: keyof Quotas; name: string }[] = [
@@ -166,7 +157,7 @@ export function BillingPanel({ api, checkout }: { api: WorkspaceApi; checkout: s
       {billing.mode !== 'live' && <div className="ws-billing-notice ws-billing-test" role="status"><FlaskConical size={21} aria-hidden="true" /><div><strong>{billing.mode === 'test' ? 'Тестов режим на плащанията' : 'Плащанията още не са активирани'}</strong><p>{billing.mode === 'test' ? 'Този режим е за пробни плащания в Stripe и не създава реални таксувания.' : 'Можеш да използваш Free. Абонаментът Pro ще бъде достъпен след настройването на Stripe и цените.'}</p></div></div>}
       <section className="ws-billing-current" aria-labelledby="billing-current-title">
         <div className="ws-billing-current-heading"><span className="ws-billing-plan-icon"><CreditCard size={25} aria-hidden="true" /></span><div><span className="ws-billing-eyebrow">Твоят план</span><h3 id="billing-current-title">ExamAI {billing.plan === 'pro' ? 'Pro' : 'Free'}</h3></div><span className={`ws-billing-status ${billing.plan === 'pro' ? 'ws-billing-status-pro' : ''}`}>{billing.cancelAtPeriodEnd ? 'Прекратява се в края на периода' : statusLabels[billing.status] ?? (billing.plan === 'pro' ? 'Активен' : 'Безплатен план')}</span></div>
-        <div className="ws-billing-current-footer"><p>{paidThrough ? <>{billing.cancelAtPeriodEnd ? 'Достъп до Pro до ' : billing.status === 'trialing' ? 'Пробният период е до ' : 'Текущият платен период е до '}<strong><time dateTime={billing.paidThrough ?? undefined}>{paidThrough}</time></strong>.</> : billing.plan === 'free' ? 'Започни с основните възможности и премини към Pro, когато ти потрябва повече.' : 'Статусът на абонамента се потвърждава от Stripe.'}</p>{billing.portalAvailable && <button type="button" className="command-button" onClick={() => void openStripe('portal')} disabled={!!busy}>{busy === 'portal' ? <LoaderCircle size={16} className="spin" aria-hidden="true" /> : <ArrowUpRight size={16} aria-hidden="true" />}Управлявай абонамента</button>}</div>
+        <div className="ws-billing-current-footer"><p>{currentPeriod && <><strong>Период:</strong> {currentPeriod === 'month' ? 'месечен' : 'годишен'}{currentPrice ? ` — ${currentPrice}` : ''}. </>}{paidThrough ? <>{billing.cancelAtPeriodEnd ? 'Достъп до Pro до ' : billing.status === 'trialing' ? 'Пробният период е до ' : 'Текущият платен период е до '}<strong><time dateTime={billing.paidThrough ?? undefined}>{paidThrough}</time></strong>.</> : billing.plan === 'free' ? 'Започни с основните възможности и премини към Pro, когато ти потрябва повече.' : 'Статусът на абонамента се потвърждава от Stripe.'}</p>{billing.portalAvailable && <button type="button" className="command-button" onClick={() => void openStripe('portal')} disabled={!!busy}>{busy === 'portal' ? <LoaderCircle size={16} className="spin" aria-hidden="true" /> : <ArrowUpRight size={16} aria-hidden="true" />}Управлявай / смени плана</button>}</div>
         <div className="ws-billing-usage" aria-label="Използване на плана">{quotaRows.map(({ key, name }) => <div className="ws-billing-quota" key={key}><span>{name}</span><strong>{billing.usage[key]} <small>/ {billing.limits[key]}</small></strong><progress max={Math.max(1, billing.limits[key])} value={Math.min(billing.usage[key], Math.max(1, billing.limits[key]))} aria-label={`${name}: ${billing.usage[key]} от ${billing.limits[key]}`} /></div>)}</div>
       </section>
       <div className="ws-billing-choose-heading"><div><h3>План за твоето преподаване</h3><p>Абонаментът е за твоя учителски профил.</p></div><div className="ws-billing-period" role="group" aria-label="Период на абонамента"><button type="button" aria-pressed={period === 'month'} onClick={() => { setPeriod('month'); setActionError('') }} disabled={!!busy}>Месечно</button><button type="button" aria-pressed={period === 'year'} onClick={() => { setPeriod('year'); setActionError('') }} disabled={!!busy}>Годишно</button></div></div>
@@ -177,7 +168,7 @@ export function BillingPanel({ api, checkout }: { api: WorkspaceApi; checkout: s
           {billing.plan === 'pro' ? <p className="ws-billing-card-note"><CircleCheck size={18} aria-hidden="true" />Твоят Pro достъп е активен.</p> : <><button type="button" className="primary command-button ws-billing-subscribe" onClick={() => void openStripe('checkout')} disabled={!!busy || pending || !billing.checkoutAvailable || !price?.available}>{busy === 'checkout' ? <LoaderCircle size={18} className="spin" aria-hidden="true" /> : <ArrowUpRight size={18} aria-hidden="true" />}{busy === 'checkout' ? 'Отваряне на Stripe…' : billing.mode === 'test' ? 'Изпробвай Pro в Stripe' : 'Избери Pro'}</button>{(!billing.checkoutAvailable || !price?.available) && <p className="ws-billing-card-note">Плащанията за този период още не са активирани.</p>}</>}
         </article>
       </div>
-      <p className="ws-billing-security"><ShieldCheck size={18} aria-hidden="true" />Плащането и данните за картата се обработват в защитената страница на Stripe.</p>
+      <p className="ws-billing-security"><ShieldCheck size={18} aria-hidden="true" />Плащането и данните за картата се обработват в защитената страница на Stripe. Apple Pay и Google Pay се показват автоматично, когато са активирани в Stripe и се поддържат от устройството и браузъра.</p>
     </>}
   </section>
 }

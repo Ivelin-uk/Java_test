@@ -354,6 +354,11 @@ class WorkspaceTests {
     }
     @Test void assignmentDeletionRollsBackWhileResultDeliveryIsProcessingThenRemovesAllRevisions() {
         assignments.accommodate(teaching,assignment,student,new AssignmentService.Accommodation(false,BigDecimal.ONE,2,"Deletion verification"));
+        String assignmentPath="%\"assignmentPath\":\"/learner/assignments/"+assignment+"\"%";
+        assertTrue(db.count("SELECT COUNT(*) FROM notification_outbox WHERE organization_id=? AND notification_type='assignment_assigned' AND payload_json LIKE ?",org,assignmentPath)>0);
+        db.update("UPDATE notification_outbox SET status='processing' WHERE organization_id=? AND notification_type='assignment_assigned' AND payload_json LIKE ?",org,assignmentPath);
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->assignments.remove(teaching,assignment)).getStatusCode());
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_assignments WHERE id=?",assignment));
         List<Long> ids=new ArrayList<>();
         for(int i=0;i<2;i++) {
             var request=startRequest();var state=start(request);long id=number(state,"id");ids.add(id);
@@ -1425,7 +1430,7 @@ class WorkspaceTests {
         assertEquals(1,db.count("SELECT COUNT(*) FROM result_revisions WHERE attempt_id=?",id));assertEquals(1,db.count("SELECT COUNT(*) FROM notification_outbox WHERE revision_id=?",number(result,"id")));
         db.update("UPDATE notification_outbox SET status='failed' WHERE revision_id=?",number(result,"id"));assertEquals("finalized",string(db.one("SELECT status FROM exam_attempts WHERE id=?",id),"status"));
         grading.grade(teaching,id,new GradingService.GradeRequest(number(q,"id"),BigDecimal.ZERO,"Correction","Incorrect explanation"));grading.finalizeResult(teaching,id,new GradingService.Finalize("correction-key-123","Corrected review",null,null),true);
-        assertEquals(2,db.count("SELECT COUNT(*) FROM result_revisions WHERE attempt_id=?",id));assertEquals(2,db.count("SELECT COUNT(*) FROM notification_outbox WHERE organization_id=?",org));assertFalse(grading.studentResult(learning,id).containsKey("details"));
+        assertEquals(2,db.count("SELECT COUNT(*) FROM result_revisions WHERE attempt_id=?",id));        assertEquals(2,db.count("SELECT COUNT(*) FROM notification_outbox WHERE organization_id=? AND revision_id IS NOT NULL",org));assertFalse(grading.studentResult(learning,id).containsKey("details"));
     }
     @Test void studentReviewIsHiddenByDefaultEvenAfterDeadlineWhileGradesRemainVisible() throws Exception {
         var request=startRequest();long id=number(start(request),"id");attempts.submit(learning,id,session(request));
@@ -1941,6 +1946,20 @@ class WorkspaceTests {
         String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
         mvc.perform(post("/api/v1/assignments").header("Authorization",bearer).contentType("application/json").content(db.json(new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(student),now,now.plusSeconds(1000),1,false,false,true)))).andExpect(status().isBadRequest());
         assertEquals(1,db.count("SELECT COUNT(*) FROM exam_assignments WHERE organization_id=?",org));
+    }
+    @Test void assignmentEmailsGoToVerifiedRecipientsWithDirectLinksIncludingLaterGroupMembers() {
+        long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Mail recipients","","")),"id");
+        organizations.addStudent(teaching,group,student);
+        var assigned=assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(group),List.of(),now,now.plusSeconds(3600),1,false,false,true));
+        long id=number(assigned,"id");
+        var later=enrolledStudent();organizations.addStudent(teaching,group,later.getId());
+        var unverified=enrolledStudent();db.update("UPDATE notification_addresses SET verified_at=NULL WHERE user_id=?",unverified.getId());
+        organizations.addStudent(teaching,group,unverified.getId());
+        var links=db.rows("SELECT user_id,payload_json FROM notification_outbox WHERE organization_id=? AND notification_type='assignment_assigned'",org).stream()
+                .filter(row->string(workspaceJson.object(row.get("payload_json")),"assignmentPath").equals("/learner/assignments/"+id)).toList();
+        assertEquals(1,links.stream().filter(row->number(row,"user_id")==student).count());
+        assertEquals(1,links.stream().filter(row->number(row,"user_id")==later.getId()).count());
+        assertEquals(0,links.stream().filter(row->number(row,"user_id")==unverified.getId()).count());
     }
     @Test void groupRecipientRemovalHidesAccessAndKeepsGroupSnapshot() throws Exception {
         var otherStudent=enrolledStudent();organizations.addStudent(teaching,defaultGroup,otherStudent.getId());assignments.addRecipient(teaching,assignment,otherStudent.getId());
@@ -2589,7 +2608,7 @@ class WorkspaceTests {
         db.update("UPDATE notification_outbox SET status='failed' WHERE id=?",notification);assertEquals("queued",string(grading.emailResult(teaching,id),"status"));
         db.update("UPDATE notification_outbox SET status='sent' WHERE id=?",notification);assertEquals("sent",string(grading.emailResult(teaching,id),"status"));
         db.update("UPDATE notification_outbox SET provider_message_id=? WHERE id=?","local-"+notification,notification);
-        var realMail=new NotificationService(notificationRepository,workspaceJson,clock,transactions,(delivery,recipient,content)->"fixture",false,"resend");
+        var realMail=new NotificationService(notificationRepository,workspaceJson,clock,transactions,(delivery,recipient,content)->"fixture",false,"resend","http://localhost:5173");
         long revision=number(original,"revision_id");
         var migrated=transactions.execute(tx->realMail.ensureResultDelivery(org,revision,student,payload));assertEquals("queued",string(migrated,"status"));
         db.update("UPDATE notification_outbox SET status='sent',provider_message_id='provider-real-receipt' WHERE id=?",notification);

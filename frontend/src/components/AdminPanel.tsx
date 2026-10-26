@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { Users, ShieldCheck, History, UserPlus, UserRoundCog, Pencil, KeyRound, UserCheck, UserX, RefreshCw, Save, X, Copy, Check, Search, Trash2 } from 'lucide-react'
+import { Users, ShieldCheck, History, CreditCard, UserPlus, UserRoundCog, Pencil, KeyRound, UserCheck, UserX, RefreshCw, Save, X, Copy, Check, Search, Trash2 } from 'lucide-react'
 import { api } from '../api/client'
 import { formatDate, roleLabels, subscriptionLabel } from '../api/access'
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog'
 import { useNotifications } from '../notifications'
 import { TableContainer } from '../workspace/ui'
 import type { AuditEntry, AuthResponse, PasswordResponse, PermissionChange, PermissionRow, Role, User, UserEdit } from '../types/models'
+import type { AdminTeacherPlan } from '../workspace/billingTypes'
 
 const modes = { ADMIN: 'Само администратор', PUBLIC: 'Публичен вход', PROFILE: 'Собствен профил', MANAGED: '' }
 const actions: Record<string, string> = { USER_CREATED: 'Нов потребител', USER_UPDATED: 'Промяна на профил', USER_DELETED: 'Изтриване на потребител', USER_ROLE_CHANGED: 'Смяна на роля', PASSWORD_RESET: 'Нова временна парола', PERMISSION_UPDATED: 'Промяна на права' }
@@ -16,11 +17,12 @@ function userEdit(user: User): UserEdit {
 }
 
 export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onProfileRefresh: () => Promise<void> }) {
-  const [tab, setTab] = useState<'users' | 'permissions' | 'audit'>('users')
+  const [tab, setTab] = useState<'users' | 'permissions' | 'audit' | 'billing'>('users')
   const [users, setUsers] = useState<User[]>([])
   const [rows, setRows] = useState<PermissionRow[]>([])
   const [changes, setChanges] = useState<Record<string, PermissionChange>>({})
   const [audit, setAudit] = useState<AuditEntry[]>([])
+  const [billingPlans, setBillingPlans] = useState<AdminTeacherPlan[]>([])
   const [query, setQuery] = useState('')
   const [role, setRole] = useState<Role | ''>('')
   const [controller, setController] = useState('')
@@ -38,13 +40,13 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
   const token = auth.token
 
   async function refresh() {
-    const [nextUsers, nextRows, nextAudit] = await Promise.all([api.users(token), api.permissions(token), api.audit(token)])
-    setUsers(nextUsers); setRows(nextRows); setAudit(nextAudit)
+    const [nextUsers, nextRows, nextAudit, nextBilling] = await Promise.all([api.users(token), api.permissions(token), api.audit(token), api.teacherBilling(token)])
+    setUsers(nextUsers); setRows(nextRows); setAudit(nextAudit); setBillingPlans(nextBilling)
   }
   useEffect(() => {
     let alive = true
-    Promise.all([api.users(token), api.permissions(token), api.audit(token)])
-      .then(([nextUsers, nextRows, nextAudit]) => { if (alive) { setUsers(nextUsers); setRows(nextRows); setAudit(nextAudit) } })
+    Promise.all([api.users(token), api.permissions(token), api.audit(token), api.teacherBilling(token)])
+      .then(([nextUsers, nextRows, nextAudit, nextBilling]) => { if (alive) { setUsers(nextUsers); setRows(nextRows); setAudit(nextAudit); setBillingPlans(nextBilling) } })
       .catch(cause => { if (alive) setError(cause instanceof Error ? cause.message : 'Неуспешно зареждане.') })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
@@ -118,6 +120,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
       <div className="app-tabs inner-tabs" role="tablist" aria-label="Администрация">
         <button role="tab" aria-selected={tab === 'users'} className={tab === 'users' ? 'active' : ''} onClick={() => { setTab('users'); setQuery(''); setError('') }}><Users size={17} /> Потребители <span className="count-label">{users.length}</span></button>
         <button role="tab" aria-selected={tab === 'permissions'} className={tab === 'permissions' ? 'active' : ''} onClick={() => { setTab('permissions'); setQuery(''); setError('') }}><ShieldCheck size={17} /> Права</button>
+        <button role="tab" aria-selected={tab === 'billing'} className={tab === 'billing' ? 'active' : ''} onClick={() => { setTab('billing'); setQuery(''); setRole(''); setError('') }}><CreditCard size={17} /> Абонаменти</button>
         <button role="tab" aria-selected={tab === 'audit'} className={tab === 'audit' ? 'active' : ''} onClick={() => { setTab('audit'); setQuery(''); setError('') }}><History size={17} /> Журнал</button>
       </div>
       <button className="icon-button" title="Обнови" aria-label="Обнови" disabled={busy || dirtyCount > 0} onClick={() => void perform(refresh)}><RefreshCw size={17} /></button>
@@ -167,6 +170,27 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
           <td><span className="admin-access"><Check size={16} /> Пълен достъп</span></td>
         </tr>)}
         {!loading && !filteredRows.length && <tr><td colSpan={5} className="empty-cell">Няма намерени методи.</td></tr>}
+      </tbody></table></TableContainer>
+    </>}
+
+    {tab === 'billing' && <>
+      <p className="muted">Планът, платеният период и срокът на достъп за всеки учител. Смяната на план и плащането се извършват от профила на съответния учител чрез Stripe.</p>
+      <TableContainer label="Абонаменти на учителите — таблица"><table className="ws-table data-table" aria-label="Абонаменти на учителите"><thead><tr><th>Учител</th><th>План</th><th>Платен период</th><th>Статус</th><th>Валиден до</th></tr></thead><tbody>
+        {filteredUsers.filter(user => user.role === 'TEACHER').map(user => {
+          const plan = billingPlans.find(item => item.userId === user.id)
+          const periodName = plan?.period === 'month' ? 'Месечен' : plan?.period === 'year' ? 'Годишен' : null
+          const price = plan?.amountMinor !== null && plan?.amountMinor !== undefined && plan.currency
+            ? new Intl.NumberFormat('bg-BG', { style: 'currency', currency: plan.currency }).format(plan.amountMinor / 100)
+            : null
+          const planName = plan?.plan === 'pro' ? 'Pro' : plan?.period ? 'Pro (изтекъл)' : 'Free'
+          return <tr key={user.id}><td><strong>{user.name}</strong><small>{user.email}</small></td>
+            <td><span className={plan?.plan === 'pro' ? 'good' : ''}>{planName}</span></td>
+            <td>{periodName ? `${periodName}${price ? ` — ${price} / ${plan?.period === 'month' ? 'месец' : 'година'}` : ''}` : 'Безплатен'}</td>
+            <td>{plan?.cancelAtPeriodEnd ? 'Прекратява се в края на периода' : plan?.status ?? 'Без абонамент'}</td>
+            <td>{plan?.paidThrough ? new Date(plan.paidThrough).toLocaleDateString('bg-BG') : '—'}</td>
+          </tr>
+        })}
+        {!loading && !filteredUsers.some(user => user.role === 'TEACHER') && <tr><td colSpan={5} className="empty-cell">Няма учители според текущото търсене.</td></tr>}
       </tbody></table></TableContainer>
     </>}
 

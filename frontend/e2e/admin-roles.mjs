@@ -26,6 +26,7 @@ try {
     if (path === '/api/auth/google/config') return respond({ enabled: false, redirect: `${base}/api/auth/google/redirect` })
     if (path === '/api/auth/me') return selfRevoked ? respond({ detail: 'Invalid token' }, 401) : respond(admin)
     if (path === '/api/admin/users' && method === 'GET') return respond(users)
+    if (path === '/api/admin/teacher-billing' && method === 'GET') return respond([{ userId: target.id, plan: 'pro', status: 'active', period: 'year', amountMinor: 5000, currency: 'EUR', paidThrough: '2027-10-26T12:00:00Z', cancelAtPeriodEnd: false }])
     if (path === '/api/admin/permissions') return respond([])
     if (path === '/api/admin/audit') return respond(audit)
     const match = path.match(/^\/api\/admin\/users\/(\d+)\/role$/)
@@ -92,6 +93,10 @@ try {
   await page.getByRole('status').filter({ hasText: 'Ролята на Test Learner' }).waitFor()
   assert.equal(target.role, 'TEACHER')
   assert.equal(await page.locator('.users-table tr').filter({ hasText: target.email }).locator('.role-cell').innerText(), 'Учител')
+  await page.getByRole('tab', { name: 'Абонаменти', exact: true }).click()
+  await page.getByText('Годишен — 50,00 € / година', { exact: true }).waitFor()
+  await page.getByText('Pro', { exact: true }).waitFor()
+  await page.getByRole('tab', { name: /Потребители/ }).click()
 
   for (const next of ['ADMIN', 'STUDENT']) {
     await open(target)

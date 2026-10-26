@@ -15,10 +15,11 @@ public class GroupAssignmentService {
     private final WorkspaceAudit audit;
     private final Clock clock;
     private final AssignmentDeletionService deletion;
+    private final NotificationService notifications;
 
-    public GroupAssignmentService(AssignmentRepository repository,WorkspaceJson json,WorkspaceAudit audit,Clock clock,AssignmentDeletionService deletion) {
+    public GroupAssignmentService(AssignmentRepository repository,WorkspaceJson json,WorkspaceAudit audit,Clock clock,AssignmentDeletionService deletion,NotificationService notifications) {
         this.repository=repository;this.json=json;this.audit=audit;this.clock=clock;
-        this.deletion=deletion;
+        this.deletion=deletion;this.notifications=notifications;
     }
 
     // The caller has authorized deletion and holds the group lock.
@@ -78,6 +79,8 @@ public class GroupAssignmentService {
                 continue;
             }
             repository.insertRecipient(org,id,student,json.write(sources),number(assignment,"max_attempts"));
+            var assignmentDetails=repository.findAssignment(org,id,false);
+            notifications.enqueueAssignment(org,student,string(repository.requireOrganizationName(org),"name"),string(assignmentDetails,"title"),id);
             audit.write(org,actor,"assignment.group_member_assigned",id,Map.of("student",student,"group",group));
         }
     }
