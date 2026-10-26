@@ -11,8 +11,44 @@ export function LearnerPanel({ api, begin, openResult, groupId }: { api: Workspa
   const attempts = useRemote<Attempt[]>(api, '/attempts', [])
   const results = useRemote<Result[]>(api, '/results', [])
   const action = useAction()
+  const [pollError, setPollError] = useState('')
   const [now, setNow] = useState(Date.now)
+  const reloadAssignments = assignments.reload
+  const reloadAttempts = attempts.reload
+  const reloadResults = results.reload
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer) }, [])
+  useEffect(() => {
+    let active = true, inFlight = false, timer: ReturnType<typeof setTimeout> | undefined
+    function schedule() {
+      if (active && !document.hidden && navigator.onLine) timer = window.setTimeout(() => void poll(), 5000)
+    }
+    async function poll() {
+      clearTimeout(timer)
+      if (!active || inFlight || document.hidden || !navigator.onLine) return
+      inFlight = true
+      try {
+        await Promise.all([reloadAssignments(), reloadAttempts(), reloadResults()])
+        if (active) setPollError('')
+      } catch (cause) {
+        if (active) setPollError(cause instanceof Error ? cause.message : 'Тестовете и резултатите не могат да се обновят. Ще опитаме отново автоматично.')
+      } finally {
+        inFlight = false
+        schedule()
+      }
+    }
+    function resume() { clearTimeout(timer); void poll() }
+    schedule()
+    document.addEventListener('visibilitychange', resume)
+    window.addEventListener('focus', resume)
+    window.addEventListener('online', resume)
+    return () => {
+      active = false
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', resume)
+      window.removeEventListener('focus', resume)
+      window.removeEventListener('online', resume)
+    }
+  }, [reloadAssignments, reloadAttempts, reloadResults])
   const assignmentIds = new Set(assignments.data.map(assignment => assignment.id))
   const visibleAttempts = groupId === undefined ? attempts.data : attempts.data.filter(attempt => assignmentIds.has(attempt.assignment_id))
   const visibleResults = groupId === undefined ? results.data : results.data.filter(result => assignmentIds.has(result.assignment_id))
@@ -28,7 +64,7 @@ export function LearnerPanel({ api, begin, openResult, groupId }: { api: Workspa
     const best = summary.get(result.assignment_id)
     if (!best || Number(result.percentage) > Number(best.percentage) || Number(result.percentage) === Number(best.percentage) && result.attempt_number > best.attempt_number) summary.set(result.assignment_id, result)
   }
-  return <section className="ws-section"><SectionHead title={groupId === undefined ? 'Моите тестове' : 'Тестове за групата'} description="Тук са тестовете ти за решаване и резултатите от предишните опити."><button className="icon-button" title="Обнови" onClick={() => void action.run(async () => { await assignments.reload(); await attempts.reload(); await results.reload() })}><RotateCw size={17} /></button></SectionHead><Feedback error={assignments.error || attempts.error || results.error || action.error} busy={action.busy || assignments.loading || attempts.loading || results.loading} />
+  return <section className="ws-section"><SectionHead title={groupId === undefined ? 'Моите тестове' : 'Тестове за групата'} description="Тестовете и резултатите се обновяват автоматично."><button className="icon-button" title="Обнови" onClick={() => void action.run(async () => { await assignments.reload(); await attempts.reload(); await results.reload(); setPollError('') })}><RotateCw size={17} /></button></SectionHead><Feedback error={assignments.error || attempts.error || results.error || action.error || pollError} busy={action.busy || assignments.loading || attempts.loading || results.loading} />
     <Panel title="Тестове за решаване" description="Провери срока и избери „Подготовка“. За започнат тест използвай „Продължи“.">
     <TableContainer label="Възложени тестове — таблица"><table className="ws-table" aria-label="Възложени тестове"><thead><tr><th>Тест</th><th>Статус</th><th>Начало</th><th>Краен срок</th><th>Опити</th><th>Оценка</th><th>Действие</th></tr></thead><tbody>{assignments.data.map(a => {
       const assignedAttempts = visibleAttempts.filter(attempt => attempt.assignment_id === a.id)

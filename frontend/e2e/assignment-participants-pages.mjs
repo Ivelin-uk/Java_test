@@ -8,7 +8,7 @@ const assignment = { id: 601, teacher_id: 101, title: 'Основи на Java - 
 const members = [{ student_id: 401, name: 'Иван Петров', email: 'ivan@example.test' }, { student_id: 402, name: 'Мария Николова', email: 'maria@example.test' }]
 const additionalMember = { student_id: 403, name: 'Георги Иванов', email: 'georgi@example.test' }
 const directory = [...members, additionalMember].map(member => ({ user_id: member.student_id, name: member.name, email: member.email, roles_json: '["STUDENT"]', status: 'active' }))
-const recipients = [{ ...members[0], canceled: false, attempt_id: null, attempt_number: null, status: null, max_attempts: 1, fullscreen_exempt: false, time_multiplier: 1, accommodation_reason: null }]
+const recipients = [{ ...members[0], canceled: false, attempt_id: null, attempt_number: null, attempts_used: 0, active_attempts: 0, status: null, max_attempts: 1, fullscreen_exempt: false, time_multiplier: 1, accommodation_reason: null }]
 const errors = [], requests = []
 let failRefresh = false, monitoringUnavailable = false, failMemberAddition = true
 const artifacts = new URL('../../.artifacts/', import.meta.url)
@@ -38,6 +38,10 @@ try {
         recipients.push({ ...recipients[0], ...additionalMember, attempt_id: null, attempt_number: null, status: null })
         assignment.recipients = 2
         return respond({})
+      }
+      if (method === 'POST' && path === '/api/v1/assignments/601/recipients/401/extra-attempt') {
+        recipients[0].max_attempts = 2
+        return respond({ maxAttempts: 2, remainingAttempts: 1, granted: true })
       }
       if (method === 'DELETE' && path === '/api/v1/groups/301/members/403') {
         members.splice(members.findIndex(member => member.student_id === 403), 1)
@@ -84,12 +88,22 @@ try {
   await page.getByRole('alert').getByText('Временно недостъпни участници.', { exact: true }).waitFor({ timeout: 6000 })
   await studentRow.getByText('Публикуван резултат', { exact: true }).waitFor()
   monitoringUnavailable = false
-  Object.assign(recipients[0], { attempt_id: null, attempt_number: null, status: null })
+  Object.assign(recipients[0], { attempt_id: null, attempt_number: null, attempts_used: 0, active_attempts: 0, status: null })
   await studentRow.getByText('Не е започнал', { exact: true }).waitFor({ timeout: 6000 })
   await page.getByRole('alert').waitFor({ state: 'detached' })
   assert.equal(navigations, 0)
   page.off('framenavigated', navigation)
   await search.fill('')
+  Object.assign(recipients[0], { attempt_id: 701, attempt_number: 1, attempts_used: 1, active_attempts: 0, status: 'finalized' })
+  const extraAttempt = page.getByRole('button', { name: 'Разреши още един опит за Иван Петров', exact: true })
+  await page.waitForFunction(() => {
+    const button = document.querySelector('button[aria-label="Разреши още един опит за Иван Петров"]')
+    return !!button && !button.disabled
+  }, undefined, { timeout: 6000 })
+  await extraAttempt.click()
+  await page.getByRole('list', { name: 'Известия', exact: true }).getByText('Разрешен е още един опит на ученика.', { exact: true }).waitFor()
+  await page.waitForFunction(() => document.querySelector('button[aria-label="Разреши още един опит за Иван Петров"]')?.disabled === true)
+  assert.equal(requests.filter(request => request.path === '/api/v1/assignments/601/recipients/401/extra-attempt').length, 1)
   assert.equal(await page.getByRole('combobox', { name: 'Сподели с учител', exact: true }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Разреши достъп', exact: true }).count(), 0)
   await page.getByLabel('Код за достъп', { exact: true }).getByText(assignment.access_code, { exact: true }).waitFor()
@@ -174,7 +188,7 @@ try {
   await page.getByRole('table', { name: 'Получатели на възлагането', exact: true }).waitFor()
   assert.equal(new URL(page.url()).pathname, '/assignments/601/participants')
   assert.deepEqual(errors, [])
-  console.log('Passed: access-code display/copy, teacher sharing removed, group-member add/error retry/removal confirmation with synchronized recipients, automatic status transitions, search preserved, polling failure/recovery, dedicated participants page, navigation/direct links/login return, manual refresh, missing/private assignments, desktop/mobile and both themes. API fixtures only.')
+  console.log('Passed: access-code display/copy, extra-attempt grant and duplicate prevention, teacher sharing removed, group-member add/error retry/removal confirmation with synchronized recipients, automatic status transitions, search preserved, polling failure/recovery, dedicated participants page, navigation/direct links/login return, manual refresh, missing/private assignments, desktop/mobile and both themes. API fixtures only.')
 } catch (error) {
   if (page && !page.isClosed()) await page.screenshot({ path: new URL('assignment-participants-failure.png', artifacts).pathname, fullPage: true })
   throw error

@@ -210,11 +210,21 @@ try {
       await page.clock.runFor(1000)
       await scheduled.getByText('Срокът е изтекъл', { exact: true }).waitFor()
       assert.equal(await scheduled.getByRole('button').isDisabled(), true)
+      const liveAssignment = { id: 305, title: 'Нов възложен тест', teacher_name: 'Г-жа Мария Николова', starts_at: new Date(Date.now() - 60000).toISOString(), ends_at: new Date(Date.now() + 3600000).toISOString(), max_attempts: 1, canceled: false }
+      assignments.push(liveAssignment)
+      attempts.push({ id: 499, assignment_id: liveAssignment.id, title: liveAssignment.title, attempt_number: 1, status: 'finalized', submitted_at: new Date().toISOString() })
+      results.push(result(499, '88.00', '5'))
+      empty = false
+      await page.clock.runFor(5000)
+      await availability.filter({ hasText: liveAssignment.title }).waitFor()
+      await table.getByRole('row').filter({ hasText: liveAssignment.title }).getByText('88.00%', { exact: true }).waitFor()
+      assert.equal(await page.getByText('Най-висок резултат', { exact: true }).count(), 1)
+      assignments.pop();attempts.pop();results.pop();empty = true
     } catch (error) {
       await page.screenshot({ path: new URL(`learner-results-${viewport.theme}-${viewport.width}-failure.png`, artifacts).pathname, fullPage: true })
       throw error
     } finally { await context.close() }
   }
   assert.deepEqual(errors, [])
-  console.log('Passed: active/expired/upcoming/canceled assignment colors and labels, automatic transitions at start/deadline without reload, single attempt/result table, best percentage per assignment, numeric ordering, latest corrections, pending and voided exclusion, tie breaking, refresh and empty states, result previews and release policy, pending/failed/passed colors and icons, outcome overrides, failed best score, hover preservation, accessible contrast, desktop/mobile and light/dark themes. API fixtures only.')
+  console.log('Passed: active/expired/upcoming/canceled assignment colors and labels, automatic assignment/result refresh without reloading, automatic transitions at start/deadline, single attempt/result table, best percentage per assignment, numeric ordering, latest corrections, pending and voided exclusion, tie breaking, refresh and empty states, result previews and release policy, pending/failed/passed colors and icons, outcome overrides, failed best score, hover preservation, accessible contrast, desktop/mobile and light/dark themes. API fixtures only.')
 } finally { await browser.close() }

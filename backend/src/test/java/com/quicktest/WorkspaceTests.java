@@ -2539,6 +2539,8 @@ class WorkspaceTests {
     @Test void extraAttemptIsStudentScopedConcurrentIdempotentAndPreservesResults() throws Exception {
         var peer=enrolledStudent();organizations.addStudent(teaching,defaultGroup,peer.getId());assignments.addRecipient(teaching,assignment,peer.getId());
         var request=startRequest();long id=number(start(request),"id");attempts.submit(learning,id,session(request));grading.finalizeResult(teaching,id,new GradingService.Finalize("extra-published-key","",null,null),false);
+        var monitor=assignments.monitoring(teaching,assignment).stream().filter(row->number(row,"student_id")==student).findFirst().orElseThrow();
+        assertEquals(1,number(monitor,"attempts_used"));assertEquals(0,number(monitor,"active_attempts"));assertEquals(id,number(monitor,"attempt_id"));
         var original=db.rows("SELECT * FROM result_revisions WHERE attempt_id=?",id);
         try(var pool=Executors.newFixedThreadPool(4)) {
             List<Callable<Map<String,Object>>> work=new ArrayList<>();for(int n=0;n<4;n++) work.add(()->assignments.allowExtraAttempt(teaching,assignment,student));

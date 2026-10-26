@@ -216,12 +216,13 @@ function AssignmentAudience({ assignment }: { assignment: Assignment }) {
     {!groups.length && !individuals.length && <span>-</span>}
   </div>
 }
-interface MonitorRow { student_id: number; name: string; email?: string; canceled: boolean; assigned?: boolean; attempt_id: number | null; attempt_number: number | null; status: string | null; max_attempts: number; fullscreen_exempt: boolean; time_multiplier: number; accommodation_reason: string | null }
+interface MonitorRow { student_id: number; name: string; email?: string; canceled: boolean; assigned?: boolean; attempt_id: number | null; attempt_number: number | null; attempts_used: number; active_attempts: number; status: string | null; max_attempts: number; fullscreen_exempt: boolean; time_multiplier: number; accommodation_reason: string | null }
 interface AssignmentMember { student_id: number; name: string; email: string }
 export function AssignmentParticipants({ api, assignment, endsAt, groups, recipientsChanged }: { api: WorkspaceApi; assignment: number; endsAt: string; groups: { id: number; name: string }[]; recipientsChanged: () => Promise<unknown> }) {
   const list = useRemote<MonitorRow[]>(api, `/assignments/${assignment}/monitoring`, [])
   const members = useRemote<AssignmentMember[]>(api, `/assignments/${assignment}/members`, [])
   const action = useAction()
+  const notify = useNotifications()
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<MonitorRow | null>(null)
   const [managingGroup, setManagingGroup] = useState<{ id: number; name: string } | null>(null)
@@ -261,7 +262,7 @@ export function AssignmentParticipants({ api, assignment, endsAt, groups, recipi
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer) }, [])
   const rows: MonitorRow[] = [...list.data.map(row => ({ ...row, assigned: true })), ...members.data.filter(member => !list.data.some(row => row.student_id === member.student_id)).map(member => ({
-    ...member, assigned: false, canceled: false, attempt_id: null, attempt_number: null, status: null, max_attempts: 1, fullscreen_exempt: false, time_multiplier: 1, accommodation_reason: null,
+    ...member, assigned: false, canceled: false, attempt_id: null, attempt_number: null, attempts_used: 0, active_attempts: 0, status: null, max_attempts: 1, fullscreen_exempt: false, time_multiplier: 1, accommodation_reason: null,
   }))]
   const search = query.trim().toLocaleLowerCase()
   const visible = rows.filter(row => `${row.name} ${row.email ?? ''}`.toLocaleLowerCase().includes(search))
@@ -270,6 +271,17 @@ export function AssignmentParticipants({ api, assignment, endsAt, groups, recipi
   function canAssign(row: MonitorRow) {
     const attempts = list.data.filter(value => value.student_id === row.student_id && value.attempt_id !== null)
     return !expired && members.data.some(member => member.student_id === row.student_id) && !attempts.some(attempt => attempt.status === 'in_progress') && (!row.assigned || row.canceled || attempts.length >= row.max_attempts)
+  }
+  function canGrantExtraAttempt(row: MonitorRow) {
+    return !!groups.length && row.assigned !== false && !row.canceled && row.active_attempts === 0 && row.attempts_used >= row.max_attempts && !expired
+  }
+  async function grantExtraAttempt(row: MonitorRow) {
+    const result = await action.run(async () => {
+      const granted = await api.post<{ granted: boolean }>(`/assignments/${assignment}/recipients/${row.student_id}/extra-attempt`)
+      await refresh()
+      return granted
+    })
+    if (result) notify(result.granted ? 'Разрешен е още един опит на ученика.' : 'Ученикът вече има свободен опит.')
   }
   return <section className="ws-monitor">
     <SectionHead title="Участници" description="Статусите се обновяват автоматично."><button className="icon-button" title="Обнови" disabled={action.busy} onClick={() => void action.run(refresh)}><RotateCw size={17} /></button></SectionHead>
@@ -282,6 +294,7 @@ export function AssignmentParticipants({ api, assignment, endsAt, groups, recipi
         <td>{row.name}{row.email && <div className="ws-muted">{row.email}</div>}</td><td>{!row.assigned ? 'Не е възложен' : row.canceled ? 'Премахнат' : 'Възложен'}</td><td>{row.assigned ? `${row.attempt_number ?? 0}/${row.max_attempts}` : '-'}</td><td>{row.status ? label(row.status) : 'Не е започнал'}</td>
         <td><button aria-haspopup="dialog" disabled={!row.assigned || row.canceled || action.busy} onClick={() => setSelected(row)}>Изключение / опити</button></td>
         <td>{!!groups.length && visible.findIndex(value => value.student_id === row.student_id) === index && <div className="ws-actions">
+          {row.assigned && !row.canceled && <button type="button" className="icon-button" title={canGrantExtraAttempt(row) ? 'Разреши още един опит' : row.active_attempts > 0 ? 'Изчакай ученикът да приключи активния си опит' : !expired ? 'Допълнителен опит се разрешава след изчерпване на опитите' : 'Срокът на теста е изтекъл'} aria-label={`Разреши още един опит за ${row.name}`} disabled={action.busy || !canGrantExtraAttempt(row)} onClick={() => void grantExtraAttempt(row)}><RotateCcw size={17} aria-hidden="true" /></button>}
           {row.assigned && !row.canceled && <button className="icon-button danger" title={`Премахни възлагането за ${row.name}`} aria-label={`Премахни възлагането за ${row.name}`} disabled={action.busy} onClick={() => setChangingRecipient({ row, remove: true })}><Trash2 size={17} /></button>}
           {canAssign(row) && <button className="icon-button" title={`${row.assigned ? 'Възложи отново на' : 'Възложи теста на'} ${row.name}`} aria-label={`${row.assigned ? 'Възложи отново на' : 'Възложи теста на'} ${row.name}`} disabled={action.busy} onClick={() => setChangingRecipient({ row, remove: false })}><RotateCw size={17} /></button>}
         </div>}</td>
