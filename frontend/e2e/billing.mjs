@@ -9,8 +9,8 @@ const teacher = { token: 'billing-fixture', user: { id: 101, name: 'Учител
 const free = { groups: 1, activeAssignments: 5, aiCredits: 10 }, pro = { groups: 20, activeAssignments: 100, aiCredits: 100 }
 const initial = {
   plan: 'free', status: 'free', currentPeriod: null, paidThrough: null, cancelAtPeriodEnd: false,
-  mode: 'test', checkoutAvailable: true, portalAvailable: false,
-  prices: { month: { available: true, amountMinor: 700, currency: 'eur' }, year: { available: true, amountMinor: 5000, currency: 'eur' } },
+  mode: 'test', checkoutAvailable: true, portalAvailable: false, cancellationAvailable: false,
+  prices: { month: { available: true, amountMinor: 800, currency: 'eur' }, year: { available: false } },
   limits: free, usage: { groups: 1, activeAssignments: 2, aiCredits: 3 }, plans: { free, pro },
 }
 const artifacts = new URL('../../.artifacts/', import.meta.url)
@@ -19,7 +19,7 @@ const errors = []
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined), headless: true })
 
 async function fixture({ signedIn = true, role = 'TEACHER', billing = initial, viewport = { width: 1440, height: 1100 }, theme = 'light' } = {}) {
-  const state = { billing: structuredClone(billing), gets: 0, failGet: 0, failCheckout: 0, failPortal: 0, checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_test_fixture', portalUrl: 'https://billing.stripe.com/p/session/test_fixture', requests: [], redirects: [] }
+  const state = { billing: structuredClone(billing), gets: 0, failGet: 0, failCheckout: 0, failPortal: 0, failCancel: 0, checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_test_fixture', portalUrl: 'https://billing.stripe.com/p/session/test_fixture', requests: [], redirects: [] }
   const auth = { ...teacher, user: { ...teacher.user, role } }
   const context = await browser.newContext({ viewport })
   await context.addInitScript(({ auth, signedIn, theme }) => {
@@ -56,6 +56,12 @@ async function fixture({ signedIn = true, role = 'TEACHER', billing = initial, v
         if (state.failPortal-- > 0) return respond({ detail: 'Порталът временно не е достъпен.' }, 503)
         return respond({ url: state.portalUrl })
       }
+      if (path === '/api/v1/billing/cancel') {
+        await new Promise(resolve => setTimeout(resolve, 120))
+        if (state.failCancel-- > 0) return respond({ detail: 'Спирането временно не е достъпно.' }, 503)
+        state.billing = { ...state.billing, cancelAtPeriodEnd: true, cancellationAvailable: false }
+        return respond({ cancelAtPeriodEnd: true, paidThrough: state.billing.paidThrough })
+      }
     }
     errors.push(`Unexpected API: ${method} ${path}`)
     return respond({}, 404)
@@ -67,7 +73,7 @@ async function fixture({ signedIn = true, role = 'TEACHER', billing = initial, v
 
 try {
   // Direct route, server errors/retry, honest unconfigured state and responsive themes.
-  const unconfigured = await fixture({ billing: { ...initial, mode: 'unconfigured', checkoutAvailable: false, prices: { month: { available: false }, year: { available: false } } } })
+  const unconfigured = await fixture({ billing: { ...initial, mode: 'unconfigured', checkoutAvailable: false, prices: { month: { available: false, amountMinor: 800, currency: 'eur' }, year: { available: false } } } })
   unconfigured.state.failGet = 100 // Also covers React StrictMode probing the initial effect twice.
   await unconfigured.page.goto(`${frontend}/billing`)
   await unconfigured.page.getByRole('alert').getByText('Временно недостъпен абонамент.', { exact: true }).waitFor()
@@ -75,8 +81,8 @@ try {
   await unconfigured.page.getByRole('button', { name: 'Опитай отново', exact: true }).click()
   await unconfigured.page.getByRole('heading', { name: 'ExamAI Free', exact: true }).waitFor()
   await unconfigured.page.getByText('Плащанията още не са активирани', { exact: true }).waitFor()
-  assert.equal(await unconfigured.page.getByRole('button', { name: 'Избери Pro', exact: true }).isDisabled(), true)
-  assert.equal(await unconfigured.page.getByText('Цената още не е зададена', { exact: true }).count(), 1)
+  assert.equal(await unconfigured.page.getByRole('button', { name: 'Абонирай се за Pro', exact: true }).isDisabled(), true)
+  await unconfigured.page.getByText('8,00', { exact: false }).waitFor()
   await unconfigured.page.getByRole('progressbar', { name: 'Групи: 1 от 1', exact: true }).waitFor()
   await unconfigured.page.screenshot({ path: new URL('billing-light.png', artifacts).pathname, fullPage: true })
   await unconfigured.page.getByRole('button', { name: 'Тъмна тема', exact: true }).click()
@@ -104,8 +110,8 @@ try {
   await proCard.getByText('До 42 групи', { exact: true }).waitFor()
   await proCard.getByText('100 AI кредита всеки месец', { exact: true }).waitFor()
   await proCard.getByText('Автоматична AI проверка при предаване', { exact: true }).waitFor()
-  await proCard.getByText('7,00', { exact: false }).waitFor()
-  await proCard.getByText('50,00', { exact: false }).waitFor()
+  await proCard.getByText('8,00', { exact: false }).waitFor()
+  assert.equal(await proCard.getByText('50,00', { exact: false }).count(), 0)
   await profile.page.screenshot({ path: new URL('profile-plans-light.png', artifacts).pathname, fullPage: true })
   await profile.page.getByRole('button', { name: 'Тъмна тема', exact: true }).click()
   await profile.page.screenshot({ path: new URL('profile-plans-dark.png', artifacts).pathname, fullPage: true })
@@ -114,7 +120,7 @@ try {
     assert.equal(await profile.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await profile.page.screenshot({ path: new URL(`profile-plans-${width}.png`, artifacts).pathname, fullPage: true })
   }
-  await proCard.getByRole('button', { name: 'Виж Pro и избери период', exact: true }).click()
+  await proCard.getByRole('button', { name: 'Виж месечния абонамент', exact: true }).click()
   await profile.page.getByRole('heading', { name: 'Абонамент', exact: true }).waitFor()
   profile.state.failGet = 100
   await profile.page.getByRole('navigation').getByRole('button', { name: 'Профил', exact: true }).click()
@@ -127,7 +133,7 @@ try {
   await profile.page.getByRole('heading', { name: 'Абонамент', exact: true }).waitFor()
   await profile.context.close()
 
-  const mobile = await fixture({ billing: { ...initial, mode: 'unconfigured', checkoutAvailable: false, prices: { month: { available: false }, year: { available: false } } }, viewport: { width: 390, height: 844 }, theme: 'dark' })
+  const mobile = await fixture({ billing: { ...initial, mode: 'unconfigured', checkoutAvailable: false, prices: { month: { available: false, amountMinor: 800, currency: 'eur' }, year: { available: false } } }, viewport: { width: 390, height: 844 }, theme: 'dark' })
   await mobile.page.goto(`${frontend}/billing`)
   await mobile.page.getByRole('heading', { name: 'ExamAI Free', exact: true }).waitFor()
   assert.equal(await mobile.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
@@ -162,15 +168,19 @@ try {
   assert.equal(monthly.state.redirects.length, 1)
   await monthly.context.close()
 
-  // Annual checkout uses the selected interval and the annual server price.
-  const yearly = await fixture()
-  await yearly.page.goto(`${frontend}/billing`)
-  await yearly.page.getByRole('button', { name: 'Годишно', exact: true }).click()
-  await yearly.page.getByText('50,00', { exact: false }).waitFor()
-  await yearly.page.getByRole('button', { name: 'Изпробвай Pro в Stripe', exact: true }).click()
-  await yearly.page.getByRole('heading', { name: 'Fixture checkout', exact: true }).waitFor()
-  assert.equal(yearly.state.requests.find(request => request.path === '/api/v1/billing/checkout').data.period, 'year')
-  await yearly.context.close()
+  // Only monthly subscriptions are offered, with card entry and compatible wallets in hosted Stripe Checkout.
+  const live = await fixture({ billing: { ...initial, mode: 'live' } })
+  await live.page.goto(`${frontend}/billing`)
+  await live.page.getByRole('heading', { name: 'ExamAI Free', exact: true }).waitFor()
+  assert.equal(await live.page.getByRole('button', { name: 'Годишно', exact: true }).count(), 0)
+  await live.page.getByText('8,00', { exact: false }).waitFor()
+  const methods = live.page.getByLabel('Начини на плащане', { exact: true })
+  for (const name of ['Кредитна / дебитна карта', 'Apple Pay', 'Google Pay']) await methods.getByText(name, { exact: true }).waitFor()
+  await live.page.getByText('Подновява се автоматично всеки месец. Можеш да спреш подновяването по всяко време.', { exact: true }).waitFor()
+  await live.page.getByRole('button', { name: 'Абонирай се за Pro', exact: true }).click()
+  await live.page.getByRole('heading', { name: 'Fixture checkout', exact: true }).waitFor()
+  assert.equal(live.state.requests.find(request => request.path === '/api/v1/billing/checkout').data.period, 'month')
+  await live.context.close()
 
   // Return URL does not activate Pro: wait until a fresh server response confirms it.
   const returned = await fixture()
@@ -183,7 +193,7 @@ try {
   returned.state.billing = { ...returned.state.billing, plan: 'pro', status: 'active', currentPeriod: 'month', limits: pro, portalAvailable: true, paidThrough: '2027-02-26T12:00:00Z' }
   await returned.page.getByText('Pro е активен', { exact: true }).waitFor({ timeout: 6000 })
   await returned.page.getByRole('heading', { name: 'ExamAI Pro', exact: true }).waitFor()
-  await returned.page.getByText('Период: месечен — 7,00 €.', { exact: false }).waitFor()
+  await returned.page.getByText('Период: месечен — 8,00 €.', { exact: false }).waitFor()
   await returned.page.getByRole('progressbar', { name: 'AI кредити този месец: 3 от 100', exact: true }).waitFor()
   assert.equal(returned.state.requests.filter(request => request.path === '/api/v1/billing/checkout').length, 0)
   returned.state.failPortal = 1
@@ -213,7 +223,7 @@ try {
   await pending.context.close()
 
   // Cancel-at-period-end remains Pro with an explicit access date.
-  const canceled = await fixture({ billing: { ...initial, plan: 'pro', status: 'active', currentPeriod: 'year', limits: pro, cancelAtPeriodEnd: true, paidThrough: '2027-02-26T12:00:00Z', portalAvailable: true } })
+  const canceled = await fixture({ billing: { ...initial, plan: 'pro', status: 'active', currentPeriod: 'year', prices: { ...initial.prices, year: { available: false, amountMinor: 5000, currency: 'eur' } }, limits: pro, cancelAtPeriodEnd: true, paidThrough: '2027-02-26T12:00:00Z', portalAvailable: true } })
   await canceled.page.goto(`${frontend}/billing`)
   await canceled.page.getByText('Прекратява се в края на периода', { exact: true }).waitFor()
   await canceled.page.getByText('Достъп до Pro до', { exact: false }).waitFor()
@@ -228,6 +238,36 @@ try {
   await paidProfile.getByRole('button', { name: 'Управлявай абонамента', exact: true }).click()
   await canceled.page.getByRole('heading', { name: 'Абонамент', exact: true }).waitFor()
   await canceled.context.close()
+
+  // Renewal cancellation requires confirmation, supports retry and same-tick duplicate clicks, and preserves paid access.
+  const stopping = await fixture({ billing: { ...initial, plan: 'pro', status: 'active', currentPeriod: 'month', limits: pro, cancellationAvailable: true, portalAvailable: true, paidThrough: '2027-02-26T12:00:00Z' } })
+  await stopping.page.goto(`${frontend}/billing`)
+  const stop = stopping.page.getByRole('button', { name: 'Спри подновяването', exact: true })
+  await stop.click()
+  const confirmationDialog = stopping.page.getByRole('dialog', { name: 'Спиране на месечното подновяване', exact: true })
+  await confirmationDialog.waitFor()
+  assert.equal(stopping.state.requests.filter(request => request.path === '/api/v1/billing/cancel').length, 0)
+  await confirmationDialog.getByRole('button', { name: 'Отказ', exact: true }).click()
+  await stop.click()
+  stopping.state.failCancel = 1
+  const confirmStop = confirmationDialog.getByRole('button', { name: 'Потвърди спирането', exact: true })
+  await confirmStop.evaluate(button => { button.click(); button.click() })
+  await confirmationDialog.getByRole('alert').getByText('Спирането временно не е достъпно.', { exact: true }).waitFor()
+  assert.equal(stopping.state.requests.filter(request => request.path === '/api/v1/billing/cancel').length, 1)
+  assert.equal(stopping.state.billing.cancelAtPeriodEnd, false)
+  await stopping.page.setViewportSize({ width: 320, height: 844 })
+  assert.equal(await confirmationDialog.evaluate(element => element.getBoundingClientRect().right <= innerWidth), true)
+  await confirmStop.click()
+  await confirmationDialog.waitFor({ state: 'hidden' })
+  await stopping.page.getByText('Прекратява се в края на периода', { exact: true }).waitFor()
+  await stopping.page.getByText('Достъп до Pro до', { exact: false }).waitFor()
+  await stopping.page.getByRole('heading', { name: 'ExamAI Pro', exact: true }).waitFor()
+  assert.equal(await stop.count(), 0)
+  assert.equal(stopping.state.requests.filter(request => request.path === '/api/v1/billing/cancel').length, 2)
+  await stopping.page.reload()
+  await stopping.page.getByRole('heading', { name: 'ExamAI Pro', exact: true }).waitFor()
+  await stopping.page.getByText('Прекратява се в края на периода', { exact: true }).waitFor()
+  await stopping.context.close()
 
   const aborted = await fixture()
   await aborted.page.goto(`${frontend}/billing?checkout=canceled`)

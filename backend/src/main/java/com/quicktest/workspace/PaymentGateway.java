@@ -15,5 +15,6 @@ public interface PaymentGateway {
     default Map<String,Object> currentInvoice(String id) {throw WorkspaceError.conflict("Stripe не е конфигуриран.");}
     default Map<String,Object> currentPrice(String id) {throw WorkspaceError.conflict("Stripe не е конфигуриран.");}
     default Map<String,Object> portal(String customer,String returnUrl) {throw WorkspaceError.conflict("Платежният портал не е конфигуриран.");}
+    default Map<String,Object> cancelAtPeriodEnd(String subscription) {throw WorkspaceError.conflict("Stripe не е конфигуриран.");}
     Map<String,Object> verifyWebhook(String payload,String signature);
 }

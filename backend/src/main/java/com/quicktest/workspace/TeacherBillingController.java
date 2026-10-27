@@ -21,6 +21,8 @@ public class TeacherBillingController {
     public Object checkout(@Valid @RequestBody TeacherBillingService.Checkout request) {return billing.checkout(access.user(),request);}
     @PostMapping("/portal") @PreAuthorize("isAuthenticated()")
     public Object portal() {return billing.portal(access.user());}
+    @PostMapping("/cancel") @PreAuthorize("isAuthenticated()")
+    public Object cancel() {return billing.cancel(access.user());}
     @PostMapping("/webhook") @EndpointPolicy(mode=EndpointPolicy.Mode.PUBLIC)
     public void webhook(@RequestBody String body,@RequestHeader("Stripe-Signature") String signature) {if(!billing.webhook(body,signature)) legacy.webhook(body,signature);}
 }

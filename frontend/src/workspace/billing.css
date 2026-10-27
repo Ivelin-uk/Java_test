@@ -53,6 +53,10 @@
 .ws-billing-plan .ws-billing-subscribe + .ws-billing-card-note { margin-top: 8px; padding-top: 0; }
 .ws-billing-security { display: flex; align-items: flex-start; justify-content: center; gap: 8px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; text-align: center; }
 .ws-billing-security > svg { flex: 0 0 18px; margin-top: 1px; }
+.ws-billing-methods { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.ws-billing-methods span { display: inline-flex; align-items: center; gap: 7px; padding: 9px 13px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); font-size: 14px; }
+.ws-billing-cancel { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding-top: 18px; border-top: 1px solid var(--border); }
+.ws-billing-cancel p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
 .ws-profile-plan { display: grid; gap: 20px; min-width: 0; }
 .ws-profile-plan > button { justify-self: start; }
 .ws-billing-credit-note { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.7; }

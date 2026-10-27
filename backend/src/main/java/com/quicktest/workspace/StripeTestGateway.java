@@ -19,10 +19,16 @@ public class StripeTestGateway implements PaymentGateway {
     public StripeTestGateway(WorkspaceJson json,String key,String webhookSecret) {this(json,key,webhookSecret,"test");}
     @Autowired
     public StripeTestGateway(WorkspaceJson json,@Value("${app.stripe.secret-key:}") String key,@Value("${app.stripe.webhook-secret:}") String webhookSecret,@Value("${app.stripe.mode:test}") String mode) {
+        this(json,key,webhookSecret,mode,httpBuilder());
+    }
+    public StripeTestGateway(WorkspaceJson json,String key,String webhookSecret,String mode,RestClient.Builder builder) {
         if(!java.util.Set.of("test","live").contains(mode) || (!key.isBlank() && !key.startsWith("sk_"+mode+"_"))) throw new IllegalStateException("Stripe mode and key must match");
         this.json=json;this.key=key;this.webhookSecret=webhookSecret;this.mode=mode;
+        this.http=builder.baseUrl("https://api.stripe.com").defaultHeader("Authorization","Bearer "+key).defaultHeader("Stripe-Version",com.stripe.Stripe.API_VERSION).build();
+    }
+    private static RestClient.Builder httpBuilder() {
         var factory=new JdkClientHttpRequestFactory(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());factory.setReadTimeout(Duration.ofSeconds(20));
-        this.http=RestClient.builder().baseUrl("https://api.stripe.com").requestFactory(factory).defaultHeader("Authorization","Bearer "+key).defaultHeader("Stripe-Version",com.stripe.Stripe.API_VERSION).build();
+        return RestClient.builder().requestFactory(factory);
     }
     public boolean configured() {return !key.isBlank() && !webhookSecret.isBlank();}
     public String mode() {return mode;}
@@ -30,6 +36,7 @@ public class StripeTestGateway implements PaymentGateway {
     public Map<String,Object> teacherCheckout(long user,long workspace,String price,String requestKey,String customer,String returnUrl) {
         requireConfigured();validateId(price,"price_");
         var form=new LinkedMultiValueMap<String,String>();form.add("mode","subscription");form.add("line_items[0][price]",price);form.add("line_items[0][quantity]","1");
+        form.add("payment_method_collection","always");
         for(String prefix:java.util.List.of("metadata","subscription_data[metadata]")) {
             form.add(prefix+"[billing_owner]","teacher");form.add(prefix+"[teacher_id]",Long.toString(user));form.add(prefix+"[workspace_id]",Long.toString(workspace));form.add(prefix+"[request_key]",requestKey);
         }
@@ -64,6 +71,11 @@ public class StripeTestGateway implements PaymentGateway {
     public Map<String,Object> portal(String customer,String returnUrl) {
         requireConfigured();if(!customer.matches("cus_[A-Za-z0-9]+")) throw WorkspaceError.validation("Невалиден клиент.");
         var form=new LinkedMultiValueMap<String,String>();form.add("customer",customer);form.add("return_url",returnUrl);return request("/v1/billing_portal/sessions",form,null);
+    }
+    public Map<String,Object> cancelAtPeriodEnd(String subscription) {
+        requireConfigured();validateId(subscription,"sub_");
+        var form=new LinkedMultiValueMap<String,String>();form.add("cancel_at_period_end","true");
+        return request("/v1/subscriptions/"+subscription,form,null);
     }
     public Map<String,Object> verifyWebhook(String payload,String signature) {
         requireConfigured();

@@ -9,6 +9,7 @@ export type TeacherBilling = {
   mode: 'test' | 'live' | 'unconfigured'
   checkoutAvailable: boolean
   portalAvailable: boolean
+  cancellationAvailable?: boolean
   prices: Record<BillingPeriod, BillingPrice>
   limits: { groups: number; activeAssignments: number; aiCredits: number }
   usage: { groups: number; activeAssignments: number; aiCredits: number }

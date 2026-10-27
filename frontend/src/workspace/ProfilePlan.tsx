@@ -23,6 +23,7 @@ export function ProfilePlan({ api, onChangePlan }: { api: WorkspaceApi; onChange
   const paidThrough = formattedDate(billing?.paidThrough ?? null)
   const currentPeriod = billing?.currentPeriod
   const currentPrice = billing && currentPeriod ? formattedPrice(billing.prices[currentPeriod]) : null
+  const monthlyPrice = billing ? formattedPrice(billing.prices.month) : null
   return <section className="ws-profile-plan" aria-label="План и плащане">
     <div className="ws-billing-choose-heading"><div><h3><CreditCard size={20} aria-hidden="true" /> План и възможности</h3><p>Виж какво включва твоят план и какво получаваш с Pro.</p></div></div>
     <Feedback error={error} busy={loading} />
@@ -48,12 +49,10 @@ export function ProfilePlan({ api, onChangePlan }: { api: WorkspaceApi; onChange
         <article className="ws-billing-plan ws-billing-plan-pro" aria-labelledby="profile-pro-title">
           <div className="ws-billing-plan-title"><h3 id="profile-pro-title"><Sparkles size={21} aria-hidden="true" />Pro</h3><span className="ws-billing-tag">{billing.plan === 'pro' ? 'Текущ план' : 'Повече възможности'}</span></div>
           <p>Повече групи и активни възлагания, месечни AI кредити и автоматична AI проверка.</p>
-          <div className="ws-profile-plan-prices">{(['month', 'year'] as const).map(period => {
-            const price = billing.prices[period], amount = formattedPrice(price)
-            return amount ? <p key={period}><strong>{amount}</strong> / {period === 'month' ? 'месец' : 'година'}</p> : null
-          })}{!formattedPrice(billing.prices.month) && !formattedPrice(billing.prices.year) && <p>{billing.prices.month.available || billing.prices.year.available ? 'Цената се показва при избор на период.' : 'Цената още не е зададена.'}</p>}</div>
+          <div className="ws-profile-plan-prices">{monthlyPrice ? <p><strong>{monthlyPrice}</strong> / месец</p> : <p>Цената още не е зададена.</p>}</div>
+          <p>Автоматично месечно подновяване. Можеш да го спреш по всяко време.</p>
           <BillingPlanFeatures plan="pro" limits={billing.plans?.pro ?? (billing.plan === 'pro' ? billing.limits : undefined)} />
-          <button type="button" className="primary command-button ws-billing-subscribe" onClick={onChangePlan}><ArrowUpRight size={18} aria-hidden="true" />{billing.plan === 'pro' ? 'Управлявай абонамента' : 'Виж Pro и избери период'}</button>
+          <button type="button" className="primary command-button ws-billing-subscribe" onClick={onChangePlan}><ArrowUpRight size={18} aria-hidden="true" />{billing.plan === 'pro' ? 'Управлявай абонамента' : 'Виж месечния абонамент'}</button>
           {billing.plan === 'free' && !billing.checkoutAvailable && <p className="ws-billing-card-note">Плащането за Pro в момента не е достъпно.</p>}
         </article>
       </div>

@@ -16,6 +16,7 @@ import static com.quicktest.workspace.WorkspaceValues.*;
 /** Personal teacher billing. Provider subscription status alone never grants paid time. */
 @Service
 public class TeacherBillingService {
+    public static final long MONTHLY_AMOUNT_MINOR=800;
     private final TeacherBillingRepository repository;
     private final PaymentGateway gateway;
     private final PersonalWorkspace personal;
@@ -44,10 +45,12 @@ public class TeacherBillingService {
         result.put("prices",Map.of("month",month,"year",year));
         result.put("checkoutAvailable",!paid(account) && (Boolean.TRUE.equals(month.get("available")) || Boolean.TRUE.equals(year.get("available"))) && replaceable(account));
         result.put("portalAvailable",gateway.configured() && string(account,"stripe_mode").equals(gateway.mode()) && !string(account,"stripe_customer_id").isBlank());
+        result.put("cancellationAvailable",gateway.configured() && string(account,"stripe_mode").equals(gateway.mode()) && !string(account,"stripe_subscription_id").isBlank() && !flag(account,"cancel_at_period_end") && !Set.of("canceled","incomplete_expired").contains(string(account,"provider_status")));
         return result;
     }
     private Map<String,Object> priceDescription(String period) {
-        String priceId=priceId(period);if(!gateway.configured() || priceId.isBlank()) return Map.of("available",false);
+        if(!period.equals("month")) return Map.of("available",false);
+        String priceId=priceId(period);if(!gateway.configured() || priceId.isBlank()) return Map.of("available",false,"amountMinor",MONTHLY_AMOUNT_MINOR,"currency","eur");
         var price=verifiedPrice(period);var result=new LinkedHashMap<String,Object>();result.put("available",true);
         if(price.get("unit_amount") instanceof Number amount) result.put("amountMinor",amount.longValue());
         result.put("currency",string(price,"currency"));return result;
@@ -55,7 +58,7 @@ public class TeacherBillingService {
     @Transactional(noRollbackFor=PaymentGateway.Unavailable.class)
     public Map<String,Object> checkout(AppUser user,Checkout request) {
         teacher(user);
-        if(request==null || request.requestKey()==null || !request.requestKey().matches("[A-Za-z0-9_-]{8,80}") || !Set.of("month","year").contains(Objects.toString(request.period(),""))) throw WorkspaceError.validation("Избери месечен или годишен абонамент.");
+        if(request==null || request.requestKey()==null || !request.requestKey().matches("[A-Za-z0-9_-]{8,80}") || !"month".equals(request.period())) throw WorkspaceError.validation("Pro се предлага за 8 € на месец.");
         long workspace=personal.workspace(user);repository.lockTeacher(user.getId());
         var account=account(user.getId(),workspace);sameMode(account);
         if(paid(account) || !replaceable(account)) throw WorkspaceError.conflict("Вече имаш абонамент. Управлявай го през платежния портал.");
@@ -95,6 +98,30 @@ public class TeacherBillingService {
         if(session.containsKey("livemode")) verifyMode(session);
         audit.write(number(account,"workspace_id"),user.getId(),"teacher_billing.portal_opened",null,Map.of());
         return Map.of("url",safeUrl(string(session,"url"),"billing.stripe.com"));
+    }
+    @Transactional
+    public Cancellation cancel(AppUser user) {
+        teacher(user);personal.workspace(user);repository.lockTeacher(user.getId());
+        var account=repository.findByUserId(user.getId()).orElseThrow(()->WorkspaceError.conflict("Няма абонамент за прекратяване."));sameMode(account);
+        String subscription=identifier(string(account,"stripe_subscription_id"),"sub_");
+        var current=gateway.currentSubscription(subscription);verifyBoundSubscription(user.getId(),account,current);
+        if(Set.of("canceled","incomplete_expired").contains(string(current,"status"))) throw WorkspaceError.conflict("Абонаментът вече е прекратен.");
+        if(!flag(current,"cancel_at_period_end")) {
+            current=gateway.cancelAtPeriodEnd(subscription);verifyBoundSubscription(user.getId(),account,current);
+            if(!flag(current,"cancel_at_period_end")) throw WorkspaceError.conflict("Stripe не потвърди спирането на подновяването. Опитай отново.");
+        }
+        // Cancellation never grants time or removes access already paid for.
+        Instant through=account.get("paid_through")==null?null:time(account,"paid_through");
+        repository.update(user.getId(),string(account,"stripe_customer_id"),subscription,string(current,"status"),string(account,"billing_period"),through,true,clock.instant());
+        if(!flag(account,"cancel_at_period_end")) audit.write(number(account,"workspace_id"),user.getId(),"teacher_billing.renewal_canceled",null,Map.of("subscription",subscription));
+        return new Cancellation(true,through);
+    }
+    private void verifyBoundSubscription(long user,Map<String,Object> account,Map<String,Object> subscription) {
+        verifyMode(subscription);
+        if(!string(subscription,"id").equals(string(account,"stripe_subscription_id")) || !reference(subscription.get("customer")).equals(string(account,"stripe_customer_id")) || !string(subscription,"collection_method").equals("charge_automatically")) throw WorkspaceError.forbidden();
+        var request=verifiedRequest(user,account,obj(subscription.get("metadata")));
+        var item=subscriptionItem(subscription);
+        if(!priceIdentifier(item).equals(string(request,"price_id")) || !priceIdentifier(item).equals(priceId(string(request,"billing_period"))) || epoch(item,"quantity")!=1) throw WorkspaceError.forbidden();
     }
     /** false means an authenticated legacy organization event, for the existing adapter. */
     @Transactional
@@ -184,7 +211,7 @@ public class TeacherBillingService {
     private Map<String,Object> verifiedPrice(String period) {
         String id=priceId(period);if(!gateway.configured() || id.isBlank()) throw WorkspaceError.conflict("Плащанията още не са настроени. Свържи се с поддръжката.");
         var price=gateway.currentPrice(identifier(id,"price_"));verifyMode(price);var recurring=obj(price.get("recurring"));
-        long expectedAmount=period.equals("month")?700:5000;
+        long expectedAmount=period.equals("month")?MONTHLY_AMOUNT_MINOR:5000;
         if(!string(price,"id").equals(id) || !flag(price,"active") || !string(price,"type").equals("recurring") || !string(recurring,"interval").equals(period) || epoch(recurring,"interval_count")!=1 || !string(price,"billing_scheme").equals("per_unit") || !(price.get("unit_amount") instanceof Number amount) || amount.longValue()!=expectedAmount || !string(price,"currency").equalsIgnoreCase("eur")) throw WorkspaceError.conflict("Настрой Stripe с цена €"+(expectedAmount/100)+" EUR за "+(period.equals("month")?"месец":"година")+" и опитай отново.");
         return price;
     }
@@ -198,4 +225,5 @@ public class TeacherBillingService {
     private String identifier(String id,String prefix) {if(!id.matches(prefix+"[A-Za-z0-9_]+")) throw WorkspaceError.validation("Невалиден Stripe идентификатор.");return id;}
     private String safeUrl(String url,String host) {try {var uri=URI.create(url);if(uri.getScheme().equals("https") && host.equals(uri.getHost()) && uri.getUserInfo()==null && uri.getPort()==-1) return url;} catch(RuntimeException ignored) {}throw WorkspaceError.validation("Невалиден адрес на платежната услуга.");}
     public record Checkout(@NotBlank @Pattern(regexp="month|year") String period,@NotBlank @Pattern(regexp="[A-Za-z0-9_-]{8,80}") String requestKey) {}
+    public record Cancellation(boolean cancelAtPeriodEnd,Instant paidThrough) {}
 }

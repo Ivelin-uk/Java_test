@@ -22,7 +22,7 @@ public class TeacherBillingAdminService {
             boolean sameMode=string(row,"stripe_mode").equals(gateway.mode());
             String period=sameMode?string(row,"billing_period"):"";
             boolean active=sameMode && row.get("paid_through")!=null && time(row,"paid_through").isAfter(clock.instant());
-            Long amount=period.equals("month")?Long.valueOf(700):period.equals("year")?Long.valueOf(5000):null;
+            Long amount=period.equals("month")?Long.valueOf(TeacherBillingService.MONTHLY_AMOUNT_MINOR):period.equals("year")?Long.valueOf(5000):null;
             return new TeacherPlan(number(row,"user_id"),active?"pro":"free",
                     string(row,"provider_status").isBlank()?"free":string(row,"provider_status"),
                     period.isBlank()?null:period,amount,amount==null?null:"EUR",
