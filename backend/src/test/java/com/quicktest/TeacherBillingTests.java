@@ -174,12 +174,16 @@ class TeacherBillingTests {
         verify(gateway,times(1)).teacherCheckout(eq(teacher.getId()),anyLong(),eq("price_month"),eq(REQUEST),anyString(),anyString());
         assertThrows(WorkspaceError.class,()->service.checkout(teacher,new TeacherBillingService.Checkout("year","another_request")));
     }
-    @Test void providerTimeoutKeepsReservationSoAnotherRequestCannotCreateDuplicatePayment() {
+    @Test void providerTimeoutCanBeRecoveredWithTheOriginalStripeIdempotencyKey() {
         start();db.update("UPDATE teacher_checkout_requests SET session_id=NULL,checkout_url=NULL WHERE user_id=?",teacher.getId());
         when(gateway.teacherCheckout(eq(teacher.getId()),anyLong(),anyString(),eq(REQUEST),anyString(),anyString())).thenThrow(new PaymentGateway.Unavailable());
         assertThrows(PaymentGateway.Unavailable.class,()->service.checkout(teacher,new TeacherBillingService.Checkout("month",REQUEST)));
         assertEquals(1,db.count("SELECT COUNT(*) FROM teacher_checkout_requests WHERE user_id=? AND status='pending'",teacher.getId()));
-        assertThrows(WorkspaceError.class,()->service.checkout(teacher,new TeacherBillingService.Checkout("month","different_request")));
+        when(gateway.teacherCheckout(eq(teacher.getId()),anyLong(),eq("price_month"),eq(REQUEST),anyString(),anyString())).thenReturn(session);
+        assertEquals(session.get("url"),service.checkout(teacher,new TeacherBillingService.Checkout("month","different_request")).get("url"));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM teacher_checkout_requests WHERE user_id=? AND status='pending'",teacher.getId()));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM teacher_checkout_requests WHERE user_id=? AND request_key='different_request'",teacher.getId()));
+        verify(gateway,times(3)).teacherCheckout(eq(teacher.getId()),anyLong(),eq("price_month"),eq(REQUEST),anyString(),anyString());
     }
     @Test void studentsCannotCheckoutOrUsePortalAndCustomerIsServerOwned() {
         var student=user(Role.STUDENT);assertThrows(WorkspaceError.class,()->service.describe(student));assertThrows(WorkspaceError.class,()->service.checkout(student,new TeacherBillingService.Checkout("month",REQUEST)));assertThrows(WorkspaceError.class,()->service.portal(student));

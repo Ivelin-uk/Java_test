@@ -63,7 +63,8 @@ public class TeacherBillingService {
         var account=account(user.getId(),workspace);sameMode(account);
         if(paid(account) || !replaceable(account)) throw WorkspaceError.conflict("Вече имаш абонамент. Управлявай го през платежния портал.");
         String price=priceId(request.period());verifiedPrice(request.period());
-        var previous=repository.findCheckout(user.getId(),request.requestKey());
+        String checkoutRequestKey=request.requestKey();
+        var previous=repository.findCheckout(user.getId(),checkoutRequestKey);
         if(previous.isPresent()) {
             var row=previous.get();if(!string(row,"billing_period").equals(request.period()) || !string(row,"price_id").equals(price)) throw WorkspaceError.conflict("Ключът вече е използван за друго плащане.");
             if(!string(row,"status").equals("pending")) throw WorkspaceError.conflict("Това плащане вече е приключило. Започни отново от страницата за абонамент.");
@@ -76,16 +77,24 @@ public class TeacherBillingService {
         } else {
             var pending=repository.pendingCheckout(user.getId());
             if(pending.isPresent()) {
-                var row=pending.get();if(string(row,"session_id").isBlank()) throw WorkspaceError.conflict("Вече се подготвя плащане. Опитай отново със същата заявка.");
-                var current=gateway.currentCheckout(string(row,"session_id"));verifyMode(current);
-                if(!string(current,"status").equals("expired")) throw WorkspaceError.conflict("Вече има започнато плащане. Завърши го или изчакай да изтече.");
-                repository.finishCheckout(user.getId(),string(row,"request_key"),"expired");
+                var row=pending.get();
+                if(string(row,"session_id").isBlank()) {
+                    if(!string(row,"billing_period").equals(request.period()) || !string(row,"price_id").equals(price)) throw WorkspaceError.conflict("Има неприключила заявка за друго плащане.");
+                    if(time(row,"created_at").isBefore(clock.instant().minus(Duration.ofHours(23)))) throw WorkspaceError.conflict("Плащането изисква проверка от поддръжката, преди да се започне ново.");
+                    checkoutRequestKey=string(row,"request_key");
+                } else {
+                    var current=gateway.currentCheckout(string(row,"session_id"));verifyMode(current);
+                    if(!string(current,"status").equals("expired")) throw WorkspaceError.conflict("Вече има започнато плащане. Завърши го или изчакай да изтече.");
+                    repository.finishCheckout(user.getId(),string(row,"request_key"),"expired");
+                    repository.createCheckout(user.getId(),checkoutRequestKey,request.period(),price,clock.instant());
+                }
+            } else {
+                repository.createCheckout(user.getId(),checkoutRequestKey,request.period(),price,clock.instant());
             }
-            repository.createCheckout(user.getId(),request.requestKey(),request.period(),price,clock.instant());
         }
-        var session=gateway.teacherCheckout(user.getId(),workspace,price,request.requestKey(),string(account,"stripe_customer_id"),frontend);verifyMode(session);
+        var session=gateway.teacherCheckout(user.getId(),workspace,price,checkoutRequestKey,string(account,"stripe_customer_id"),frontend);verifyMode(session);
         String id=identifier(string(session,"id"),"cs_");String url=safeUrl(string(session,"url"),"checkout.stripe.com");
-        repository.saveCheckout(user.getId(),request.requestKey(),id,url);
+        repository.saveCheckout(user.getId(),checkoutRequestKey,id,url);
         audit.write(workspace,user.getId(),"teacher_billing.checkout_created",null,Map.of("period",request.period(),"mode",gateway.mode()));
         return Map.of("url",url);
     }
