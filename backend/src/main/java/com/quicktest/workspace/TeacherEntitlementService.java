@@ -33,13 +33,13 @@ public class TeacherEntitlementService {
         if(!applies(scope)) return;
         repository.lock(scope.userId());
         if(repository.groups(scope.userId())>=limits(scope.userId()).groups())
-            throw WorkspaceError.conflict("Достигнат е лимитът за групи. Управлявайте абонамента си от „Абонамент“.");
+            throw WorkspaceError.conflict("Достигнат е лимитът за групи. Управлявайте абонамента си от „Профил“.");
     }
     public void requireAssignmentCapacity(OrgAccess.Scope scope,long excluding) {
         if(!applies(scope)) return;
         repository.lock(scope.userId());
         if(repository.activeAssignments(scope.userId(),clock.instant(),excluding)>=limits(scope.userId()).activeAssignments())
-            throw WorkspaceError.conflict("Достигнат е лимитът за активни възлагания. Управлявайте абонамента си от „Абонамент“.");
+            throw WorkspaceError.conflict("Достигнат е лимитът за активни възлагания. Управлявайте абонамента си от „Профил“.");
     }
     public void requireAutomaticGrading(OrgAccess.Scope scope) {
         if(applies(scope) && !billing.isPro(scope.userId()))
@@ -49,7 +49,7 @@ public class TeacherEntitlementService {
         repository.lock(scope.userId());
         boolean paid=billing.isPro(scope.userId());String period=period(paid);
         if(repository.lockedCredits(scope.userId(),period)>=(paid?pro:free).aiCredits())
-            throw WorkspaceError.conflict("Изчерпани AI кредити. Вижте лимита и абонамента си в „Абонамент“. Ръчната проверка остава достъпна.");
+            throw WorkspaceError.conflict("Изчерпани AI кредити. Вижте лимита и абонамента си в „Профил“. Ръчната проверка остава достъпна.");
         repository.reserve(kind,job,scope.userId(),period,clock.instant());
     }
     // All AI paths acquire organization quota -> teacher quota -> attempt/job locks.

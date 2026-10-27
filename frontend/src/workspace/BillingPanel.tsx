@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, CircleCheck, CircleStop, Clock3, CreditCard, FlaskConical, LoaderCircle, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react'
 import { DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
 import type { WorkspaceApi } from './api'
-import { Feedback, SectionHead } from './ui'
+import { Feedback } from './ui'
 import type { TeacherBilling } from './billingTypes'
 import { BillingPlanFeatures, BillingUsage } from './BillingPlanDetails'
 import { billingStatusLabels as statusLabels, formattedDate, formattedPrice } from './billingPresentation'
@@ -130,10 +130,10 @@ export function BillingPanel({ api, checkout }: { api: WorkspaceApi; checkout: s
   const paidThrough = formattedDate(billing?.paidThrough ?? null)
   const pending = confirmation === 'waiting'
 
-  return <section className="ws-section ws-billing-page">
-    <SectionHead title="Абонамент" description="Pro с месечно подновяване. Участието на учениците е безплатно.">
-      <button type="button" className="command-button" onClick={retry} disabled={loading || !!busy}><RefreshCw size={16} aria-hidden="true" />Обнови</button>
-    </SectionHead>
+  return <section className="ws-section ws-billing-page" aria-label="План и плащане">
+    <div className="ws-section-head"><div className="ws-heading"><h3><CreditCard size={20} aria-hidden="true" />План и плащане</h3><p>Pro с месечно подновяване. Участието на учениците е безплатно.</p></div>
+      <button type="button" className="command-button" onClick={retry} disabled={loading || !!busy}><RefreshCw size={16} aria-hidden="true" />Обнови плана</button>
+    </div>
     <Feedback error={error} busy={loading} />
     {!billing && error && <button type="button" className="command-button" onClick={retry} disabled={loading}>Опитай отново</button>}
     {checkout === 'canceled' && <div className="ws-billing-notice" role="status"><Clock3 size={20} aria-hidden="true" /><div><strong>Плащането е прекъснато</strong><p>Можеш да избереш план и да опиташ отново.</p></div></div>}
@@ -147,6 +147,7 @@ export function BillingPanel({ api, checkout }: { api: WorkspaceApi; checkout: s
         <div className="ws-billing-current-heading"><span className="ws-billing-plan-icon"><CreditCard size={25} aria-hidden="true" /></span><div><span className="ws-billing-eyebrow">Твоят план</span><h3 id="billing-current-title">ExamAI {billing.plan === 'pro' ? 'Pro' : 'Free'}</h3></div><span className={`ws-billing-status ${billing.plan === 'pro' ? 'ws-billing-status-pro' : ''}`}>{billing.cancelAtPeriodEnd ? 'Прекратява се в края на периода' : statusLabels[billing.status] ?? (billing.plan === 'pro' ? 'Активен' : 'Безплатен план')}</span></div>
         <div className="ws-billing-current-footer"><p>{currentPeriod && <><strong>Период:</strong> {currentPeriod === 'month' ? 'месечен' : 'годишен'}{currentPrice ? ` — ${currentPrice}` : ''}. </>}{paidThrough ? <>{billing.cancelAtPeriodEnd ? 'Достъп до Pro до ' : billing.status === 'trialing' ? 'Пробният период е до ' : 'Текущият платен период е до '}<strong><time dateTime={billing.paidThrough ?? undefined}>{paidThrough}</time></strong>.</> : billing.plan === 'free' ? 'Започни с основните възможности и премини към Pro, когато ти потрябва повече.' : 'Статусът на абонамента се потвърждава от Stripe.'}</p>{billing.portalAvailable && <button type="button" className="command-button" onClick={() => void openStripe('portal')} disabled={!!busy}>{busy === 'portal' ? <LoaderCircle size={16} className="spin" aria-hidden="true" /> : <ArrowUpRight size={16} aria-hidden="true" />}Управлявай / смени плана</button>}</div>
         <BillingUsage billing={billing} />
+        <p className="ws-billing-credit-note">{billing.plan === 'pro' ? 'AI кредитите се обновяват всеки календарен месец и не се пренасят.' : 'Пробните AI кредити са еднократни за профила.'} Едно AI генериране или една AI проверка на предаден тест използва един кредит. Ръчната проверка не използва AI кредити.</p>
         {billing.cancellationAvailable && <div className="ws-billing-cancel"><p>Спри следващото подновяване, когато пожелаеш. Запазваш Pro до края на платения период.</p><button type="button" className="command-button" onClick={() => setCancelRequested(true)} disabled={loading || !!busy}><CircleStop size={17} aria-hidden="true" />Спри подновяването</button></div>}
       </section>
       <div className="ws-billing-choose-heading"><div><h3>План за твоето преподаване</h3><p>Абонаментът е за твоя учителски профил и се подновява всеки месец.</p></div></div>

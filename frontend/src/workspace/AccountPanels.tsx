@@ -5,9 +5,10 @@ import { api as authApi } from '../api/client'
 import type { WorkspaceApi } from './api'
 import { useAction, useRemote } from './api'
 import { Feedback, SectionHead } from './ui'
-import { ProfilePlan, StudentPlan } from './ProfilePlan'
+import { StudentPlan } from './StudentPlan'
+import { BillingPanel } from './BillingPanel'
 
-export function WorkspaceProfile({ api, auth, onAuth, onChangePlan }: { api: WorkspaceApi; auth: AuthResponse; onAuth: (next: AuthResponse) => void; onChangePlan: () => void }) {
+export function WorkspaceProfile({ api, auth, onAuth, checkout }: { api: WorkspaceApi; auth: AuthResponse; onAuth: (next: AuthResponse) => void; checkout: string | null }) {
   const address = useRemote<{ email: string; verified_at: string | null } | null>(api, '/profile/notification-email', null)
   const google = useRemote<{ enabled: boolean; redirect?: string }>(api, '/api/auth/google/config', { enabled: false })
   const identities = useRemote<{ provider: string; linked_at: string }[]>(api, '/profile/identities', [])
@@ -26,7 +27,7 @@ export function WorkspaceProfile({ api, auth, onAuth, onChangePlan }: { api: Wor
   const [formError, setFormError] = useState('')
   return <section className="ws-section" aria-label="Моят профил">
     <SectionHead title="Моят профил" description="Виж своя план и управлявай имейла за известия, паролата и свързания Google акаунт." />
-    {auth.user.role === 'TEACHER' && <ProfilePlan api={api} onChangePlan={onChangePlan} />}
+    {auth.user.role === 'TEACHER' && <BillingPanel key={checkout} api={api} checkout={checkout} />}
     {auth.user.role === 'STUDENT' && <StudentPlan />}
     <div className="ws-profile-settings">
     <form className="ws-profile-form" aria-label="Смяна на имейл за известия" onSubmit={event => {

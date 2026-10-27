@@ -86,7 +86,8 @@ class TeacherBillingTests {
                 assertTrue(entitlements.settleAi(kind,job,true));
             });
         }
-        assertThrows(WorkspaceError.class,()->transactions.executeWithoutResult(status->entitlements.reserveAi(scope,"generation",account.getId()*100+10)));
+        var exhausted=assertThrows(WorkspaceError.class,()->transactions.executeWithoutResult(status->entitlements.reserveAi(scope,"generation",account.getId()*100+10)));
+        assertTrue(exhausted.getReason().contains("„Профил“"));
         assertEquals(10L,((Map<?,?>)entitlements.describe(scope).get("usage")).get("aiCredits"));
         assertFalse(service.isPro(account.getId()));
     }

@@ -4,12 +4,16 @@ Pro е личен учителски абонамент с автоматичн�
 
 Кодът сам по себе си не активира реални плащания. Нужни са продукт, платежни методи, webhook и backend променливи в съответната Stripe/Railway среда.
 
+## Получаване на приходите
+
+Railway хоства приложението. Stripe приема плащанията на клиентите и изплаща приходите към добавената банкова сметка. Създайте или влезте в своя Stripe акаунт, завършете активацията и изискваната проверка на данните за дейността и представителя. Добавете банковата сметка в [Stripe Payout settings](https://dashboard.stripe.com/settings/money-management); за българска банкова сметка се използва IBAN. IBAN не се добавя в Railway или в кода на ExamAI.
+
 ## Stripe
 
 1. Създайте продукт **ExamAI Pro** с една фиксирана recurring цена **8.00 EUR**, интервал **month**, interval count **1**, количество **1**. Копирайте нейния `price_...` идентификатор. Backend проверява сумата от 800 евроцента, валутата и месечния период, преди да създаде Checkout.
 2. В [Payment methods](https://dashboard.stripe.com/settings/payment_methods) активирайте **Cards**, **Apple Pay** и **Google Pay** за съответната среда. Checkout избира съвместимите методи динамично; wallet бутоните зависят и от държавата, устройството, браузъра и настроения портфейл. За Stripe-hosted Checkout не е необходимо добавяне на Apple Pay verification файл в ExamAI.
 3. Включете [Customer Portal](https://dashboard.stripe.com/settings/billing/portal) за промяна на платежния метод и преглед на фактури. Ако разрешите прекратяване и в Portal, изберете **at period end**. Изключете смяна на продукт, произволно количество и годишни предложения.
-4. Създайте webhook event destination за **Your account**, формат **Snapshot**, на адрес `https://<backend домейн>/api/v1/billing/webhook`. Използвайте API версията на `com.stripe.Stripe.API_VERSION` от включения Stripe SDK. Разрешете:
+4. Създайте webhook event destination за **Your account**, формат **Snapshot**, на адрес `https://javatest-production-245b.up.railway.app/api/v1/billing/webhook`. Използвайте API версията на `com.stripe.Stripe.API_VERSION` от включения Stripe SDK. Разрешете:
 
 ```text
 checkout.session.completed
@@ -28,8 +32,8 @@ STRIPE_MODE=live
 STRIPE_SECRET_KEY=<live secret key от Stripe>
 STRIPE_WEBHOOK_SECRET=<подписващата тайна на live webhook endpoint-а>
 STRIPE_PRO_MONTH_PRICE_ID=<live price ID за 8 EUR месечно>
-FRONTEND_URL=https://<frontend домейн>
-BACKEND_URL=https://<backend домейн>
+FRONTEND_URL=https://frontend-production-8dc0.up.railway.app
+BACKEND_URL=https://javatest-production-245b.up.railway.app
 BILLING_FIXTURES=false
 BILLING_FREE_AI_CREDITS=10
 ```
@@ -40,7 +44,7 @@ BILLING_FREE_AI_CREDITS=10
 
 ## Спиране на подновяването
 
-В „Абонамент“ учителят избира **Спри подновяването** и потвърждава. `POST /api/v1/billing/cancel` не приема customer или subscription от браузъра. Услугата заключва платежния профил на текущия учител, проверява връзката с Stripe и задава само `cancel_at_period_end=true`.
+В **Профил → План и плащане** учителят избира **Спри подновяването** и потвърждава. Няма отделен навигационен таб за абонамента. Старите Stripe адреси `/billing?checkout=success` и `/billing?checkout=canceled` отварят профила и запазват потвърждението на плащането. `POST /api/v1/billing/cancel` не приема customer или subscription от браузъра. Услугата заключва платежния профил на текущия учител, проверява връзката с Stripe и задава само `cancel_at_period_end=true`.
 
 Отговорът от Stripe се проверява преди локално потвърждение и одит. Платеният срок не се удължава или съкращава; Pro остава до неговия край, след което се прилагат Free лимитите. Повторна заявка е безопасна. Неуспешен отговор не показва абонамента като прекратен.
 

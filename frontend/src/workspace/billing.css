@@ -57,12 +57,7 @@
 .ws-billing-methods span { display: inline-flex; align-items: center; gap: 7px; padding: 9px 13px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); font-size: 14px; }
 .ws-billing-cancel { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding-top: 18px; border-top: 1px solid var(--border); }
 .ws-billing-cancel p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
-.ws-profile-plan { display: grid; gap: 20px; min-width: 0; }
-.ws-profile-plan > button { justify-self: start; }
 .ws-billing-credit-note { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.7; }
-.ws-profile-plan-prices { display: grid; gap: 6px; margin-top: 24px; }
-.ws-profile-plan-prices p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
-.ws-profile-plan-prices strong { color: var(--text); font-size: 24px; font-variant-numeric: tabular-nums; }
 .ws-profile-student-plan ul { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
 .ws-profile-student-plan li { display: flex; align-items: flex-start; gap: 10px; line-height: 1.6; }
 .ws-profile-student-plan li > svg { flex: 0 0 18px; margin-top: 3px; color: var(--success); }
