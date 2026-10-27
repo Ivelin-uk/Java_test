@@ -1,36 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, Check, CircleCheck, Clock3, CreditCard, FlaskConical, LoaderCircle, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowUpRight, CircleCheck, Clock3, CreditCard, FlaskConical, LoaderCircle, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { Feedback, SectionHead } from './ui'
-import type { BillingPeriod, BillingPrice, TeacherBilling } from './billingTypes'
+import type { BillingPeriod, TeacherBilling } from './billingTypes'
+import { BillingPlanFeatures, BillingUsage } from './BillingPlanDetails'
+import { billingStatusLabels as statusLabels, formattedDate, formattedPrice } from './billingPresentation'
 import './billing.css'
 
 type Period = BillingPeriod
-type Quotas = { groups: number; activeAssignments: number; aiCredits: number }
-type Price = BillingPrice
 type Billing = TeacherBilling
-
-const statusLabels: Record<string, string> = {
-  free: 'Безплатен план', active: 'Активен', trialing: 'Пробен период',
-  past_due: 'Неуспешно подновяване', unpaid: 'Очаква плащане',
-  incomplete: 'Незавършено плащане', incomplete_expired: 'Изтекло плащане',
-  canceled: 'Прекратен', paused: 'На пауза', inactive: 'Без активен абонамент',
-}
-
-function formattedPrice(price: Price): string | null {
-  if (price.amountMinor === undefined || !Number.isFinite(price.amountMinor) || price.amountMinor < 0 || !price.currency) return null
-  try {
-    const formatter = new Intl.NumberFormat('bg-BG', { style: 'currency', currency: price.currency.toUpperCase() })
-    const digits = formatter.resolvedOptions().maximumFractionDigits ?? 2
-    return formatter.format(price.amountMinor / 10 ** digits)
-  } catch { return null }
-}
-
-function formattedDate(value: string | null): string | null {
-  if (!value) return null
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? null : new Intl.DateTimeFormat('bg-BG', { dateStyle: 'long' }).format(date)
-}
 
 function stripeRedirect(value: string, destination: 'checkout' | 'portal') {
   let url: URL
@@ -136,11 +114,6 @@ export function BillingPanel({ api, checkout }: { api: WorkspaceApi; checkout: s
   const currentPrice = billing && currentPeriod ? formattedPrice(billing.prices[currentPeriod]) : null
   const paidThrough = formattedDate(billing?.paidThrough ?? null)
   const pending = confirmation === 'waiting'
-  const quotaRows: { key: keyof Quotas; name: string }[] = [
-    { key: 'groups', name: 'Групи' },
-    { key: 'activeAssignments', name: 'Активни възлагания' },
-    { key: 'aiCredits', name: billing?.plan === 'pro' ? 'AI кредити този месец' : 'Пробни AI кредити' },
-  ]
 
   return <section className="ws-section ws-billing-page">
     <SectionHead title="Абонамент" description="Избери план за своята работа като учител. Участието на учениците е безплатно.">
@@ -158,13 +131,13 @@ export function BillingPanel({ api, checkout }: { api: WorkspaceApi; checkout: s
       <section className="ws-billing-current" aria-labelledby="billing-current-title">
         <div className="ws-billing-current-heading"><span className="ws-billing-plan-icon"><CreditCard size={25} aria-hidden="true" /></span><div><span className="ws-billing-eyebrow">Твоят план</span><h3 id="billing-current-title">ExamAI {billing.plan === 'pro' ? 'Pro' : 'Free'}</h3></div><span className={`ws-billing-status ${billing.plan === 'pro' ? 'ws-billing-status-pro' : ''}`}>{billing.cancelAtPeriodEnd ? 'Прекратява се в края на периода' : statusLabels[billing.status] ?? (billing.plan === 'pro' ? 'Активен' : 'Безплатен план')}</span></div>
         <div className="ws-billing-current-footer"><p>{currentPeriod && <><strong>Период:</strong> {currentPeriod === 'month' ? 'месечен' : 'годишен'}{currentPrice ? ` — ${currentPrice}` : ''}. </>}{paidThrough ? <>{billing.cancelAtPeriodEnd ? 'Достъп до Pro до ' : billing.status === 'trialing' ? 'Пробният период е до ' : 'Текущият платен период е до '}<strong><time dateTime={billing.paidThrough ?? undefined}>{paidThrough}</time></strong>.</> : billing.plan === 'free' ? 'Започни с основните възможности и премини към Pro, когато ти потрябва повече.' : 'Статусът на абонамента се потвърждава от Stripe.'}</p>{billing.portalAvailable && <button type="button" className="command-button" onClick={() => void openStripe('portal')} disabled={!!busy}>{busy === 'portal' ? <LoaderCircle size={16} className="spin" aria-hidden="true" /> : <ArrowUpRight size={16} aria-hidden="true" />}Управлявай / смени плана</button>}</div>
-        <div className="ws-billing-usage" aria-label="Използване на плана">{quotaRows.map(({ key, name }) => <div className="ws-billing-quota" key={key}><span>{name}</span><strong>{billing.usage[key]} <small>/ {billing.limits[key]}</small></strong><progress max={Math.max(1, billing.limits[key])} value={Math.min(billing.usage[key], Math.max(1, billing.limits[key]))} aria-label={`${name}: ${billing.usage[key]} от ${billing.limits[key]}`} /></div>)}</div>
+        <BillingUsage billing={billing} />
       </section>
       <div className="ws-billing-choose-heading"><div><h3>План за твоето преподаване</h3><p>Абонаментът е за твоя учителски профил.</p></div><div className="ws-billing-period" role="group" aria-label="Период на абонамента"><button type="button" aria-pressed={period === 'month'} onClick={() => { setPeriod('month'); setActionError('') }} disabled={!!busy}>Месечно</button><button type="button" aria-pressed={period === 'year'} onClick={() => { setPeriod('year'); setActionError('') }} disabled={!!busy}>Годишно</button></div></div>
       <Feedback error={actionError} />
       <div className="ws-billing-plans">
-        <article className="ws-billing-plan" aria-labelledby="billing-free-title"><div className="ws-billing-plan-title"><h3 id="billing-free-title">Free</h3>{billing.plan === 'free' && <span className="ws-billing-tag">Текущ план</span>}</div><p>За първите ти групи и тестове.</p><div className="ws-billing-price">Безплатно</div><ul><li><Check size={18} aria-hidden="true" />{billing.plans ? `${billing.plans.free.groups} група` : 'Основен брой групи'}</li><li><Check size={18} aria-hidden="true" />{billing.plans ? `${billing.plans.free.activeAssignments} активни възлагания` : 'Основен брой активни възлагания'}</li><li><Check size={18} aria-hidden="true" />{billing.plans ? `${billing.plans.free.aiCredits} пробни AI кредита общо` : 'Пробни AI кредити'}</li><li><Check size={18} aria-hidden="true" />Безплатен достъп за учениците</li></ul><p className="ws-billing-card-note">{billing.plan === 'free' ? 'Използваш Free без абонамент.' : 'За промяна или прекратяване отвори управлението на абонамента.'}</p></article>
-        <article className="ws-billing-plan ws-billing-plan-pro" aria-labelledby="billing-pro-title"><div className="ws-billing-plan-title"><h3 id="billing-pro-title"><Sparkles size={21} aria-hidden="true" />Pro</h3><span className="ws-billing-tag">{billing.plan === 'pro' ? 'Текущ план' : 'Повече възможности'}</span></div><p>За редовно преподаване и повече работа с AI.</p><div className={`ws-billing-price ${!amount ? 'ws-billing-price-unavailable' : ''}`}>{amount ? <>{amount}<small> / {period === 'month' ? 'месец' : 'година'}</small></> : price?.available ? 'Цената се показва в Stripe' : 'Цената още не е зададена'}</div><ul><li><Check size={18} aria-hidden="true" />{billing.plans ? `${billing.plans.pro.groups} групи` : 'Повече групи'}</li><li><Check size={18} aria-hidden="true" />{billing.plans ? `${billing.plans.pro.activeAssignments} активни възлагания` : 'Повече активни възлагания'}</li><li><Check size={18} aria-hidden="true" />{billing.plans ? `${billing.plans.pro.aiCredits} AI кредита всеки месец` : 'AI кредити всеки месец'}</li><li><Check size={18} aria-hidden="true" />Безплатен достъп за учениците</li></ul>
+        <article className="ws-billing-plan" aria-labelledby="billing-free-title"><div className="ws-billing-plan-title"><h3 id="billing-free-title">Free</h3>{billing.plan === 'free' && <span className="ws-billing-tag">Текущ план</span>}</div><p>За първите ти групи и тестове.</p><div className="ws-billing-price">Безплатно</div><BillingPlanFeatures plan="free" limits={billing.plans?.free ?? (billing.plan === 'free' ? billing.limits : undefined)} /><p className="ws-billing-card-note">{billing.plan === 'free' ? 'Използваш Free без абонамент.' : 'За промяна или прекратяване отвори управлението на абонамента.'}</p></article>
+        <article className="ws-billing-plan ws-billing-plan-pro" aria-labelledby="billing-pro-title"><div className="ws-billing-plan-title"><h3 id="billing-pro-title"><Sparkles size={21} aria-hidden="true" />Pro</h3><span className="ws-billing-tag">{billing.plan === 'pro' ? 'Текущ план' : 'Повече възможности'}</span></div><p>За редовно преподаване и повече работа с AI.</p><div className={`ws-billing-price ${!amount ? 'ws-billing-price-unavailable' : ''}`}>{amount ? <>{amount}<small> / {period === 'month' ? 'месец' : 'година'}</small></> : price?.available ? 'Цената се показва в Stripe' : 'Цената още не е зададена'}</div><BillingPlanFeatures plan="pro" limits={billing.plans?.pro ?? (billing.plan === 'pro' ? billing.limits : undefined)} />
           {billing.plan === 'pro' ? <p className="ws-billing-card-note"><CircleCheck size={18} aria-hidden="true" />Твоят Pro достъп е активен.</p> : <><button type="button" className="primary command-button ws-billing-subscribe" onClick={() => void openStripe('checkout')} disabled={!!busy || pending || !billing.checkoutAvailable || !price?.available}>{busy === 'checkout' ? <LoaderCircle size={18} className="spin" aria-hidden="true" /> : <ArrowUpRight size={18} aria-hidden="true" />}{busy === 'checkout' ? 'Отваряне на Stripe…' : billing.mode === 'test' ? 'Изпробвай Pro в Stripe' : 'Избери Pro'}</button>{(!billing.checkoutAvailable || !price?.available) && <p className="ws-billing-card-note">Плащанията за този период още не са активирани.</p>}</>}
         </article>
       </div>
