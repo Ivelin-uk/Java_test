@@ -6,7 +6,7 @@ import { chromium } from 'playwright'
 const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173'
 const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
 const teacher = { token: 'billing-fixture', user: { id: 101, name: 'Учител', email: 'teacher@example.test', role: 'TEACHER', active: true, passwordChangeRequired: false, roleSelectionRequired: false } }
-const free = { groups: 1, activeAssignments: 5, aiCredits: 5 }, pro = { groups: 20, activeAssignments: 100, aiCredits: 100 }
+const free = { groups: 1, activeAssignments: 5, aiCredits: 10 }, pro = { groups: 20, activeAssignments: 100, aiCredits: 100 }
 const initial = {
   plan: 'free', status: 'free', currentPeriod: null, paidThrough: null, cancelAtPeriodEnd: false,
   mode: 'test', checkoutAvailable: true, portalAvailable: false,
@@ -100,7 +100,7 @@ try {
   await planCard.getByRole('progressbar', { name: 'Активни възлагания: 2 от 5', exact: true }).waitFor()
   const freeCard = planCard.getByRole('article', { name: 'Free', exact: true }), proCard = planCard.getByRole('article', { name: 'Pro', exact: true })
   await freeCard.getByText('Текущ план', { exact: true }).waitFor()
-  await freeCard.getByText('5 пробни AI кредита общо', { exact: true }).waitFor()
+  await freeCard.getByText('10 пробни AI кредита общо', { exact: true }).waitFor()
   await proCard.getByText('До 42 групи', { exact: true }).waitFor()
   await proCard.getByText('100 AI кредита всеки месец', { exact: true }).waitFor()
   await proCard.getByText('Автоматична AI проверка при предаване', { exact: true }).waitFor()

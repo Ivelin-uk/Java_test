@@ -18,7 +18,7 @@ public class TeacherEntitlementService {
     public TeacherEntitlementService(TeacherEntitlementRepository repository,TeacherBillingService billing,Clock clock,
             @Value("${app.billing.free-group-limit:1}") int freeGroups,
             @Value("${app.billing.free-active-assignment-limit:5}") int freeAssignments,
-            @Value("${app.billing.free-ai-credits:5}") int freeAi,
+            @Value("${app.billing.free-ai-credits:10}") int freeAi,
             @Value("${app.billing.pro-group-limit:20}") int proGroups,
             @Value("${app.billing.pro-active-assignment-limit:100}") int proAssignments,
             @Value("${app.billing.pro-ai-credits:100}") int proAi) {

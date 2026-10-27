@@ -24,6 +24,8 @@ class TeacherBillingTests {
     @Autowired AppUserRepository users;
     @Autowired IdentityWorkflow identity;
     @Autowired PersonalWorkspace personal;
+    @Autowired TeacherEntitlementService entitlements;
+    @Autowired org.springframework.transaction.support.TransactionTemplate transactions;
     @MockitoBean PaymentGateway gateway;
     private static final String REQUEST="request_teacher_123";
     private Map<String,Object> session;
@@ -66,6 +68,27 @@ class TeacherBillingTests {
         assertEquals("month",string(service.subscription(teacher.getId()).orElseThrow(),"billing_period"));
         var adminPlan=adminBilling.plans().stream().filter(plan->plan.userId()==teacher.getId()).findFirst().orElseThrow();
         assertEquals("pro",adminPlan.plan());assertEquals("month",adminPlan.period());assertEquals(700L,adminPlan.amountMinor());
+    }
+    @Test void freePlanAllowsTenTrialAiOperationsAndRejectsTheEleventh() {
+        var account=user(Role.TEACHER);
+        var scope=new OrgAccess.Scope(personal.workspace(account),account.getId(),Set.of("TEACHER"));
+        var description=entitlements.describe(scope);
+        assertEquals(10,((TeacherEntitlementService.Limits)description.get("limits")).aiCredits());
+        var plans=(Map<?,?>)description.get("plans");
+        assertEquals(10,((TeacherEntitlementService.Limits)plans.get("free")).aiCredits());
+        assertEquals(100,((TeacherEntitlementService.Limits)plans.get("pro")).aiCredits());
+        assertThrows(WorkspaceError.class,()->entitlements.requireAutomaticGrading(scope));
+        for(int index=0;index<10;index++) {
+            long job=account.getId()*100+index;
+            String kind=index<5?"generation":"grading";
+            transactions.executeWithoutResult(status->{
+                entitlements.reserveAi(scope,kind,job);
+                assertTrue(entitlements.settleAi(kind,job,true));
+            });
+        }
+        assertThrows(WorkspaceError.class,()->transactions.executeWithoutResult(status->entitlements.reserveAi(scope,"generation",account.getId()*100+10)));
+        assertEquals(10L,((Map<?,?>)entitlements.describe(scope).get("usage")).get("aiCredits"));
+        assertFalse(service.isPro(account.getId()));
     }
     @Test void checkoutRejectsPricesThatDoNotMatchPublishedEurPlans() {
         AppUser account=user(Role.TEACHER);

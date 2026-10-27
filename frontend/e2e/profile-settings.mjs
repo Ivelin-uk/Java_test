@@ -27,7 +27,7 @@ try {
         if (path === '/api/auth/google/config') return respond({ enabled: false, redirect: `${base}/api/auth/google/redirect` })
         if (path === '/api/v1/profile/identities') return respond([])
         if (path === '/api/v1/profile/notification-email') return respond({ email: address, verified_at: new Date().toISOString() })
-        if (path === '/api/v1/billing') return respond({ plan: 'free', status: 'free', currentPeriod: null, paidThrough: null, cancelAtPeriodEnd: false, mode: 'unconfigured', checkoutAvailable: false, portalAvailable: false, limits: { groups: 1, activeAssignments: 5, aiCredits: 5 }, usage: { groups: 1, activeAssignments: 2, aiCredits: 3 }, plans: { free: { groups: 1, activeAssignments: 5, aiCredits: 5 }, pro: { groups: 20, activeAssignments: 100, aiCredits: 100 } }, prices: { month: { available: false }, year: { available: false } } })
+        if (path === '/api/v1/billing') return respond({ plan: 'free', status: 'free', currentPeriod: null, paidThrough: null, cancelAtPeriodEnd: false, mode: 'unconfigured', checkoutAvailable: false, portalAvailable: false, limits: { groups: 1, activeAssignments: 5, aiCredits: 10 }, usage: { groups: 1, activeAssignments: 2, aiCredits: 3 }, plans: { free: { groups: 1, activeAssignments: 5, aiCredits: 10 }, pro: { groups: 20, activeAssignments: 100, aiCredits: 100 } }, prices: { month: { available: false }, year: { available: false } } })
         if (['/api/v1/assignments', '/api/v1/groups', '/api/v1/grading', '/api/v1/results', '/api/admin/users', '/api/admin/teacher-billing', '/api/admin/permissions', '/api/admin/audit'].includes(path)) return respond([])
       }
       if (method === 'POST' && path === '/api/v1/profile/notification-email') {
