@@ -33,6 +33,26 @@ public class IdentityWorkflow {
         initialize(user);
         return repository.requireNotificationAddress(user.getId());
     }
+    /** Admin view of each user's notification address; users without a row fall back to the login email, as initialize would. */
+    public Map<Long,NotificationAddress> notificationAddresses() {
+        Map<Long,NotificationAddress> addresses=new java.util.HashMap<>();
+        for(var row:repository.findNotificationAddresses()) addresses.put(number(row,"user_id"),address(row));
+        return addresses;
+    }
+    public NotificationAddress notificationAddress(AppUser user) {
+        return repository.findNotificationAddress(user.getId()).map(IdentityWorkflow::address).orElseGet(()->fallback(user));
+    }
+    public static NotificationAddress fallback(AppUser user) { return new NotificationAddress(user.getEmail(),user.getEmailVerifiedAt()); }
+    /** Sends a new verification link to the user's current, still unverified notification address. */
+    @Transactional
+    public String sendVerification(AppUser user) {
+        initialize(user);
+        var address=repository.requireNotificationAddress(user.getId());
+        if(address.get("verified_at")!=null) throw WorkspaceError.conflict("Имейлът за известия вече е потвърден.");
+        String email=string(address,"email");
+        challenge(user.getId(),"notification_email",email);
+        return email;
+    }
     public java.util.List<Map<String,Object>> identities(AppUser user) {
         return repository.findExternalIdentities(user.getId());
     }
@@ -63,6 +83,10 @@ public class IdentityWorkflow {
     }
     @Transactional
     public void registration(AppUser user) { initialize(user);challenge(user.getId(),"notification_email",user.getEmail()); }
+    private static NotificationAddress address(Map<String,Object> row) {
+        return new NotificationAddress(string(row,"email"),row.get("verified_at")==null?null:time(row,"verified_at"));
+    }
+    public record NotificationAddress(String email,java.time.Instant verifiedAt) {}
     private void challenge(long user,String purpose,String email) {
         String token=crypto.token();
         repository.consumePurposeChallenges(clock.instant(), user, purpose);

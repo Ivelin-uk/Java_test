@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { Users, ShieldCheck, History, CreditCard, UserPlus, UserRoundCog, Pencil, KeyRound, UserCheck, UserX, RefreshCw, Save, X, Copy, Check, Search, Trash2 } from 'lucide-react'
+import { Users, ShieldCheck, History, CreditCard, UserPlus, UserRoundCog, Pencil, KeyRound, UserCheck, UserX, RefreshCw, Save, X, Copy, Check, Search, Trash2, Mail } from 'lucide-react'
 import { api } from '../api/client'
 import { formatDate, roleLabels, subscriptionLabel } from '../api/access'
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog'
@@ -11,7 +11,7 @@ import type { AuditEntry, AuthResponse, PasswordResponse, PermissionChange, Perm
 import type { AdminTeacherPlan } from '../workspace/billingTypes'
 
 const modes = { ADMIN: 'Само администратор', PUBLIC: 'Публичен вход', PROFILE: 'Собствен профил', MANAGED: '' }
-const actions: Record<string, string> = { USER_CREATED: 'Нов потребител', USER_UPDATED: 'Промяна на профил', USER_DELETED: 'Изтриване на потребител', USER_ROLE_CHANGED: 'Смяна на роля', PASSWORD_RESET: 'Нова временна парола', PERMISSION_UPDATED: 'Промяна на права', TEACHER_AI_RESET: 'Нулиране на AI кредити', TEACHER_PLAN_CHANGED: 'Смяна на учителски план' }
+const actions: Record<string, string> = { USER_CREATED: 'Нов потребител', USER_UPDATED: 'Промяна на профил', USER_DELETED: 'Изтриване на потребител', USER_ROLE_CHANGED: 'Смяна на роля', PASSWORD_RESET: 'Нова временна парола', PERMISSION_UPDATED: 'Промяна на права', TEACHER_AI_RESET: 'Нулиране на AI кредити', TEACHER_PLAN_CHANGED: 'Смяна на учителски план', EMAIL_VERIFICATION_SENT: 'Изпратено потвърждение на имейл' }
 const emptyUser: UserEdit = { name: '', email: '', role: 'STUDENT', active: true, subscriptionPaid: false, subscriptionPaidUntil: null }
 function userEdit(user: User): UserEdit {
   return { name: user.name, email: user.email, role: user.role, active: user.active, subscriptionPaid: user.subscription.paid, subscriptionPaidUntil: user.subscription.paidUntil }
@@ -26,6 +26,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
   const [billingPlans, setBillingPlans] = useState<AdminTeacherPlan[]>([])
   const [query, setQuery] = useState('')
   const [role, setRole] = useState<Role | ''>('')
+  const [emailStatus, setEmailStatus] = useState<'' | 'verified' | 'pending'>('')
   const [controller, setController] = useState('')
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -34,6 +35,8 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
   const [editing, setEditing] = useState<{ id: number | null; value: UserEdit } | null>(null)
   const [roleChange, setRoleChange] = useState<{ user: User; role: Role } | null>(null)
   const [confirming, setConfirming] = useState<{ user: User; action: 'reset' | 'toggle' } | null>(null)
+  const [verifying, setVerifying] = useState<User | null>(null)
+  const verificationInFlight = useRef(false)
   const [deleting, setDeleting] = useState<User | null>(null)
   const [deletePassword, setDeletePassword] = useState('')
   const [credentials, setCredentials] = useState<PasswordResponse | null>(null)
@@ -90,6 +93,20 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
       else await refresh()
     })
   }
+  async function sendVerificationEmail() {
+    if (!verifying || busy || verificationInFlight.current) return
+    verificationInFlight.current = true
+    setBusy(true); setError('')
+    try {
+      const updated = await api.sendVerificationEmail(token, verifying.id)
+      setUsers(current => current.map(user => user.id === updated.id ? updated : user))
+      setVerifying(null)
+      notify(`Потвърждението за ${updated.notificationEmail ?? updated.email} е добавено в опашката за изпращане.`)
+      try { setAudit(await api.audit(token)) }
+      catch { setError('Потвърждението е добавено в опашката, но журналът не се обнови. Натиснете „Обнови“.') }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Потвърждението не може да се изпрати. Опитайте отново.') }
+    finally { verificationInFlight.current = false; setBusy(false) }
+  }
   async function deleteUser() {
     if (!deleting || busy || !deletePassword.trim()) return
     setBusy(true); setError('')
@@ -112,7 +129,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
     setRows(current => current.map(item => item.key === row.key ? { ...item, [column]: grant } : item))
     setChanges(current => ({ ...current, [`${row.key}:${role}`]: { key: row.key, role, ...grant } }))
   }
-  const filteredUsers = users.filter(user => (!role || user.role === role) && `${user.name} ${user.email}`.toLowerCase().includes(query.toLowerCase()))
+  const filteredUsers = users.filter(user => (!role || user.role === role) && (!emailStatus || (emailStatus === 'verified' ? !!user.notificationEmailVerifiedAt : user.notificationEmailVerifiedAt === null)) && `${user.name} ${user.email}`.toLowerCase().includes(query.toLowerCase()))
   const filteredRows = rows.filter(row => (!controller || row.controller === controller) && `${row.controller} ${row.method} ${row.paths.join(' ')}`.toLowerCase().includes(query.toLowerCase()))
   const dirtyCount = Object.keys(changes).length
 
@@ -127,28 +144,31 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
       <button className="icon-button" title="Обнови" aria-label="Обнови" disabled={busy || dirtyCount > 0} onClick={() => void perform(refresh)}><RefreshCw size={17} /></button>
     </div>
     {loading && <p role="status">Зареждане...</p>}
-    {error && !editing && !confirming && !roleChange && <p className="error action-error" role="alert">{error}</p>}
+    {error && !editing && !confirming && !roleChange && !verifying && <p className="error action-error" role="alert">{error}</p>}
 
     {tab === 'users' && <>
       <div className="filter-bar">
         <label className="search-field"><Search size={17} /><input aria-label="Търси потребител" placeholder="Име или имейл" value={query} onChange={event => setQuery(event.target.value)} /></label>
         <select aria-label="Филтър по роля" value={role} onChange={event => setRole(event.target.value as Role | '')}><option value="">Всички роли</option>{Object.entries(roleLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+        <select aria-label="Филтър по потвърждение" value={emailStatus} onChange={event => setEmailStatus(event.target.value as typeof emailStatus)}><option value="">Всички имейли</option><option value="verified">Потвърдени за известия</option><option value="pending">Непотвърдени за известия</option></select>
         <button className="primary command-button" disabled={busy} onClick={() => { setError(''); setEditing({ id: null, value: { ...emptyUser } }) }}><UserPlus size={17} /> Нов потребител</button>
       </div>
-      <TableContainer label="Потребители — таблица"><table className="ws-table data-table users-table" aria-label="Потребители"><thead><tr><th>Потребител</th><th>Роля</th><th>Статус</th><th>Абонамент / до</th><th>Действия</th></tr></thead><tbody>
+      <TableContainer label="Потребители — таблица"><table className="ws-table data-table users-table" aria-label="Потребители"><thead><tr><th>Потребител</th><th>Имейл за известия</th><th>Роля</th><th>Статус</th><th>Абонамент / до</th><th>Действия</th></tr></thead><tbody>
         {filteredUsers.map(user => <tr key={user.id}>
-          <td><strong>{user.name}{user.id === auth.user.id && <small className="inline-muted"> (Вие)</small>}</strong><small>{user.email}</small>{user.passwordChangeRequired && <small className="warning-text">Временна парола</small>}</td>
+          <td><div><strong>{user.name}{user.id === auth.user.id && <small className="inline-muted"> (Вие)</small>}</strong><small>{user.email}</small><small className={user.emailVerifiedAt ? 'good' : user.emailVerifiedAt === null ? 'warning-text' : 'muted'}>{user.emailVerifiedAt ? 'Имейл за вход: потвърден' : user.emailVerifiedAt === null ? 'Имейл за вход: непотвърден' : 'Потвърждение: няма данни'}</small>{user.passwordChangeRequired && <small className="warning-text">Временна парола</small>}</div></td>
+          <td><div>{user.notificationEmail ?? user.email}<small className={user.notificationEmailVerifiedAt ? 'good' : user.notificationEmailVerifiedAt === null ? 'warning-text' : 'muted'}>{user.notificationEmailVerifiedAt ? 'Потвърден за известия' : user.notificationEmailVerifiedAt === null ? 'Непотвърден за известия' : 'Потвърждение: няма данни'}</small>{user.notificationEmailVerifiedAt && <small>Потвърден на {new Date(user.notificationEmailVerifiedAt).toLocaleDateString('bg-BG')}</small>}</div></td>
           <td><div className="role-cell"><span>{roleLabels[user.role]}</span><button className="icon-button" title="Смени роля" aria-label={`Смени ролята на ${user.email}`} disabled={busy} onClick={() => { setError(''); setRoleChange({ user, role: user.role }) }}><UserRoundCog size={16} /></button></div></td>
           <td><span className={`status-badge ${user.active ? 'good' : 'inactive'}`}>{user.active ? 'Активен' : 'Неактивен'}</span></td>
           <td><span className={user.role === 'STUDENT' || user.subscription.active ? 'good' : ''}>{subscriptionLabel(user)}</span>{user.role !== 'STUDENT' && <small>{formatDate(user.subscription.paidUntil)}</small>}</td>
           <td><div className="row-actions">
+            <button className="icon-button" title={!user.active ? 'Потребителят е неактивен.' : user.notificationEmailVerifiedAt ? 'Имейлът за известия вече е потвърден.' : 'Изпрати линк за потвърждение на имейла за известия'} aria-label={`Изпрати потвърждение на ${user.notificationEmail ?? user.email}`} disabled={busy || !user.active || user.notificationEmailVerifiedAt !== null || !user.notificationEmail} onClick={() => { setError(''); setVerifying(user) }}><Mail size={16} /></button>
             <button className="icon-button" title="Редактирай профил и имейл" aria-label={`Редактирай ${user.email}`} disabled={busy} onClick={() => { setError(''); setEditing({ id: user.id, value: userEdit(user) }) }}><Pencil size={16} /></button>
             <button className="icon-button" title={user.id === auth.user.id ? 'Смяна на собствена парола от Профил' : 'Нова временна парола'} aria-label={`Нова парола за ${user.email}`} disabled={busy || user.id === auth.user.id} onClick={() => { setError(''); setConfirming({ user, action: 'reset' }) }}><KeyRound size={16} /></button>
             <button className={`icon-button ${user.active ? 'danger' : ''}`} title={user.active ? 'Деактивирай' : 'Активирай'} aria-label={`${user.active ? 'Деактивирай' : 'Активирай'} ${user.email}`} disabled={busy} onClick={() => { setError(''); setConfirming({ user, action: 'toggle' }) }}>{user.active ? <UserX size={16} /> : <UserCheck size={16} />}</button>
             <button className="icon-button danger" title={user.id === auth.user.id ? 'Не можете да изтриете собствения си профил.' : 'Изтрий потребителя и свързаните му данни'} aria-label={`Изтрий ${user.email}`} disabled={busy || user.id === auth.user.id} onClick={() => { setError(''); setDeletePassword(''); setDeleting(user) }}><Trash2 size={16} /></button>
           </div></td>
         </tr>)}
-        {!loading && !filteredUsers.length && <tr><td colSpan={5} className="empty-cell">Няма намерени потребители.</td></tr>}
+        {!loading && !filteredUsers.length && <tr><td colSpan={6} className="empty-cell">Няма намерени потребители.</td></tr>}
       </tbody></table></TableContainer>
     </>}
 
@@ -187,6 +207,15 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
     {deleting && <DeleteConfirmationDialog title="Изтриване на потребител" description={<>Да изтрием ли <strong>{deleting.email}</strong>? Ще бъдат изтрити профилът, Google връзката, сесиите, опитите и резултатите му, както и собствените тестове и възлагания с опитите и резултатите на всички участници. Това е необратимо. Административният журнал се запазва.</>} confirmLabel="Изтрий потребителя" confirmDisabled={!deletePassword.trim()} onCancel={() => { setDeleting(null); setDeletePassword('') }} onConfirm={deleteUser}>
       <label>Вашата администраторска парола<input type="password" required autoComplete="current-password" value={deletePassword} onChange={event => setDeletePassword(event.target.value)} /></label>
     </DeleteConfirmationDialog>}
+
+    {verifying && <AdminDialog title="Потвърждение на имейл" busy={busy} onClose={() => { setVerifying(null); setError('') }}>
+      <div className="user-form">
+        <p>Да изпратим ли линк за потвърждение до <strong>{verifying.notificationEmail ?? verifying.email}</strong>?</p>
+        <p className="muted">След като потребителят отвори линка, този адрес ще може да получава известия за възложени тестове и резултати.</p>
+        {error && <p className="error" role="alert">{error}</p>}
+        <div className="dialog-actions"><button type="button" disabled={busy} onClick={() => { setVerifying(null); setError('') }}>Отказ</button><button type="button" data-initial-focus className="primary command-button" disabled={busy} onClick={() => void sendVerificationEmail()}><Mail size={17} />{busy ? 'Изпращане…' : 'Изпрати потвърждение'}</button></div>
+      </div>
+    </AdminDialog>}
 
     {roleChange && <AdminDialog title="Смяна на роля" busy={busy} onClose={() => { setRoleChange(null); setError('') }}>
       <form className="user-form" onSubmit={saveRole}>

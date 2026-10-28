@@ -3,6 +3,7 @@ package com.quicktest.admin;
 import com.quicktest.exception.ApiException;
 import com.quicktest.access.*;
 import com.quicktest.auth.*;
+import com.quicktest.workspace.IdentityWorkflow;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -26,11 +27,12 @@ public class AdminService {
     private final PermissionAccess access;
     private final AdminAuditRepository audits;
     private final UserDeletionRepository deletion;
+    private final IdentityWorkflow identities;
     private final SecureRandom random = new SecureRandom();
 
     public AdminService(AppUserRepository users, AuthTokenRepository tokens, AuthService auth, PasswordEncoder encoder,
                         EndpointCatalog catalog, EndpointPermissionRepository permissions, PermissionAccess access,
-                        AdminAuditRepository audits, UserDeletionRepository deletion) {
+                        AdminAuditRepository audits, UserDeletionRepository deletion, IdentityWorkflow identities) {
         this.users = users;
         this.tokens = tokens;
         this.auth = auth;
@@ -40,11 +42,14 @@ public class AdminService {
         this.access = access;
         this.audits = audits;
         this.deletion = deletion;
+        this.identities = identities;
     }
 
     @Transactional(readOnly = true)
-    public List<AuthService.UserResponse> users() {
-        return users.findAllByOrderByCreatedAtDesc().stream().map(auth::toResponse).toList();
+    public List<AdminUserResponse> users() {
+        var addresses = identities.notificationAddresses();
+        return users.findAllByOrderByCreatedAtDesc().stream()
+                .map(user -> adminResponse(user, addresses.getOrDefault(user.getId(), IdentityWorkflow.fallback(user)))).toList();
     }
 
     @Transactional
@@ -63,7 +68,7 @@ public class AdminService {
     }
 
     @Transactional
-    public AuthService.UserResponse update(AppUser actor, Long id, UserEdit request) {
+    public AdminUserResponse update(AppUser actor, Long id, UserEdit request) {
         checkSubscription(request);
         AppUser user = lockForUpdate(id, request.role(), request.active());
         String email = normalizeEmail(request.email());
@@ -78,21 +83,30 @@ public class AdminService {
         if (revoke) tokens.deleteByUserId(id);
         audit(actor, user, "USER_UPDATED", previous + "; след: " + user.getRole() + ", " + user.getEmail()
                 + ", active=" + user.isActive() + "; платен=" + user.isSubscriptionPaid() + "; до=" + user.getSubscriptionPaidUntil());
-        return auth.toResponse(user);
+        return adminResponse(user);
     }
 
     @Transactional
-    public AuthService.UserResponse changeRole(AppUser actor, Long id, RoleEdit request) {
+    public AdminUserResponse changeRole(AppUser actor, Long id, RoleEdit request) {
         AppUser user = lockForUpdate(id, request.role(), true);
         Role previous = user.getRole();
-        if (previous == request.role() && !user.isRoleSelectionRequired()) return auth.toResponse(user);
+        if (previous == request.role() && !user.isRoleSelectionRequired()) return adminResponse(user);
         user.setRole(request.role());
         user.setRoleSelectionRequired(false);
         users.saveAndFlush(user);
         tokens.deleteByUserId(id);
         audit(actor, user, "USER_ROLE_CHANGED", "Роля: " + previous + " -> " + user.getRole()
                 + "; активните сесии са прекратени.");
-        return auth.toResponse(user);
+        return adminResponse(user);
+    }
+
+    @Transactional
+    public AdminUserResponse sendVerificationEmail(AppUser actor, Long id) {
+        AppUser user = users.lockById(id).orElseThrow(() -> new ApiException(NOT_FOUND, "Потребителят не съществува."));
+        if (!user.isActive()) throw new ApiException(CONFLICT, "Потребителят е неактивен.");
+        String email = identities.sendVerification(user);
+        audit(actor, user, "EMAIL_VERIFICATION_SENT", "Линк за потвърждение на имейл за известия до " + email);
+        return adminResponse(user);
     }
 
     @Transactional
@@ -173,6 +187,17 @@ public class AdminService {
                 item.getAction(), item.getDetails(), item.getCreatedAt())).toList();
     }
 
+    private AdminUserResponse adminResponse(AppUser user) {
+        return adminResponse(user, identities.notificationAddress(user));
+    }
+
+    private AdminUserResponse adminResponse(AppUser user, IdentityWorkflow.NotificationAddress address) {
+        var base = auth.toResponse(user);
+        return new AdminUserResponse(base.id(), base.name(), base.email(), base.role(), base.active(), base.passwordChangeRequired(),
+                base.roleSelectionRequired(), base.subscription(), base.allowedMethods(), base.subscriptionMethods(),
+                user.getEmailVerifiedAt(), address.email(), address.verifiedAt());
+    }
+
     private void apply(AppUser user, UserEdit request) {
         user.setName(request.name().trim());
         user.setEmail(normalizeEmail(request.email()));
@@ -226,6 +251,11 @@ public class AdminService {
 
     public record UserEdit(@NotBlank @Size(max = 120) String name, @Email @NotBlank @Size(max = 190) String email,
                            @NotNull Role role, boolean active, boolean subscriptionPaid, LocalDate subscriptionPaidUntil) {}
+    /** The regular user response plus login and notification email verification state, visible only to administrators. */
+    public record AdminUserResponse(Long id, String name, String email, String role, boolean active,
+                                    boolean passwordChangeRequired, boolean roleSelectionRequired, SubscriptionService.Status subscription,
+                                    List<String> allowedMethods, List<String> subscriptionMethods,
+                                    Instant emailVerifiedAt, String notificationEmail, Instant notificationEmailVerifiedAt) {}
     public record RoleEdit(@NotNull Role role) {}
     public record DeleteUserRequest(@NotBlank @Size(max = 72) String password) {}
     public record PasswordResponse(AuthService.UserResponse user, String temporaryPassword) {}

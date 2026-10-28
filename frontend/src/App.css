@@ -525,12 +525,13 @@ progress {
 .data-table td:first-child { min-width: 160px; }
 .data-table td small { display: block; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
 .data-table td small.warning-text { color: var(--warning); }
+.data-table td small.good { color: var(--success); }
 .data-table td strong { font-weight: 700; }
 .data-table .inline-muted { display: inline; }
 .data-table tbody tr:hover { background: var(--hover); }
 .data-table code { font-size: 14px; color: var(--text); }
-.users-table { min-width: 870px; }
-.users-table td:last-child { width: 184px; }
+.users-table { min-width: 1100px; }
+.users-table td:last-child { width: 220px; }
 .permissions-table { min-width: 970px; }
 .permissions-table th:nth-child(3), .permissions-table th:nth-child(4) { width: 160px; }
 .permissions-table td:nth-child(2) { min-width: 260px; }

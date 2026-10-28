@@ -21,7 +21,7 @@ public class AdminController {
     public AdminController(AdminService admin, AuthService auth,TeacherBillingAdminService billing) { this.admin = admin; this.auth = auth;this.billing=billing; }
 
     @GetMapping("/users")
-    public List<AuthService.UserResponse> users() { return admin.users(); }
+    public List<AdminService.AdminUserResponse> users() { return admin.users(); }
 
     @GetMapping("/teacher-billing")
     public List<TeacherBillingAdminService.TeacherPlan> teacherBilling() { return billing.plans(); }
@@ -50,15 +50,20 @@ public class AdminController {
     }
 
     @PutMapping("/users/{id}")
-    public AuthService.UserResponse updateUser(@RequestHeader("Authorization") String authorization, @PathVariable Long id,
+    public AdminService.AdminUserResponse updateUser(@RequestHeader("Authorization") String authorization, @PathVariable Long id,
                                                @Valid @RequestBody AdminService.UserEdit request) {
         return admin.update(auth.requireUser(authorization), id, request);
     }
 
     @PutMapping("/users/{id}/role")
-    public AuthService.UserResponse changeRole(@RequestHeader("Authorization") String authorization, @PathVariable Long id,
+    public AdminService.AdminUserResponse changeRole(@RequestHeader("Authorization") String authorization, @PathVariable Long id,
                                                @Valid @RequestBody AdminService.RoleEdit request) {
         return admin.changeRole(auth.requireUser(authorization), id, request);
+    }
+
+    @PostMapping("/users/{id}/verification-email")
+    public AdminService.AdminUserResponse sendVerificationEmail(@RequestHeader("Authorization") String authorization, @PathVariable Long id) {
+        return admin.sendVerificationEmail(auth.requireUser(authorization), id);
     }
 
     @PostMapping("/users/{id}/reset-password")

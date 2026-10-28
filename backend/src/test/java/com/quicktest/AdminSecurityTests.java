@@ -112,6 +112,42 @@ class AdminSecurityTests {
     }
 
     @Test
+    void administratorSeesEmailVerificationAndCanResendLinkOnlyForUnverifiedActiveUsers() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session student = session(Role.STUDENT);
+        Session verified = session(Role.STUDENT);
+        jdbc.update("INSERT INTO notification_addresses(user_id,email,verified_at) VALUES(?,?,CURRENT_TIMESTAMP)", verified.user.getId(), verified.user.getEmail());
+        String path = "/api/admin/users/" + student.user.getId() + "/verification-email";
+        call(post(path), student.token, null, 403);
+        call(post(path), null, null, 401);
+
+        JsonNode listed = call(get("/api/admin/users"), admin.token, null, 200);
+        JsonNode row = null, verifiedRow = null;
+        for (JsonNode item : listed) {
+            if (item.path("id").asLong() == student.user.getId()) row = item;
+            if (item.path("id").asLong() == verified.user.getId()) verifiedRow = item;
+        }
+        assertNotNull(row);
+        assertEquals(student.user.getEmail(), row.path("notificationEmail").asText());
+        assertTrue(row.path("notificationEmailVerifiedAt").isNull());
+        assertTrue(row.path("emailVerifiedAt").isNull());
+        assertFalse(verifiedRow.path("notificationEmailVerifiedAt").isNull());
+
+        JsonNode sent = call(post(path), admin.token, null, 200);
+        assertEquals(student.user.getEmail(), sent.path("notificationEmail").asText());
+        assertEquals(1, count("SELECT COUNT(*) FROM notification_outbox WHERE user_id=? AND notification_type='notification_email' AND recipient_email=?", student.user.getId(), student.user.getEmail()));
+        assertEquals(1, count("SELECT COUNT(*) FROM identity_challenges WHERE user_id=? AND purpose='notification_email' AND consumed_at IS NULL", student.user.getId()));
+        call(post(path), admin.token, null, 200);
+        assertEquals(1, count("SELECT COUNT(*) FROM identity_challenges WHERE user_id=? AND purpose='notification_email' AND consumed_at IS NULL", student.user.getId()));
+        assertTrue(audits.findTop200ByOrderByCreatedAtDescIdDesc().stream().anyMatch(entry -> entry.getAction().equals("EMAIL_VERIFICATION_SENT") && entry.getTargetUser().getId().equals(student.user.getId())));
+
+        call(post("/api/admin/users/" + verified.user.getId() + "/verification-email"), admin.token, null, 409);
+        call(put("/api/admin/users/" + student.user.getId()), admin.token, withActive(student.user, false), 200);
+        call(post(path), admin.token, null, 409);
+        call(post("/api/admin/users/999999999/verification-email"), admin.token, null, 404);
+    }
+
+    @Test
     void permissionsAreMethodSpecificAndImmediatelyAffectExistingTokens() throws Exception {
         Session admin = session(Role.ADMIN);
         Session teacher = session(Role.TEACHER);
