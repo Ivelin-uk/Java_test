@@ -152,6 +152,7 @@ try {
     try {
       await page.goto(frontend)
       await page.getByRole('navigation', { name: 'Основна навигация', exact: true }).getByRole('button', { name: 'Моите тестове', exact: true }).click()
+      await page.getByRole('tab', { name: 'Резултати', exact: true }).click()
       const table = page.getByRole('table', { name: 'Опити и резултати', exact: true })
       await table.getByRole('button', { name: 'Преглед на резултата', exact: true }).click()
       await page.waitForURL(`${frontend}/results/401`)

@@ -12,7 +12,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 const errors = []
 try {
   for (const scenario of [{ name: 'desktop', width: 1440, strict: true }, { name: 'mobile', width: 390 }, { name: 'legacy-cache', width: 1280, legacy: true }, { name: 'lost-start', width: 390, lostStart: true }, { name: 'transfer', width: 1280, transfer: true }]) {
-    const context = await browser.newContext({ viewport: { width: scenario.width, height: 900 } })
+    const context = await browser.newContext({ viewport: { width: scenario.width, height: 900 }, reducedMotion: 'reduce' })
     const saved = { token: 'a'.repeat(43), browserId: 'examai-tab-original-browser', startKey: 'original-start-key', attemptId: 401 }
     await context.addInitScript(({ auth, storageKey, saved, legacy, transfer }) => {
       localStorage.setItem('quicktest.auth', JSON.stringify(auth))
@@ -91,17 +91,19 @@ try {
         if (scenario.transfer && number === 1) {
           await page.getByLabel('Парола за прехвърляне на сесията', { exact: true }).fill('password123')
           await page.getByRole('button', { name: 'Прехвърли без промяна на сроковете', exact: true }).click()
+          await page.getByRole('heading', { name: `Въпрос за опит ${number}`, exact: true }).waitFor()
           assert.equal(transfers.length, 1)
           assert.equal(attempts.length, 1)
         } else {
           await page.getByRole('heading', { name: 'Подготовка за изпит', exact: true }).waitFor({ timeout: 5000 })
-          const start = page.getByRole('button', { name: 'Започни на цял екран', exact: true })
+          const start = page.getByRole('button', { name: scenario.strict ? 'Започни на цял екран' : 'Започни теста', exact: true })
           assert.equal(await start.isDisabled(), true)
           await page.getByLabel('Код за достъп', { exact: true }).fill('ABCDEFGH')
           await start.click()
           if (scenario.lostStart && number === 1) {
             await page.getByRole('alert').getByText('Отговорът от сървъра е прекъснат.', { exact: true }).waitFor()
             await start.click()
+            await page.getByRole('heading', { name: `Въпрос за опит ${number}`, exact: true }).waitFor()
             assert.equal(starts[0].idempotencyKey, starts[1].idempotencyKey)
             assert.equal(attempts.length, 1)
           }
@@ -124,8 +126,12 @@ try {
         await page.getByRole('heading', { name: 'Опитът е предаден', exact: true }).waitFor()
         if (number === 1) attempts[0].status = 'finalized'
         await page.getByRole('button', { name: 'Моите тестове', exact: true }).click()
-        await page.locator('.ws-table').first().getByRole('cell', { name: `${number}/3`, exact: true }).waitFor()
-        if (number === 1) await page.getByRole('region', { name: 'Най-високи резултати', exact: true }).getByText('100.00%', { exact: true }).waitFor()
+        await page.getByRole('table', { name: 'Възложени тестове', exact: true }).getByText(`${number}/3`, { exact: true }).waitFor()
+        if (number === 1) {
+          await page.getByRole('tab', { name: 'Резултати', exact: true }).click()
+          await page.getByRole('region', { name: 'Най-високи резултати', exact: true }).getByText('100.00%', { exact: true }).waitFor()
+          await page.getByRole('tab', { name: 'Тестове за решаване', exact: true }).click()
+        }
       }
       assert.equal(await page.getByRole('button', { name: 'Няма оставащи опити', exact: true }).isDisabled(), true)
       assert.equal(attempts.length, 3)

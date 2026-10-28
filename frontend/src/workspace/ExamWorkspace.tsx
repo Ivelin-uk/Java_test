@@ -45,18 +45,21 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
   const teacher = auth.user.role === 'TEACHER', student = auth.user.role === 'STUDENT', admin = auth.user.role === 'ADMIN'
   const [screen, setScreen] = useState(() => workspaceLocation(admin ? 'admin' : 'dashboard'))
   const view = screen.view
+  const [learnerTab, setLearnerTab] = useState<'tests' | 'results'>(() => screen.result === null ? 'tests' : 'results')
   useEffect(() => {
     const changed = () => setScreen(workspaceLocation(admin ? 'admin' : 'dashboard'))
     window.addEventListener('popstate', changed)
     return () => window.removeEventListener('popstate', changed)
   }, [admin])
-  function navigate(next: View, participants: number | null = null) {
+  function navigate(next: View, participants: number | null = null, nextLearnerTab?: 'tests' | 'results') {
+    if (next === 'learner') setLearnerTab(nextLearnerTab ?? (screen.result === null ? 'tests' : 'results'))
     const path = next === 'assignments' ? participants === null ? '/assignments' : `/assignments/${participants}/participants` : next === 'profile' ? '/profile' : '/'
     if (window.location.pathname !== path || view !== next) history.pushState({ examaiView: next }, '', path)
     setScreen({ view: next, participants, result: null, assignment: null })
     window.scrollTo({ top: 0 })
   }
   function openResult(attempt: number) {
+    setLearnerTab('results')
     const path = `/results/${attempt}`
     if (window.location.pathname !== path) history.pushState({ examaiView: 'learner' }, '', path)
     setScreen({ view: 'learner', participants: null, result: attempt, assignment: null })
@@ -79,7 +82,7 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
     <header className="ws-topbar"><a className="ws-brand" href="/" aria-label="ExamAI — начало"><span className="ws-brand-icon"><BookOpen size={23} aria-hidden="true" /></span>ExamAI</a><div className="ws-account"><strong>{auth.user.name}</strong><span>{roleLabels[auth.user.role]}</span></div><ThemeToggle /><button className="icon-button" title="Изход" aria-label="Изход" onClick={() => void logout()}><LogOut size={18} /></button></header>
     <nav className="ws-nav" aria-label="Основна навигация">{available.map(({ key, name, icon: Icon }) => <button key={key} className={actualView === key ? 'active' : ''} aria-current={actualView === key ? 'page' : undefined} onClick={() => navigate(key)}><Icon size={18} aria-hidden="true" />{name}</button>)}</nav>
     <div className="ws-body" id="workspace-content" tabIndex={-1}>
-      {actualView === 'dashboard' && <Dashboard api={api} teacher={teacher} navigate={navigate} />}
+      {actualView === 'dashboard' && <Dashboard api={api} teacher={teacher} navigate={navigate} openResults={() => navigate('learner', null, 'results')} />}
       {actualView === 'groups' && <GroupsPanel api={api} openResult={openResult} teacher={teacher} selected={selectedGroup} setSelected={setSelectedGroup} begin={(assignment, attempt) => setExam({ assignment, attempt })} />}
       {actualView === 'tests' && <AssessmentEditor api={api} userId={auth.user.id} />}
       {actualView === 'assignments' && (screen.participants === null
@@ -87,7 +90,7 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
         : <AssignmentParticipantsPage key={screen.participants} api={api} id={screen.participants} back={() => navigate('assignments')} />)}
       {actualView === 'grading' && <GradingPanel api={api} />}
       {actualView === 'learner' && (screen.result === null
-        ? <LearnerPanel api={api} openResult={openResult} begin={(assignment, attempt) => setExam({ assignment, attempt })} focusAssignment={screen.assignment ?? undefined} />
+        ? <LearnerPanel key={screen.assignment ?? 'all'} api={api} initialTab={learnerTab} openResult={openResult} begin={(assignment, attempt) => setExam({ assignment, attempt })} focusAssignment={screen.assignment ?? undefined} />
         : <ResultReviewPage key={screen.result} api={api} attempt={screen.result} back={() => navigate('learner')} />)}
       {actualView === 'profile' && (window.location.pathname.startsWith('/verify-email')
         ? <NotificationEmailVerification api={api} back={() => navigate('profile')} />
@@ -97,18 +100,18 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
   </main>
 }
 
-function Dashboard({ api, teacher, navigate }: { api: WorkspaceApi; teacher: boolean; navigate: (view: View) => void }) {
+function Dashboard({ api, teacher, navigate, openResults }: { api: WorkspaceApi; teacher: boolean; navigate: (view: View) => void; openResults: () => void }) {
   const groups = useRemote<Group[]>(api, '/groups', [])
   const assignments = useRemote<Assignment[]>(api, '/assignments', [])
   const records = useRemote<(Attempt | Result)[]>(api, teacher ? '/grading' : '/results', [])
-  const steps: { title: string; description: string; view: View; icon: typeof Users }[] = teacher ? [
+  const steps: { title: string; description: string; view: View; icon: typeof Users; results?: boolean }[] = teacher ? [
     { title: 'Създай група', description: 'Събери учениците на едно място и им изпрати кода за присъединяване.', view: 'groups', icon: Users },
     { title: 'Подготви тест', description: 'Добави свои въпроси, създай ги с AI или използвай споделен тест.', view: 'tests', icon: BookOpen },
     { title: 'Възложи на учениците', description: 'Избери тест, група и срок. След предаването отвори „Проверка“.', view: 'assignments', icon: ClipboardList },
   ] : [
     { title: 'Присъедини се към група', description: 'Отвори „Групи“ и въведи кода, който ти е дал учителят.', view: 'groups', icon: Users },
     { title: 'Отвори възложения тест', description: 'В „Моите тестове“ виж срока и избери „Подготовка“, за да започнеш.', view: 'learner', icon: ClipboardList },
-    { title: 'Виж резултата си', description: 'След проверката виж точките и оценката в „Опити и резултати“.', view: 'learner', icon: GraduationCap },
+    { title: 'Виж резултата си', description: 'След проверката виж точките и оценката в таб „Резултати“.', view: 'learner', icon: GraduationCap, results: true },
   ]
   return <section className="ws-section">
     <SectionHead title="Моето табло" description={teacher ? 'Твоите групи, възложени тестове и проверки — всичко започва оттук.' : 'Виж възложените тестове, следи сроковете и намери резултатите си.'} />
@@ -122,13 +125,13 @@ function Dashboard({ api, teacher, navigate }: { api: WorkspaceApi; teacher: boo
         <span>Възложени тестове<ArrowUpRight size={17} aria-hidden="true" /></span>
         <strong>{assignments.loading || assignments.error ? '-' : assignments.data.length}</strong>
       </button>
-      <button type="button" title={teacher ? 'Към проверките' : 'Към резултатите'} aria-busy={records.loading} onClick={() => navigate(teacher ? 'grading' : 'learner')}>
+      <button type="button" title={teacher ? 'Към проверките' : 'Към резултатите'} aria-busy={records.loading} onClick={() => teacher ? navigate('grading') : openResults()}>
         <span>{teacher ? 'Чакащи проверки' : 'Публикувани резултати'}<ArrowUpRight size={17} aria-hidden="true" /></span>
         <strong>{records.loading || records.error ? '-' : teacher ? records.data.filter(item => 'status' in item && item.status === 'pending_review').length : records.data.length}</strong>
       </button>
     </div>
     <Panel title="Откъде да започна" description={teacher ? 'Следвай тези три стъпки, за да проведеш първия си тест.' : 'Три лесни стъпки от присъединяването до резултата.'}>
-      <div className="ws-start-steps">{steps.map(({ title, description, view: destination, icon: Icon }, index) => <button type="button" className="ws-start-step" key={title} onClick={() => navigate(destination)}>
+      <div className="ws-start-steps">{steps.map(({ title, description, view: destination, icon: Icon, results }, index) => <button type="button" className="ws-start-step" key={title} onClick={() => results ? openResults() : navigate(destination)}>
         <span className="ws-step-top"><span className="ws-step-icon"><Icon size={22} aria-hidden="true" /></span><span className="ws-step-number">Стъпка {index + 1}</span></span>
         <strong>{title}</strong><span className="ws-step-description">{description}</span><span className="ws-step-link">Отвори раздела <ArrowRight size={17} aria-hidden="true" /></span>
       </button>)}</div>

@@ -493,3 +493,9 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-mobile-dialog .ws-check { align-items: flex-start; line-height: 1.5; }
 .ws-mobile-dialog .ws-check input { margin-top: 3px; }
 .ws-mobile-dialog p { line-height: 1.65; overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+ .ws-learner-tabs { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+ .ws-learner-tabs > button { justify-content: center; padding: 10px 8px; }
+ .ws-learner-tabs > button > svg { flex-shrink: 0; }
+}

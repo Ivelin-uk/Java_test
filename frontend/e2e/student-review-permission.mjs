@@ -53,6 +53,7 @@ try {
   page = learner
   await learner.goto(frontend)
   await learner.getByRole('button', { name: 'Моите тестове', exact: true }).click()
+  await learner.getByRole('tab', { name: 'Резултати', exact: true }).click()
   const history = learner.getByRole('table', { name: 'Опити и резултати', exact: true })
   await history.getByText('50.00%', { exact: true }).first().waitFor()
   assert.equal(await history.getByRole('button', { name: 'Преглед на резултата', exact: true }).count(), 0)
