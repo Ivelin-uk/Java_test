@@ -71,6 +71,9 @@ class AdminSecurityTests {
         for (Session actor : List.of(teacher, student)) {
             call(get("/api/admin/users"), actor.token, null, 403);
             call(get("/api/admin/teacher-billing"), actor.token, null, 403);
+            call(get("/api/admin/teacher-billing/payments"), actor.token, null, 403);
+            call(put("/api/admin/teacher-billing/" + teacher.user.getId() + "/plan"), actor.token, Map.of("plan", "pro", "requestKey", "secure_plan_123"), 403);
+            call(post("/api/admin/teacher-billing/" + teacher.user.getId() + "/reset-ai"), actor.token, Map.of("period", "trial", "requestKey", "secure_reset_123"), 403);
             call(post("/api/admin/users"), actor.token, edit(actor.user), 403);
             call(put("/api/admin/users/" + actor.user.getId()), actor.token, edit(actor.user), 403);
             call(put("/api/admin/users/" + actor.user.getId() + "/role"), actor.token, new AdminService.RoleEdit(Role.ADMIN), 403);
@@ -82,9 +85,30 @@ class AdminSecurityTests {
         }
         call(get("/api/admin/users"), null, null, 401);
         call(get("/api/admin/teacher-billing"), null, null, 401);
+        call(put("/api/admin/teacher-billing/" + teacher.user.getId() + "/plan"), null, Map.of("plan", "pro", "requestKey", "secure_plan_123"), 401);
+        call(get("/api/admin/teacher-billing/payments"), null, null, 401);
+        call(post("/api/admin/teacher-billing/" + teacher.user.getId() + "/reset-ai"), null, Map.of("requestKey", "secure_reset_123"), 401);
         call(put("/api/admin/users/" + teacher.user.getId() + "/role"), null, new AdminService.RoleEdit(Role.ADMIN), 401);
         call(delete("/api/admin/users/" + teacher.user.getId()), null, Map.of("password", "password123"), 401);
         call(get("/api/public/tests/unknown"), null, null, 401);
+    }
+
+    @Test
+    void administratorBillingResetValidatesRequestsAndIsAudited() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session teacher = session(Role.TEACHER);
+        String path = "/api/admin/teacher-billing/" + teacher.user.getId();
+        call(post(path + "/reset-ai"), admin.token, Map.of(), 400);
+        call(put(path + "/plan"), admin.token, Map.of("plan", "enterprise", "requestKey", "billing_plan_123"), 400);
+        JsonNode granted=call(put(path + "/plan"), admin.token, Map.of("plan", "pro", "requestKey", "billing_plan_123"), 200);
+        assertEquals("pro",granted.path("plan").asText());
+        assertEquals(100,granted.path("limits").path("aiCredits").asInt());
+        call(put(path + "/plan"), admin.token, Map.of("plan", "auto", "requestKey", "billing_auto_123"), 200);
+        assertTrue(audits.findTop200ByOrderByCreatedAtDescIdDesc().stream().anyMatch(entry -> entry.getAction().equals("TEACHER_PLAN_CHANGED") && entry.getTargetUser().getId().equals(teacher.user.getId())));
+        JsonNode reset = call(post(path + "/reset-ai"), admin.token, Map.of("period", "trial", "requestKey", "billing_reset_123"), 200);
+        assertEquals("free", reset.path("plan").asText());
+        assertTrue(audits.findTop200ByOrderByCreatedAtDescIdDesc().stream().anyMatch(entry -> entry.getAction().equals("TEACHER_AI_RESET") && entry.getTargetUser().getId().equals(teacher.user.getId())));
+        call(get("/api/admin/teacher-billing/payments?month=2026-13"), admin.token, null, 400);
     }
 
     @Test

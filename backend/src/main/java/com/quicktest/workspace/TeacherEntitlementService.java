@@ -63,15 +63,19 @@ public class TeacherEntitlementService {
     }
     @Transactional(readOnly=true)
     public Map<String,Object> describe(OrgAccess.Scope scope) {
-        boolean paid=billing.isPro(scope.userId());
-        return Map.of("limits",(paid?pro:free),"plans",Map.of("free",free,"pro",pro),"usage",Map.of(
-                "groups",repository.groups(scope.userId()),
-                "activeAssignments",repository.activeAssignments(scope.userId(),clock.instant(),-1),
-                "aiCredits",repository.credits(scope.userId(),period(paid))));
+        var state=snapshot(scope.userId(),billing.isPro(scope.userId()));
+        return Map.of("limits",state.limits(),"plans",Map.of("free",free,"pro",pro),"usage",Map.of("groups",state.usage().groups(),"activeAssignments",state.usage().activeAssignments(),"aiCredits",state.usage().aiCredits()));
     }
+    public Snapshot snapshot(long user,boolean paid) {
+        return new Snapshot(paid?pro:free,new Usage(repository.groups(user),repository.activeAssignments(user,clock.instant(),-1),repository.credits(user,period(paid))),repository.reservedCredits(user,period(paid)));
+    }
+    public void lockTeacher(long user) {repository.lock(user);}
+    public int resetAi(long user,String quotaPeriod) {return repository.resetUsedCredits(user,quotaPeriod,clock.instant());}
     private Limits limits(long user) {return billing.isPro(user)?pro:free;}
     private String period(boolean paid) {return paid?YearMonth.from(clock.instant().atZone(ZoneOffset.UTC)).toString():"trial";}
     public record Limits(int groups,int activeAssignments,int aiCredits) {
         public Limits {if(groups<1 || activeAssignments<1 || aiCredits<0) throw new IllegalArgumentException("Invalid billing limits");}
     }
+    public record Usage(long groups,long activeAssignments,long aiCredits) {}
+    public record Snapshot(Limits limits,Usage usage,long reservedAiCredits) {}
 }

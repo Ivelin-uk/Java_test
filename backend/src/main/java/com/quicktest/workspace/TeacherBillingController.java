@@ -17,6 +17,8 @@ public class TeacherBillingController {
     public TeacherBillingController(OrgAccess access,TeacherBillingService billing,TeacherEntitlementService entitlements,BillingService legacy) {this.access=access;this.billing=billing;this.entitlements=entitlements;this.legacy=legacy;}
     @GetMapping @PreAuthorize("isAuthenticated()")
     public Object get() {var result=new LinkedHashMap<>(billing.describe(access.user()));result.putAll(entitlements.describe(access.teacher()));return result;}
+    @GetMapping("/payments") @PreAuthorize("isAuthenticated()")
+    public Object payments(@RequestParam(required=false) String month) {return billing.paymentHistory(access.user(),month);}
     @PostMapping("/checkout") @PreAuthorize("isAuthenticated()")
     public Object checkout(@Valid @RequestBody TeacherBillingService.Checkout request) {return billing.checkout(access.user(),request);}
     @PostMapping("/portal") @PreAuthorize("isAuthenticated()")

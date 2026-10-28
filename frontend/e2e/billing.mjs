@@ -36,6 +36,7 @@ async function fixture({ signedIn = true, role = 'TEACHER', billing = initial, v
     if (method === 'GET') {
       if (path === '/api/auth/me') return respond(auth.user)
       if (path === '/api/auth/google/config') return respond({ enabled: false })
+      if (path === '/api/v1/billing/payments') return respond([])
       if (path === '/api/v1/billing') {
         state.gets++
         if (state.failGet-- > 0) return respond({ detail: 'Временно недостъпен абонамент.' }, 503)
@@ -278,6 +279,14 @@ try {
   await aborted.page.getByText('Плащането е прекъснато', { exact: true }).waitFor()
   assert.equal(aborted.state.requests.filter(request => request.path === '/api/v1/billing/checkout').length, 0)
   await aborted.context.close()
+
+  const granted = await fixture({ billing: { ...initial, plan: 'pro', manualPlan: 'pro', checkoutAvailable: false, limits: pro } })
+  await granted.page.goto(`${frontend}/profile`)
+  await granted.page.getByRole('heading', { name: 'ExamAI Pro', exact: true }).waitFor()
+  await granted.page.getByText('Pro достъп, зададен от администратор', { exact: true }).waitFor()
+  await granted.page.getByText('Достъпът е предоставен от администратор.', { exact: true }).waitFor()
+  assert.equal(granted.state.requests.filter(request => request.path === '/api/v1/billing/checkout').length, 0)
+  await granted.context.close()
 
   // Student direct URL cannot render billing or fetch its private endpoint.
   const student = await fixture({ role: 'STUDENT' })

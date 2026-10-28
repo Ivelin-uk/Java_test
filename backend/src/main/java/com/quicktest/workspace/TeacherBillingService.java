@@ -30,23 +30,42 @@ public class TeacherBillingService {
         this.frontend=frontend.replaceAll("/+$","");this.monthPrice=monthPrice;this.yearPrice=yearPrice;
     }
     public Optional<Map<String,Object>> subscription(long user) {return repository.findByUserId(user);}
-    public boolean isPro(long user) {return repository.findByUserId(user).map(this::paid).orElse(false);}
+    public boolean isPro(long user) {return repository.planOverride(user).map(plan->plan.equals("pro")).orElseGet(()->repository.findByUserId(user).map(this::paid).orElse(false));}
     private boolean paid(Map<String,Object> account) {
         return string(account,"stripe_mode").equals(gateway.mode()) && account.get("paid_through")!=null && time(account,"paid_through").isAfter(clock.instant());
     }
     public Map<String,Object> describe(AppUser user) {
         teacher(user);var account=repository.findByUserId(user.getId()).orElse(Map.of());
-        Map<String,Object> result=new LinkedHashMap<>();result.put("plan",paid(account)?"pro":"free");
+        Map<String,Object> result=new LinkedHashMap<>();result.put("plan",isPro(user.getId())?"pro":"free");
+        result.put("manualPlan",repository.planOverride(user.getId()).orElse(null));
         result.put("status",string(account,"provider_status").isBlank()?"free":string(account,"provider_status"));
         result.put("currentPeriod",paid(account)?string(account,"billing_period"):null);
         result.put("paidThrough",account.get("paid_through"));result.put("cancelAtPeriodEnd",flag(account,"cancel_at_period_end"));
         result.put("mode",gateway.configured()?gateway.mode():"unconfigured");
         var month=priceDescription("month");var year=priceDescription("year");
         result.put("prices",Map.of("month",month,"year",year));
-        result.put("checkoutAvailable",!paid(account) && (Boolean.TRUE.equals(month.get("available")) || Boolean.TRUE.equals(year.get("available"))) && replaceable(account));
+        result.put("checkoutAvailable",!isPro(user.getId()) && !paid(account) && (Boolean.TRUE.equals(month.get("available")) || Boolean.TRUE.equals(year.get("available"))) && replaceable(account));
         result.put("portalAvailable",gateway.configured() && string(account,"stripe_mode").equals(gateway.mode()) && !string(account,"stripe_customer_id").isBlank());
         result.put("cancellationAvailable",gateway.configured() && string(account,"stripe_mode").equals(gateway.mode()) && !string(account,"stripe_subscription_id").isBlank() && !flag(account,"cancel_at_period_end") && !Set.of("canceled","incomplete_expired").contains(string(account,"provider_status")));
         return result;
+    }
+    @Transactional(readOnly=true)
+    public List<PaymentRecord> paymentHistory(AppUser user,String month) {
+        teacher(user);
+        return repository.payments(user.getId(),parsePaymentMonth(month)).stream().map(TeacherBillingService::payment).toList();
+    }
+    public static List<PaymentRecord> paymentHistory(TeacherBillingRepository repository,String month) {
+        return repository.allPayments(parsePaymentMonth(month)).stream().map(TeacherBillingService::payment).toList();
+    }
+    private static YearMonth parsePaymentMonth(String month) {
+        if(month==null || month.isBlank()) return null;
+        if(!month.matches("\\d{4}-(0[1-9]|1[0-2])")) throw WorkspaceError.validation("Месецът трябва да е във формат ГГГГ-ММ.");
+        return YearMonth.parse(month);
+    }
+    private static PaymentRecord payment(Map<String,Object> row) {
+        return new PaymentRecord(string(row,"invoice_id"),number(row,"user_id"),string(row,"payment_status"),string(row,"billing_period"),
+                number(row,"amount_due"),number(row,"amount_paid"),string(row,"currency"),time(row,"payment_at"),
+                row.get("period_start")==null?null:time(row,"period_start"),row.get("period_end")==null?null:time(row,"period_end"));
     }
     private Map<String,Object> priceDescription(String period) {
         if(!period.equals("month")) return Map.of("available",false);
@@ -61,7 +80,7 @@ public class TeacherBillingService {
         if(request==null || request.requestKey()==null || !request.requestKey().matches("[A-Za-z0-9_-]{8,80}") || !"month".equals(request.period())) throw WorkspaceError.validation("Pro се предлага за 8 € на месец.");
         long workspace=personal.workspace(user);repository.lockTeacher(user.getId());
         var account=account(user.getId(),workspace);sameMode(account);
-        if(paid(account) || !replaceable(account)) throw WorkspaceError.conflict("Вече имаш абонамент. Управлявай го през платежния портал.");
+        if(isPro(user.getId()) || paid(account) || !replaceable(account)) throw WorkspaceError.conflict("Вече имаш Pro достъп или абонамент. Управлявай го през профила си.");
         String price=priceId(request.period());verifiedPrice(request.period());
         String checkoutRequestKey=request.requestKey();
         var previous=repository.findCheckout(user.getId(),checkoutRequestKey);
@@ -176,6 +195,9 @@ public class TeacherBillingService {
             if(!reference(session.get("subscription")).equals(subscriptionId) || !reference(session.get("customer")).equals(customer)) throw WorkspaceError.forbidden();
             verifiedRequest(user,account,obj(session.get("metadata")));
         }
+        if(type.equals("invoice.paid") || type.equals("invoice.payment_failed")) {
+            recordPayment(user,object,string(event,"id"),type,epoch(event,"created"),string(request,"billing_period"),price,customer,subscriptionId);
+        }
         Instant through=account.get("paid_through")==null?null:time(account,"paid_through");
         String latest=reference(current.get("latest_invoice"));
         if(!latest.isBlank()) through=paidInvoiceThrough(gateway.currentInvoice(identifier(latest,"in_")),subscriptionId,customer,price,through);
@@ -203,6 +225,32 @@ public class TeacherBillingService {
             var candidate=Instant.ofEpochSecond(end);if(verified==null || candidate.isAfter(verified)) verified=candidate;
         }
         return verified!=null && (through==null || verified.isAfter(through))?verified:through;
+    }
+    private void recordPayment(long user,Map<String,Object> eventInvoice,String eventId,String eventType,long eventCreated,String period,String price,String customer,String subscription) {
+        String invoiceId=identifier(string(eventInvoice,"id"),"in_");
+        var invoice=gateway.currentInvoice(invoiceId);verifyMode(invoice);
+        if(!invoiceId.equals(string(invoice,"id")) || !subscriptionId(invoice).equals(subscription) || !reference(invoice.get("customer")).equals(customer))
+            throw WorkspaceError.forbidden();
+        Instant periodStart=null,periodEnd=null;
+        Object rawLines=obj(invoice.get("lines")).get("data");
+        if(rawLines instanceof List<?> lines) for(Object raw:lines) {
+            var line=obj(raw);if(!priceIdentifier(line).equals(price)) continue;
+            var bounds=obj(line.get("period"));long start=epoch(bounds,"start"),end=epoch(bounds,"end");
+            if(start>0 && end>start) {periodStart=Instant.ofEpochSecond(start);periodEnd=Instant.ofEpochSecond(end);break;}
+        }
+        if(periodStart==null || periodEnd==null) throw WorkspaceError.validation("Липсва период за фактурата от Stripe.");
+        Instant providerEventAt=Instant.ofEpochSecond(eventCreated);
+        var existing=repository.findPayment(invoiceId);
+        String status=eventType.equals("invoice.paid")?"paid":"failed";
+        if(existing.isPresent()) {
+            var row=existing.get();
+            if(string(row,"payment_status").equals("paid") && status.equals("failed")) return;
+            if(time(row,"provider_event_at").isAfter(providerEventAt)) return;
+        }
+        if(!(invoice.get("amount_due") instanceof Number due) || !(invoice.get("amount_paid") instanceof Number paid)
+                || !string(invoice,"currency").matches("[A-Za-z]{3}")) throw WorkspaceError.validation("Невалидни данни във фактурата от Stripe.");
+        repository.savePayment(invoiceId,user,eventId,eventType,status,period,due.longValue(),paid.longValue(),string(invoice,"currency").toUpperCase(Locale.ROOT),
+                providerEventAt,periodStart,periodEnd,providerEventAt,clock.instant());
     }
     private Map<String,Object> verifiedRequest(long user,Map<String,Object> account,Map<String,Object> metadata) {
         if(!string(metadata,"billing_owner").equals("teacher") || owner(metadata)!=user || !string(metadata,"workspace_id").equals(Long.toString(number(account,"workspace_id")))) throw WorkspaceError.forbidden();
@@ -235,4 +283,6 @@ public class TeacherBillingService {
     private String safeUrl(String url,String host) {try {var uri=URI.create(url);if(uri.getScheme().equals("https") && host.equals(uri.getHost()) && uri.getUserInfo()==null && uri.getPort()==-1) return url;} catch(RuntimeException ignored) {}throw WorkspaceError.validation("Невалиден адрес на платежната услуга.");}
     public record Checkout(@NotBlank @Pattern(regexp="month|year") String period,@NotBlank @Pattern(regexp="[A-Za-z0-9_-]{8,80}") String requestKey) {}
     public record Cancellation(boolean cancelAtPeriodEnd,Instant paidThrough) {}
+    public record PaymentRecord(String invoiceId,long userId,String status,String billingPeriod,long amountDue,long amountPaid,String currency,
+                                Instant paymentAt,Instant periodStart,Instant periodEnd) {}
 }

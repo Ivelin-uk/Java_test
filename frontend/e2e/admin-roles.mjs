@@ -27,6 +27,7 @@ try {
     if (path === '/api/auth/me') return selfRevoked ? respond({ detail: 'Invalid token' }, 401) : respond(admin)
     if (path === '/api/admin/users' && method === 'GET') return respond(users)
     if (path === '/api/admin/teacher-billing' && method === 'GET') return respond([{ userId: target.id, plan: 'pro', status: 'active', period: 'year', amountMinor: 5000, currency: 'EUR', paidThrough: '2027-10-26T12:00:00Z', cancelAtPeriodEnd: false }])
+    if (path === '/api/admin/teacher-billing/payments') return respond([])
     if (path === '/api/admin/permissions') return respond([])
     if (path === '/api/admin/audit') return respond(audit)
     const match = path.match(/^\/api\/admin\/users\/(\d+)\/role$/)

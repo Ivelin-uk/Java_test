@@ -28,6 +28,13 @@ public class TeacherEntitlementRepository {
     public long lockedCredits(long user,String period) {
         return store.rows("SELECT job_id FROM teacher_ai_credits WHERE user_id=? AND quota_period=? AND status IN ('reserved','used') FOR UPDATE",user,period).size();
     }
+    public long reservedCredits(long user,String period) {
+        return store.count("SELECT COUNT(*) FROM teacher_ai_credits WHERE user_id=? AND quota_period=? AND status='reserved'",user,period);
+    }
+    public int resetUsedCredits(long user,String period,Instant now) {
+        // Retain history and running reservations. A worker can still settle its reserved credit.
+        return store.update("UPDATE teacher_ai_credits SET status='reset',updated_at=? WHERE user_id=? AND quota_period=? AND status='used'",now,user,period);
+    }
     public Optional<Map<String,Object>> credit(String kind,long job) {
         return store.optional("SELECT * FROM teacher_ai_credits WHERE job_kind=? AND job_id=?",kind,job);
     }

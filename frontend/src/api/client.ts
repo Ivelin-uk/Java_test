@@ -15,7 +15,7 @@ import type {
   PermissionChange,
   AuditEntry,
 } from '../types/models'
-import type { AdminTeacherPlan } from '../workspace/billingTypes'
+import type { AdminTeacherPlan, TeacherPayment } from '../workspace/billingTypes'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
@@ -72,6 +72,9 @@ export const api = {
     request<AuthResponse>('/api/auth/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }, token),
   users: (token: string) => request<User[]>('/api/admin/users', {}, token),
   teacherBilling: (token: string) => request<AdminTeacherPlan[]>('/api/admin/teacher-billing', {}, token),
+  changeTeacherPlan: (token: string, id: number, plan: 'auto' | 'free' | 'pro', requestKey: string) => request<AdminTeacherPlan>(`/api/admin/teacher-billing/${id}/plan`, { method: 'PUT', body: JSON.stringify({ plan, requestKey }) }, token),
+  teacherPayments: (token: string, month = '') => request<TeacherPayment[]>(`/api/admin/teacher-billing/payments${month ? `?month=${encodeURIComponent(month)}` : ''}`, {}, token),
+  resetTeacherAi: (token: string, id: number, period: string, requestKey: string) => request<AdminTeacherPlan>(`/api/admin/teacher-billing/${id}/reset-ai`, { method: 'POST', body: JSON.stringify({ period, requestKey }) }, token),
   createUser: (token: string, payload: UserEdit) => request<PasswordResponse>('/api/admin/users', { method: 'POST', body: JSON.stringify(payload) }, token),
   updateUser: (token: string, id: number, payload: UserEdit) => request<User>(`/api/admin/users/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, token),
   deleteUser: (token: string, id: number, password: string) => request<void>(`/api/admin/users/${id}`, { method: 'DELETE', body: JSON.stringify({ password }) }, token),

@@ -4,13 +4,14 @@ import { Users, ShieldCheck, History, CreditCard, UserPlus, UserRoundCog, Pencil
 import { api } from '../api/client'
 import { formatDate, roleLabels, subscriptionLabel } from '../api/access'
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog'
+import { AdminBilling } from './AdminBilling'
 import { useNotifications } from '../notifications'
 import { TableContainer } from '../workspace/ui'
 import type { AuditEntry, AuthResponse, PasswordResponse, PermissionChange, PermissionRow, Role, User, UserEdit } from '../types/models'
 import type { AdminTeacherPlan } from '../workspace/billingTypes'
 
 const modes = { ADMIN: 'Само администратор', PUBLIC: 'Публичен вход', PROFILE: 'Собствен профил', MANAGED: '' }
-const actions: Record<string, string> = { USER_CREATED: 'Нов потребител', USER_UPDATED: 'Промяна на профил', USER_DELETED: 'Изтриване на потребител', USER_ROLE_CHANGED: 'Смяна на роля', PASSWORD_RESET: 'Нова временна парола', PERMISSION_UPDATED: 'Промяна на права' }
+const actions: Record<string, string> = { USER_CREATED: 'Нов потребител', USER_UPDATED: 'Промяна на профил', USER_DELETED: 'Изтриване на потребител', USER_ROLE_CHANGED: 'Смяна на роля', PASSWORD_RESET: 'Нова временна парола', PERMISSION_UPDATED: 'Промяна на права', TEACHER_AI_RESET: 'Нулиране на AI кредити', TEACHER_PLAN_CHANGED: 'Смяна на учителски план' }
 const emptyUser: UserEdit = { name: '', email: '', role: 'STUDENT', active: true, subscriptionPaid: false, subscriptionPaidUntil: null }
 function userEdit(user: User): UserEdit {
   return { name: user.name, email: user.email, role: user.role, active: user.active, subscriptionPaid: user.subscription.paid, subscriptionPaidUntil: user.subscription.paidUntil }
@@ -173,26 +174,10 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
       </tbody></table></TableContainer>
     </>}
 
-    {tab === 'billing' && <>
-      <p className="muted">Планът, платеният период и срокът на достъп за всеки учител. Смяната на план и плащането се извършват от профила на съответния учител чрез Stripe.</p>
-      <TableContainer label="Абонаменти на учителите — таблица"><table className="ws-table data-table" aria-label="Абонаменти на учителите"><thead><tr><th>Учител</th><th>План</th><th>Платен период</th><th>Статус</th><th>Валиден до</th></tr></thead><tbody>
-        {filteredUsers.filter(user => user.role === 'TEACHER').map(user => {
-          const plan = billingPlans.find(item => item.userId === user.id)
-          const periodName = plan?.period === 'month' ? 'Месечен' : plan?.period === 'year' ? 'Годишен' : null
-          const price = plan?.amountMinor !== null && plan?.amountMinor !== undefined && plan.currency
-            ? new Intl.NumberFormat('bg-BG', { style: 'currency', currency: plan.currency }).format(plan.amountMinor / 100)
-            : null
-          const planName = plan?.plan === 'pro' ? 'Pro' : plan?.period ? 'Pro (изтекъл)' : 'Free'
-          return <tr key={user.id}><td><strong>{user.name}</strong><small>{user.email}</small></td>
-            <td><span className={plan?.plan === 'pro' ? 'good' : ''}>{planName}</span></td>
-            <td>{periodName ? `${periodName}${price ? ` — ${price} / ${plan?.period === 'month' ? 'месец' : 'година'}` : ''}` : 'Безплатен'}</td>
-            <td>{plan?.cancelAtPeriodEnd ? 'Прекратява се в края на периода' : plan?.status ?? 'Без абонамент'}</td>
-            <td>{plan?.paidThrough ? new Date(plan.paidThrough).toLocaleDateString('bg-BG') : '—'}</td>
-          </tr>
-        })}
-        {!loading && !filteredUsers.some(user => user.role === 'TEACHER') && <tr><td colSpan={5} className="empty-cell">Няма учители според текущото търсене.</td></tr>}
-      </tbody></table></TableContainer>
-    </>}
+    {tab === 'billing' && <AdminBilling users={users} plans={billingPlans} token={token} busy={busy} loading={loading} onBusy={setBusy} onChanged={plan => {
+      setBillingPlans(current => current.map(item => item.userId === plan.userId ? plan : item))
+      void api.audit(token).then(setAudit).catch(() => setError('Кредитите са обновени, но журналът не се зареди. Натиснете „Обнови“.'))
+    }} />}
 
     {tab === 'audit' && <TableContainer label="Журнал — таблица"><table className="ws-table data-table" aria-label="Журнал"><thead><tr><th>Дата</th><th>Администратор</th><th>Действие</th><th>Промяна</th></tr></thead><tbody>
       {audit.map(entry => <tr key={entry.id}><td>{new Date(entry.createdAt).toLocaleString('bg-BG')}</td><td>{entry.actorEmail}</td><td>{actions[entry.action] ?? entry.action}<small>{entry.targetEmail}</small></td><td>{entry.details}</td></tr>)}

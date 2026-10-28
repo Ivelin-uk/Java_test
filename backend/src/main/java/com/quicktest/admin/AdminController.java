@@ -26,6 +26,23 @@ public class AdminController {
     @GetMapping("/teacher-billing")
     public List<TeacherBillingAdminService.TeacherPlan> teacherBilling() { return billing.plans(); }
 
+    @PutMapping("/teacher-billing/{id}/plan")
+    public TeacherBillingAdminService.TeacherPlan teacherPlan(@RequestHeader("Authorization") String authorization,
+            @PathVariable long id,@Valid @RequestBody TeacherBillingAdminService.PlanEdit request) {
+        return billing.changePlan(auth.requireUser(authorization),id,request);
+    }
+
+    @PostMapping("/teacher-billing/{id}/reset-ai")
+    public TeacherBillingAdminService.TeacherPlan resetTeacherAi(@RequestHeader("Authorization") String authorization,
+            @PathVariable long id,@Valid @RequestBody TeacherBillingAdminService.ResetAi request) {
+        return billing.resetAi(auth.requireUser(authorization),id,request);
+    }
+
+    @GetMapping("/teacher-billing/payments")
+    public List<com.quicktest.workspace.TeacherBillingService.PaymentRecord> teacherPayments(@RequestParam(required=false) String month) {
+        return billing.payments(month);
+    }
+
     @PostMapping("/users")
     public AdminService.PasswordResponse createUser(@RequestHeader("Authorization") String authorization,
                                                     @Valid @RequestBody AdminService.UserEdit request) {
