@@ -1,5 +1,11 @@
 package com.quicktest.access;
 
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -8,8 +14,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
-import java.util.*;
-
 @Component
 public class EndpointCatalog implements SmartInitializingSingleton {
     private final ObjectProvider<RequestMappingHandlerMapping> mappings;
@@ -17,6 +21,7 @@ public class EndpointCatalog implements SmartInitializingSingleton {
 
     public EndpointCatalog(@Qualifier("requestMappingHandlerMapping") ObjectProvider<RequestMappingHandlerMapping> mappings) {
         this.mappings = mappings;
+        //
     }
 
     @Override
