@@ -16,6 +16,9 @@
 .ws-section h3 { font-size: 19px; display: flex; align-items: center; gap: 8px; margin: 0; }
 .ws-section-head { display: flex; align-items: center; justify-content: space-between; gap: 18px 24px; flex-wrap: wrap; }
 .ws-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ws-print-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ws-print-controls label { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+.ws-print-controls input { width: 72px; }
 .ws-actions button, .ws-inline-form button, .ws-publication > button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 12px; }
 .ws-actions .icon-button { padding: 0; }
 .ws-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; align-items: end; }

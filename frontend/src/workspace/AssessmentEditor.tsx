@@ -25,6 +25,87 @@ const duration = (questions: Question[]) => formatDuration(questions.reduce((tot
 const blank = (): Definition => ({ title: 'Нов тест', description: '', subject: '', level: '', instructions: '', language: 'bg', gradingScale: 'bulgarian', passThreshold: 50, questions: [question()], additionalInformation: '' })
 const librarySearchText = (value: string) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('bg-BG')
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+function shuffleList<T>(items: T[]) {
+  const next = [...items]
+  for (let index = next.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1))
+    ;[next[index], next[swapIndex]] = [next[swapIndex], next[index]]
+  }
+  return next
+}
+
+function normalizePrintableText(value: string) {
+  if (!value) return ''
+  const text = new DOMParser().parseFromString(value, 'text/html').body.textContent ?? ''
+  return text.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function openPrintableTest(definition: Definition, variantCount: number) {
+  const count = Math.min(20, Math.max(1, Number.isInteger(variantCount) ? variantCount : 1))
+  const printWindow = window.open('', '_blank', 'width=1100,height=900')
+  if (!printWindow) {
+    window.alert('Блокиран е отварянето на печатния прозорец. Моля, разрешете новите прозорци за този сайт.')
+    return
+  }
+  printWindow.opener = null
+
+  const pages = Array.from({ length: count }, (_, variantIndex) => {
+    const questions = shuffleList(definition.questions).map((question, questionIndex) => {
+      const text = escapeHtml(normalizePrintableText(question.text) || 'Въпрос без текст')
+      const optionMarkup = question.options.length > 0
+        ? `<ol class="print-options">${shuffleList(question.options).map((option, optionIndex) => `<li><span class="print-choice-mark">${escapeHtml(String.fromCharCode(65 + optionIndex))}</span><span>${escapeHtml(normalizePrintableText(option.text) || 'Празен отговор')}</span></li>`).join('')}</ol>`
+        : '<div class="print-lines"><span>_____________________________________</span><span>_____________________________________</span></div>'
+      const blankLines = question.type === 'SHORT_ANSWER' || question.type === 'OPEN_ANSWER'
+        ? '<div class="print-lines"><span>_____________________________________</span><span>_____________________________________</span><span>_____________________________________</span></div>'
+        : ''
+
+      return `<div class="print-question"><p class="print-question-title"><strong>${questionIndex + 1}.</strong> ${text}</p>${question.type === 'TRUE_FALSE' ? '<div class="print-two-col"><span>Вярно</span><span>Невярно</span></div>' : optionMarkup}${blankLines}</div>`
+    }).join('')
+
+    return `<section class="print-variant"><div class="print-header"><div><div class="print-label">Тест</div><h1>${escapeHtml(definition.title || 'Без заглавие')}</h1></div><div class="print-meta"><div class="print-label">Вариант</div><strong>${variantIndex + 1}/${count}</strong></div></div>${definition.description ? `<p class="print-description">${escapeHtml(normalizePrintableText(definition.description))}</p>` : ''}<div class="print-body">${questions}</div></section>`
+  }).join('')
+
+  const html = `<!doctype html><html lang="bg"><head><meta charset="utf-8" /><title>${escapeHtml(definition.title || 'Тест')}</title><style>
+    @page { size: A4; margin: 14mm; }
+    :root { color-scheme: light only; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; color: #111827; background: white; }
+    body { padding: 12mm; }
+    .print-variant { page-break-after: always; break-after: page; max-width: 820px; margin: 0 auto 18mm; }
+    .print-variant:last-child { page-break-after: auto; }
+    .print-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding-bottom: 10px; border-bottom: 2px solid #d1d5db; margin-bottom: 12px; }
+    .print-label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #6b7280; margin-bottom: 4px; }
+    h1 { margin: 0; font-size: 26px; line-height: 1.2; }
+    .print-meta { text-align: right; }
+    .print-description { margin: 0 0 14px; color: #374151; font-size: 14px; }
+    .print-body { display: grid; gap: 16px; }
+    .print-question { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 12px 10px; background: #fff; }
+    .print-question-title { margin: 0 0 10px; font-size: 16px; line-height: 1.5; }
+    .print-options { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+    .print-options li { display: flex; align-items: flex-start; gap: 8px; font-size: 15px; line-height: 1.4; }
+    .print-choice-mark { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 1px solid #111827; border-radius: 50%; font-size: 11px; font-weight: 700; margin-top: 1px; }
+    .print-two-col { display: grid; grid-template-columns: repeat(2, minmax(120px, 1fr)); gap: 10px; margin-top: 6px; }
+    .print-two-col span { display: block; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 10px; }
+    .print-lines { display: grid; gap: 8px; margin-top: 10px; }
+    .print-lines span { display: block; border-bottom: 1px solid #111827; min-height: 20px; padding-bottom: 2px; }
+  </style></head><body>${pages}</body></html>`
+
+  printWindow.document.open()
+  printWindow.document.write(html)
+  printWindow.document.close()
+  printWindow.focus()
+  setTimeout(() => printWindow.print(), 250)
+}
+
 function isEmptyQuestion(q: Question) {
   const defaultTrueFalse = q.type === 'TRUE_FALSE' && q.options.length === 2 && q.options[0].text === 'Вярно' && q.options[1].text === 'Невярно'
   return !plainQuestionText(q.text).trim() && !q.imageId && !q.criteria?.trim() && !q.explanation?.trim()
@@ -80,6 +161,7 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
   }
   const [current, setCurrent] = useState<Assessment | null>(null)
   const [preview, setPreview] = useState<{ assessment: Assessment; definition: Definition } | null>(null)
+  const [printCount, setPrintCount] = useState(3)
   const previewRef = useRef<HTMLElement>(null)
   const [draft, setDraft] = useState<Definition | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Assessment | null>(null)
@@ -276,7 +358,13 @@ export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: n
       <TableContainer label="Тестове — таблица"><table className="ws-table" aria-label="Тестове"><thead><tr><th>Тест</th><th>Номер</th><th>Въпроси</th><th>Време</th><th>Телефон</th><th>Променен</th><th>Действия</th></tr></thead><tbody>{visibleTests.map(test => <tr key={test.id} aria-selected={preview?.assessment.id === test.id} className={`ws-selectable-row${preview?.assessment.id === test.id ? ' ws-selected-row' : ''}`} tabIndex={0} aria-disabled={action.busy} onClick={e => { if (!(e.target as HTMLElement).closest('button, a, input, select, textarea')) selectTest(test) }} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectTest(test) } }}><td><button className="ws-text-button" aria-pressed={preview?.assessment.id === test.id} disabled={action.busy} onClick={() => selectTest(test)}>{test.title}</button></td><td>{test.public_number ? <div className="ws-test-number"><code>{test.public_number}</code><button type="button" className="icon-button" title="Копирай номера на теста" aria-label={`Копирай номера на тест ${test.title}`} disabled={action.busy} onClick={() => void action.run(() => navigator.clipboard.writeText(test.public_number!), 'Номерът е копиран.')}><Copy size={16} /></button></div> : '—'}</td><td>{test.question_count}</td><td>{formatDuration(test.total_time_seconds)}</td><td>{test.owner_id === userId ? <label className="ws-check"><input type="checkbox" checked={test.mobile_allowed === true} aria-label={`Разреши решаване от телефон: ${test.title}`} ref={input => { if (input) input.indeterminate = test.mobile_allowed === null }} disabled={action.busy} onChange={event => { const mobileAllowed = event.target.checked; void action.run(async () => { await api.put(`/tests/${test.id}/mobile-mode`, { mobileAllowed }); list.setData(items => items.map(item => item.id === test.id ? { ...item, mobile_allowed: mobileAllowed } : item)) }, 'Настройката за телефон е приложена към всички възлагания.') }} /></label> : test.mobile_allowed === true ? 'Разрешено' : test.mobile_allowed === null ? 'Смесено' : 'Не е разрешено'}</td><td>{date(test.updated_at)}</td><td><div className="ws-actions">{test.owner_id === userId && <button className="command-button" aria-label="Редактирай теста" title="Редактирай теста" disabled={action.busy || generating} onClick={() => editTest(test)}><Pencil size={17} /> Редактирай</button>}<button className="icon-button danger" title="Изтрий теста" disabled={action.busy} onClick={() => setPendingDelete(test)}><Trash2 size={17} /></button></div></td></tr>)}</tbody></table></TableContainer>{!visibleTests.length && !list.loading && !list.error && <Empty>{librarySearch ? 'Няма тестове, съвпадащи с търсенето.' : 'Все още няма тестове в библиотеката.'}</Empty>}
       </Panel>
       {preview && <section ref={previewRef} className="ws-test-preview" aria-label="Избран тест">
-        <SectionHead title={preview.assessment.title}>{preview.assessment.owner_id === userId && <button className="command-button" disabled={action.busy || generating} onClick={() => { setCurrent(preview.assessment); setDraft(preview.definition); setShowAppendAi(false) }}><Pencil size={17} /> Редактирай теста</button>}</SectionHead>
+        <SectionHead title={preview.assessment.title}>
+          <div className="ws-print-controls">
+            <label>Брой варианти<input type="number" min={1} max={20} step={1} value={printCount} onChange={event => setPrintCount(Math.min(20, Math.max(1, Number(event.target.value) || 1)))} /></label>
+            <button className="command-button" disabled={action.busy || generating || !preview.definition.questions.length} onClick={() => openPrintableTest(preview.definition, printCount)}><Download size={17} /> Печатни варианти</button>
+            {preview.assessment.owner_id === userId && <button className="command-button" disabled={action.busy || generating} onClick={() => { setCurrent(preview.assessment); setDraft(preview.definition); setShowAppendAi(false) }}><Pencil size={17} /> Редактирай теста</button>}
+          </div>
+        </SectionHead>
         {preview.definition.description && <p>{preview.definition.description}</p>}
         <p className="ws-summary">{preview.definition.questions.length} въпроса · {preview.definition.questions.reduce((sum, q) => sum + q.points, 0)} точки · {duration(preview.definition.questions)}</p>
         <TableContainer label="Въпроси на избрания тест — таблица"><table className="ws-table" aria-label="Въпроси на избрания тест"><thead><tr><th>#</th><th>Въпрос и отговори</th><th>Тип</th><th>Точки</th><th>Време</th></tr></thead><tbody>{preview.definition.questions.map((q, index) => <tr key={index}><td>{index + 1}</td><td className="ws-preview-question"><QuestionText value={q.text} className="ws-preview-prompt" /><WorkspaceImage api={api} id={q.imageId} />{q.options.length > 0 && <ol className="ws-preview-options">{q.options.map((option, i) => <li key={i} className={option.correct ? 'ws-correct-option' : undefined}>{option.correct && <Check size={15} aria-label="Верен отговор" />}{option.text}</li>)}</ol>}{q.acceptedAnswers.length > 0 && <p>Допустими отговори: {q.acceptedAnswers.join(', ')}</p>}{q.criteria && <p>Критерии: {q.criteria}</p>}{q.explanation && <p className="ws-muted">{q.explanation}</p>}</td><td>{types.find(([key]) => key === q.type)?.[1] ?? q.type}</td><td>{q.points}</td><td>{formatDuration(q.timeSeconds)}</td></tr>)}</tbody></table></TableContainer>
