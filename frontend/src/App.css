@@ -173,9 +173,20 @@
   color: var(--on-accent);
 }
 
-button:disabled {
-  opacity: 0.6;
+button:disabled,
+input:disabled,
+textarea:disabled,
+select:disabled {
+  opacity: 1;
+  color: var(--muted);
+  background: var(--subtle);
   cursor: not-allowed;
+}
+
+input:disabled,
+textarea:disabled,
+select:disabled {
+  -webkit-text-fill-color: var(--muted);
 }
 
 .ai-settings {
