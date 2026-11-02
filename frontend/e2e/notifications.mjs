@@ -18,6 +18,7 @@ try {
     const request = route.request(), path = new URL(request.url()).pathname, method = request.method()
     const respond = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) })
     if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'Access-Control-Allow-Origin': new URL(frontend).origin, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' } })
+    if (path === '/api/v1/subjects' && method === 'GET') return respond([])
     if (method === 'GET') {
       const data = { '/api/auth/me': auth.user, '/api/auth/google/config': { enabled: false }, '/api/v1/groups': groups, '/api/v1/members': [], '/api/v1/tests': [], '/api/v1/assignments': [], '/api/v1/grading': [] }
       if (Object.hasOwn(data, path)) return respond(data[path])

@@ -1,3 +1,4 @@
+import { mockSubjectCatalog } from './helpers/subjects.mjs'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright'
@@ -72,6 +73,7 @@ try {
     errors.push(`Unexpected API: ${method} ${path}`)
     return route.fulfill({ status: 404 })
   })
+  await mockSubjectCatalog(page, frontend)
   await page.goto(frontend)
   await page.getByRole('button', { name: 'Тестове', exact: true }).click()
   await page.getByRole('button', { name: 'Редактирай теста', exact: true }).click()
@@ -109,7 +111,7 @@ try {
   assert.equal(await generate.isDisabled(), true)
   await form.getByLabel('Трудни', { exact: true }).fill('1')
   await form.getByLabel('Тема', { exact: true }).fill('  Human body diagrams  ')
-  await form.getByLabel('Дисциплина', { exact: true }).fill('Biology review')
+  await form.getByLabel('Дисциплина', { exact: true }).selectOption('Biology review')
   await form.getByLabel('Допълнителна информация за теста', { exact: true }).fill('  New questions about organ functions.  ')
   assert.equal(await generate.isEnabled(), true)
   assert.equal(await form.getByRole('checkbox', { name: 'С изображения', exact: true }).isEnabled(), true)
@@ -185,7 +187,7 @@ try {
   await page.getByRole('button', { name: 'Към библиотеката', exact: true }).click()
   await page.getByRole('button', { name: 'Ръчен тест', exact: true }).click()
   await settings.getByLabel('Тема', { exact: true }).fill('Manual test filled with AI')
-  await settings.getByLabel('Дисциплина', { exact: true }).fill('Biology')
+  await settings.getByLabel('Дисциплина', { exact: true }).selectOption('Biology')
   const firstQuestion = page.locator('.ws-question').first()
   await firstQuestion.getByLabel('Точки', { exact: true }).fill('4')
   await firstQuestion.getByLabel('Секунди за въпрос 1', { exact: true }).fill('15')

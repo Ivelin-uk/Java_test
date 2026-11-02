@@ -47,6 +47,7 @@ async function intercept(context, handler) {
     const headers = { 'Access-Control-Allow-Origin': new URL(frontend).origin, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' }
     const respond = (data, status = 200) => route.fulfill({ status, headers, contentType: 'application/json', body: JSON.stringify(data) })
     if (method === 'OPTIONS') return route.fulfill({ status: 204, headers })
+    if (path === '/api/v1/subjects' && method === 'GET') return respond([])
     if (await handler({ request, path, method, respond })) return
     errors.push(`Unexpected API: ${method} ${path}`)
     return respond({ detail: 'Unexpected fixture API' }, 404)

@@ -1,3 +1,4 @@
+import { mockSubjectCatalog } from './helpers/subjects.mjs'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright'
@@ -71,6 +72,7 @@ try {
     errors.push(`Unexpected API: ${method} ${path}`)
     return route.fulfill({ status: 404 })
   })
+  await mockSubjectCatalog(page, frontend)
   await page.goto(frontend)
   await page.getByRole('button', { name: 'Тестове', exact: true }).click()
   await page.getByRole('button', { name: 'Ръчен тест', exact: true }).click()
@@ -113,7 +115,7 @@ try {
   assert.equal(await generate.isDisabled(), true)
   await creator.getByRole('checkbox', { name: 'Един верен отговор', exact: true }).check()
   await creator.getByRole('checkbox', { name: 'Кратък текст', exact: true }).check()
-  await creator.getByLabel('Дисциплина', { exact: true }).fill('Java')
+  await creator.getByLabel('Дисциплина', { exact: true }).selectOption('Java')
   await creator.getByRole('checkbox', { name: 'С изображения', exact: true }).check()
   const imageCount = creator.getByLabel('Въпроси с изображение', { exact: true })
   await imageCount.fill('0')
@@ -271,7 +273,7 @@ try {
     await settings.screenshot({ path: new URL(`test-settings-${theme}-${width}.png`, artifacts).pathname })
   }
   await settings.getByLabel('Тема', { exact: true }).fill('Edited Java basics')
-  await settings.getByLabel('Дисциплина', { exact: true }).fill('Programming')
+  await settings.getByLabel('Дисциплина', { exact: true }).selectOption('Programming')
   await settings.getByLabel('Допълнителна информация за теста', { exact: true }).fill('Updated teacher context')
   await bottomSave.click()
   await page.getByRole('heading', { name: 'Библиотека с тестове', exact: true }).waitFor()

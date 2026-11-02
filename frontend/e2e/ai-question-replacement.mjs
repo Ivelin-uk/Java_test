@@ -1,3 +1,4 @@
+import { mockSubjectCatalog } from './helpers/subjects.mjs'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright'
@@ -153,6 +154,7 @@ try {
     await assertDraft(expected)
   }
 
+  await mockSubjectCatalog(page, frontend)
   await page.goto(frontend)
   await page.getByRole('button', { name: 'Тестове', exact: true }).click()
   await openSaved()
@@ -328,6 +330,10 @@ try {
   scenario({ definition: aiDefinition })
   await page.getByRole('button', { name: 'С AI', exact: true }).click()
   const creator = page.getByRole('region', { name: 'Създаване на тест с AI', exact: true })
+  await creator.getByLabel('Тема', { exact: true }).fill(aiDefinition.title)
+  await creator.getByLabel('Дисциплина', { exact: true }).selectOption(aiDefinition.subject)
+  await creator.getByLabel('Скала', { exact: true }).selectOption(aiDefinition.gradingScale)
+  await creator.getByLabel('Праг за успех (%)', { exact: true }).fill(String(aiDefinition.passThreshold))
   await creator.getByLabel('Въпроси', { exact: true }).fill('2')
   await creator.getByRole('button', { name: 'Генерирай', exact: true }).click()
   await creator.waitFor({ state: 'detached' })

@@ -8,6 +8,8 @@ V16 removes `school_year`, `class_label` and `status` from `learning_groups`. Gr
 
 The application retains Spring Boot 4 / Java 21 / MySQL and React/TypeScript. Existing identity and legacy records remain; new tenant modules use JDBC with parameterized queries, explicit transactions and structured Jackson JSON definitions. Controllers delegate mutations to module services. Flyway runs before JPA schema validation.
 
+V32 adds `teacher_subjects` for persistent personal subject catalogs. Names are unique per owner after Unicode normalization, lowercase comparison and whitespace normalization. Built-in subjects are supplied by the application. Existing assessment definitions retain their `subject` string; the teacher library exposes it as metadata for filtering without exposing question answers. Subject creation locks the owner's user row before checking the limit and inserting, so concurrent retries cannot create duplicate subjects. Account deletion cascades to its personal catalog.
+
 ## ER Relationships
 
 | Parent | Child | Relation / constraint |

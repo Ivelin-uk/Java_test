@@ -26,6 +26,7 @@ try {
     const request = route.request(), path = new URL(request.url()).pathname, method = request.method()
     const respond = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) })
     if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'Access-Control-Allow-Origin': new URL(frontend).origin, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' } })
+    if (path === '/api/v1/subjects' && method === 'GET') return respond([])
     if (method === 'GET') {
       const data = { '/api/auth/me': auth.user, '/api/v1/tests': tests, '/api/v1/groups': [], '/api/v1/assignments': [], '/api/v1/grading': [] }
       if (Object.hasOwn(data, path)) return respond(data[path])
@@ -97,7 +98,11 @@ try {
     await page.setViewportSize({ width, height: 1000 })
     await form.scrollIntoViewIfNeeded()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-    assert.equal(await library.locator('tbody tr').evaluateAll(rows => rows.every(row => row.getBoundingClientRect().height < 150)), true)
+    if (width > 760) assert.equal(await library.locator('tbody tr').evaluateAll(rows => rows.every(row => row.getBoundingClientRect().height < 150)), true)
+    else assert.equal(await library.locator('tbody tr').evaluateAll(rows => rows.every(row => {
+      const box = row.getBoundingClientRect()
+      return box.left >= 0 && box.right <= innerWidth && [...row.cells].every(cell => cell.getAttribute('data-label'))
+    })), true, 'Mobile cards must fit the viewport and label every field')
     assert.equal(await submit.evaluate(element => { const box = element.getBoundingClientRect(); return box.left >= 0 && box.right <= innerWidth && box.height >= 32 }), true)
     await page.screenshot({ path: new URL(`test-import-${width}.png`, artifacts).pathname, fullPage: true })
   }
