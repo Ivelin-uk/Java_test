@@ -6,6 +6,7 @@ export const difficulties: Record<string, string> = { EASY: 'Лесни', MEDIUM
 export interface AiSettings {
   topic: string
   subject: string
+  level: string
   questionCount: number
   difficulty: string
   gradingScale: string
@@ -25,7 +26,7 @@ export function newAiSettings(definition?: Definition, count = 5): AiSettings {
   const selectedTypes = [...new Set(definition?.questions.map(q => q.type))]
   const difficulty = definition?.questions.at(-1)?.difficulty ?? 'MEDIUM'
   return {
-    topic: definition?.title ?? '', subject: definition?.subject ?? '', questionCount: count,
+    topic: definition?.title ?? '', subject: definition?.subject ?? '', level: definition?.level ?? '', questionCount: count,
     gradingScale: definition?.gradingScale ?? 'bulgarian', passThreshold: definition?.passThreshold ?? 50,
     difficulty, questionTypes: selectedTypes.length ? selectedTypes : ['SINGLE_CHOICE'],
     difficultyCounts: definition ? { EASY: 0, MEDIUM: 0, HARD: 0, VERY_HARD: 0, [difficulty]: count } : { EASY: 2, MEDIUM: 2, HARD: 1, VERY_HARD: 0 },
@@ -48,7 +49,7 @@ export function validAiSettings(settings: AiSettings, maximum = 20) {
 
 export function generationPayload(settings: AiSettings) {
   return {
-    requestKey: crypto.randomUUID(), topic: settings.topic.trim(), subject: settings.subject,
+    requestKey: crypto.randomUUID(), topic: settings.topic.trim(), subject: settings.subject, level: settings.level,
     questionCount: settings.questionCount, difficulty: settings.difficulty, questionTypes: settings.questionTypes,
     difficultyCounts: settings.difficulty === 'MIXED' ? settings.difficultyCounts : { [settings.difficulty]: settings.questionCount },
     additionalInformation: settings.additionalInformation.trim(), imageCount: requestedImages(settings),

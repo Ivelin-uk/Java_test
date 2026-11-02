@@ -6,6 +6,8 @@ import type { AiSettings } from './aiSettings'
 import type { WorkspaceApi } from './api'
 import { TestGradingFields } from './TestGradingFields'
 import { SubjectField } from './SubjectField'
+import { TopicField } from './TopicField'
+import { GradeField } from './GradeField'
 
 export function AiTestFields({ api, value, onChange, disabled, maximum = 20, fixedQuestionCount, showGradingSettings = false }: { api: WorkspaceApi; value: AiSettings; onChange: Dispatch<SetStateAction<AiSettings>>; disabled: boolean; maximum?: number; fixedQuestionCount?: number; showGradingSettings?: boolean }) {
   const fileInput = useRef<HTMLInputElement>(null)
@@ -82,9 +84,10 @@ export function AiTestFields({ api, value, onChange, disabled, maximum = 20, fix
   }
 
   return <fieldset className="ws-editor" disabled={disabled}>
-    <div className="ws-form-grid">
-      <label>Тема<input autoFocus required value={value.topic} maxLength={190} onChange={e => patch({ topic: e.target.value })} /></label>
-      <SubjectField value={value.subject} disabled={disabled} onChange={subject => patch({ subject })} />
+    <div className="ws-form-grid ws-context-fields">
+      <SubjectField value={value.subject} autoFocus={showGradingSettings} disabled={disabled} onChange={subject => patch({ subject, ...(subject !== value.subject && showGradingSettings ? { topic: '' } : {}) })} />
+      <TopicField subject={value.subject} level={value.level} value={value.topic} disabled={disabled} requireSubject={showGradingSettings} onChange={topic => patch({ topic })} />
+      <GradeField value={value.level} disabled={disabled || !value.subject} onChange={level => patch({ level })} />
       <label>Въпроси<input type="number" min={1} max={maximum} step={1} readOnly={fixedQuestionCount !== undefined} value={fixedQuestionCount ?? value.questionCount} onChange={e => patch({ questionCount: Number(e.target.value) })} /></label>
       <label>Трудност<select aria-label="Трудност" value={value.difficulty} onChange={e => patch({ difficulty: e.target.value })}>{Object.entries(difficulties).map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>
     </div>

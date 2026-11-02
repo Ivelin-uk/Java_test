@@ -334,6 +334,9 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-library-search-input > input { padding-left: 40px; }
 .ws-library-search > .ws-library-subject-filter { flex: 1 1 250px; }
 .ws-subject-field { display: grid; align-content: start; gap: 8px; min-width: 0; }
+.ws-topic-hint { color: var(--muted); font-size: 12px; line-height: 1.5; margin: 0; }
+.ws-context-fields { align-items: start; }
+.ws-table[aria-label="Тестове"] td:nth-child(2) > small { display: block; margin-top: 4px; }
 .ws-subject-control { display: flex; align-items: stretch; gap: 8px; min-width: 0; }
 .ws-subject-control > select { flex: 1 1 auto; min-width: 0; }
 .ws-subject-control > button { height: auto; min-height: 46px; }

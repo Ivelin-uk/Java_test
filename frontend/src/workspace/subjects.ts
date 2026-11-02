@@ -9,6 +9,11 @@ export function assessmentSubject(test: Assessment): string {
   // Compatibility with cached responses from deployments without subject metadata.
   try { return normalizeSubject(JSON.parse(test.definition_json || '{}').subject || '') } catch { return '' }
 }
+export function assessmentLevel(test: Assessment): string {
+  if (typeof test.level === 'string') return test.level
+  try { return JSON.parse(test.definition_json || '{}').level || '' } catch { return '' }
+}
+export const gradeLabel = (value: string) => /^(?:[1-9]|1[0-2])$/.test(value) ? `${value}. клас` : value
 export function mergeSubjects(values: Subject[]): Subject[] {
   const unique = new Map<string, Subject>()
   for (const value of values) if (value.name.trim() && !unique.has(subjectKey(value.name))) unique.set(subjectKey(value.name), value)
@@ -20,6 +25,7 @@ export interface SubjectCatalogValue {
   error: string
   reload: () => void
   create: (name: string) => Promise<Subject>
+  loadTopics: (subject: string, level: string) => Promise<string[]>
 }
 export const SubjectCatalogContext = createContext<SubjectCatalogValue | null>(null)
 export function useSubjectCatalog() {

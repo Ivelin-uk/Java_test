@@ -59,9 +59,9 @@ function replacementPayload(settings: AiSettings, definition: Definition, questi
   const guidance = 'Създай един различен въпрос за подмяна на избрания. Избягвай повторение на въпроса за подмяна и на другите въпроси в теста.'
   const payload = generationPayload(settings)
   if (settings.useSourceMaterial && settings.sourceMaterial) {
-    return { ...payload, level: definition.level ?? '', language: definition.language ?? 'bg', additionalInformation: `${guidance}\n${context}\nУказания от учителя:\n${settings.additionalInformation.trim().slice(0, 20000 - context.length - guidance.length - 30)}`.slice(0, 20000) }
+    return { ...payload, language: definition.language ?? 'bg', additionalInformation: `${guidance}\n${context}\nУказания от учителя:\n${settings.additionalInformation.trim().slice(0, 20000 - context.length - guidance.length - 30)}`.slice(0, 20000) }
   }
-  return { ...payload, level: definition.level ?? '', language: definition.language ?? 'bg', sourceOnly: false, sourceText: `${context}\nОписание на теста:\n${definition.description ?? ''}\nИнструкции:\n${definition.instructions ?? ''}`.slice(0, 20000), additionalInformation: `${guidance}\n${settings.additionalInformation.trim()}`.slice(0, 20000) }
+  return { ...payload, language: definition.language ?? 'bg', sourceOnly: false, sourceText: `${context}\nОписание на теста:\n${definition.description ?? ''}\nИнструкции:\n${definition.instructions ?? ''}`.slice(0, 20000), additionalInformation: `${guidance}\n${settings.additionalInformation.trim()}`.slice(0, 20000) }
 }
 
 async function pollWithTimeout<T>(request: Promise<T>): Promise<T> {

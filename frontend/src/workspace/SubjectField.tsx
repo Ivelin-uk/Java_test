@@ -58,14 +58,14 @@ export function SubjectCatalogNotice() {
   return catalog.error ? <div className="ws-subject-notice"><p className="error" role="alert">{catalog.error}</p><button type="button" className="command-button" disabled={catalog.loading} onClick={() => void catalog.reload()}><RefreshCw size={16} aria-hidden="true" />Зареди дисциплините</button></div> : null
 }
 
-export function SubjectField({ value, onChange, disabled = false }: { value: string; onChange: (name: string) => void; disabled?: boolean }) {
+export function SubjectField({ value, onChange, disabled = false, autoFocus = false }: { value: string; onChange: (name: string) => void; disabled?: boolean; autoFocus?: boolean }) {
   const catalog = useSubjectCatalog()
   const id = useId()
   const options = mergeSubjects([...catalog.subjects, ...(value ? [{ name: value, preset: false }] : [])])
   const selected = options.find(subject => subjectKey(subject.name) === subjectKey(value))?.name ?? ''
   return <div className="ws-subject-field">
     <label htmlFor={id}>Дисциплина</label>
-    <div className="ws-subject-control"><select id={id} value={selected} disabled={disabled || catalog.loading} onChange={event => onChange(event.target.value)}><option value="">Без дисциплина</option>{options.map(subject => <option key={subjectKey(subject.name)} value={subject.name}>{subject.name}</option>)}</select><NewSubjectButton compact disabled={disabled || catalog.loading} onCreated={subject => onChange(subject.name)} /></div>
+    <div className="ws-subject-control"><select id={id} autoFocus={autoFocus} value={selected} disabled={disabled || catalog.loading} onChange={event => onChange(event.target.value)}><option value="">Без дисциплина</option>{options.map(subject => <option key={subjectKey(subject.name)} value={subject.name}>{subject.name}</option>)}</select><NewSubjectButton compact disabled={disabled || catalog.loading} onCreated={subject => onChange(subject.name)} /></div>
     <SubjectCatalogNotice />
   </div>
 }

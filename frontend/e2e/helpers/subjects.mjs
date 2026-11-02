@@ -1,6 +1,7 @@
 // Isolated catalog fixtures for UI tests; no production data is written.
 export async function mockSubjectCatalog(page, frontend, names = []) {
   const subjects = [...new Set(['Математика', 'Java', 'Programming', 'Biology', 'Biology review', ...names])].map(name => ({ name, preset: name === 'Математика' }))
+  await page.route('**/api/v1/subjects/topics?**', route => route.fulfill({ status: route.request().method() === 'OPTIONS' ? 204 : 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': new URL(frontend).origin, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' }, body: route.request().method() === 'OPTIONS' ? '' : '[]' }))
   await page.route('**/api/v1/subjects', async route => {
     const method = route.request().method()
     const headers = { 'Access-Control-Allow-Origin': new URL(frontend).origin, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' }

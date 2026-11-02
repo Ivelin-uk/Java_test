@@ -28,7 +28,7 @@ try {
       const request = route.request(), path = new URL(request.url()).pathname, method = request.method()
       const respond = data => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) })
       if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'Access-Control-Allow-Origin': new URL(frontend).origin, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' } })
-      if (path === '/api/v1/subjects' && method === 'GET') return respond([])
+      if ((path === '/api/v1/subjects' || path === '/api/v1/subjects/topics') && method === 'GET') return respond([])
       if (method === 'GET') {
         const data = { '/api/auth/me': auth.user, '/api/v1/assignments': [assignment], '/api/v1/tests': [assessment], [`/api/v1/tests/${assessment.id}`]: assessment, '/api/v1/groups': [], '/api/v1/grading': [], '/api/v1/results': [], '/api/v1/attempts': [],
           [`/api/v1/assignments/${assignment.id}/preflight`]: { ...assignment, total_seconds: 410, question_count: 2, instructions: '', fullscreen_exempt: true } }

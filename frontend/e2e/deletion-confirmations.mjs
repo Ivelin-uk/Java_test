@@ -34,7 +34,7 @@ try {
     const request = route.request(), path = new URL(request.url()).pathname, method = request.method()
     const respond = data => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) })
     if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'Access-Control-Allow-Origin': new URL(frontend).origin, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' } })
-    if (path === '/api/v1/subjects' && method === 'GET') return respond([])
+    if ((path === '/api/v1/subjects' || path === '/api/v1/subjects/topics') && method === 'GET') return respond([])
     if (method === 'GET') {
       const data = {
         '/api/auth/me': auth.user,

@@ -23,6 +23,7 @@ public class AssessmentService {
         return repository.findVisibleTests(scope.organizationId(), scope.platform(), scope.userId(), scope.userId()).stream().map(row -> {
             Definition definition=json.parse(row.remove("definition_json"),Definition.class);
             row.put("subject",Objects.toString(definition.subject(),""));
+            row.put("level",Objects.toString(definition.level(),""));
             row.put("question_count",definition.questions().size());
             row.put("total_time_seconds",definition.questions().stream().mapToInt(Question::timeSeconds).sum());
             return row;

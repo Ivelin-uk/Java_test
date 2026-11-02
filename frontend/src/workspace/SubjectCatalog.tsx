@@ -22,10 +22,11 @@ export function SubjectCatalogProvider({ api, children }: { api: WorkspaceApi; c
     return () => { mounted.current = false; sequence.current += 1 }
   }, [api, revision])
   const reload = useCallback(() => { setLoading(true); setRevision(value => value + 1) }, [])
+  const loadTopics = useCallback((subject: string, level: string) => api.get<string[]>(`/subjects/topics?${new URLSearchParams({ subject, level })}`), [api])
   async function create(name: string) {
     const subject = await api.post<Subject>('/subjects', { name })
     if (mounted.current) { setSubjects(previous => mergeSubjects([...previous, subject])); setError('') }
     return subject
   }
-  return <SubjectCatalogContext.Provider value={{ subjects, loading, error, reload, create }}>{children}</SubjectCatalogContext.Provider>
+  return <SubjectCatalogContext.Provider value={{ subjects, loading, error, reload, create, loadTopics }}>{children}</SubjectCatalogContext.Provider>
 }

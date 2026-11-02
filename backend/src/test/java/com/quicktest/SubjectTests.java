@@ -103,6 +103,28 @@ class SubjectTests {
         return false;
     }
 
+    @Test
+    void topicsBelongToTheChosenSubjectAndGradeAndDoNotExposeOtherTeachersTests() throws Exception {
+        Session teacher = session(Role.TEACHER), other = session(Role.TEACHER), student = session(Role.STUDENT);
+        call(get("/api/v1/subjects/topics").param("subject", "Математика"), null, null, 401);
+        call(get("/api/v1/subjects/topics").param("subject", "Математика"), student.token, null, 403);
+        call(get("/api/v1/subjects/topics").param("subject", ""), teacher.token, null, 400);
+        for (var row : List.of(List.of("Сбор от дроби", "Математика", "7"), List.of("Тема за осми клас", "Математика", "8"),
+                List.of("Обща тема без клас", "Математика", ""), List.of("Клетъчно делене", "Биология", "7")))
+            call(post("/api/v1/tests"), teacher.token, new AssessmentService.Definition(row.get(0), "", row.get(1), row.get(2), "", "bg", "percentage", new BigDecimal("50"), List.of()), 200);
+        call(post("/api/v1/tests"), other.token, new AssessmentService.Definition("Чужда лична тема", "", "Математика", "7", "", "bg", "percentage", new BigDecimal("50"), List.of()), 200);
+        JsonNode topics = call(get("/api/v1/subjects/topics").param("subject", " МАТЕМАТИКА ").param("level", "7"), teacher.token, null, 200);
+        assertTrue(topics.toString().contains("Сбор от дроби"));
+        assertTrue(topics.toString().contains("Обща тема без клас"));
+        assertTrue(topics.toString().contains("Уравнения"));
+        assertFalse(topics.toString().contains("Тема за осми клас"));
+        assertFalse(topics.toString().contains("Клетъчно делене"));
+        assertFalse(topics.toString().contains("Чужда лична тема"));
+        JsonNode all = call(get("/api/v1/subjects/topics").param("subject", "Математика"), teacher.token, null, 200);
+        assertTrue(all.toString().contains("Тема за осми клас"));
+        assertTrue(call(get("/api/v1/tests"), teacher.token, null, 200).toString().contains("\"level\":\"7\""));
+    }
+
     private Session session(Role role) throws Exception {
         AppUser user = new AppUser();
         user.setName(role.name()); user.setEmail(UUID.randomUUID() + "@example.test");

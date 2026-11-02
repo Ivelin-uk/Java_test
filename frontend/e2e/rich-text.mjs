@@ -36,7 +36,7 @@ async function session(auth) {
     const request = route.request(), path = new URL(request.url()).pathname, method = request.method()
     const respond = value => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(value) })
     if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'Access-Control-Allow-Origin': new URL(frontend).origin, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' } })
-    if (path === '/api/v1/subjects' && method === 'GET') return respond([])
+    if ((path === '/api/v1/subjects' || path === '/api/v1/subjects/topics') && method === 'GET') return respond([])
     if (method === 'GET') {
       const data = { '/api/auth/me': auth.user, '/api/v1/groups': [], '/api/v1/assignments': [assignment], '/api/v1/grading': saved ? [attempt] : [], '/api/v1/attempts': [attempt], '/api/v1/results': [result], '/api/v1/tests': [...rows.values()], '/api/v1/assignments/301/preflight': { ...assignment, total_seconds: 180, question_count: 1, instructions: '', fullscreen_exempt: true } }
       if (Object.hasOwn(data, path)) return respond(data[path])

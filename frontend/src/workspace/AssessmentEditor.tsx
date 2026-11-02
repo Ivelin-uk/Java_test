@@ -18,8 +18,10 @@ import { QuestionReplacementDialog } from './QuestionReplacementDialog'
 import { difficulties, generationPayload, newAiSettings, questionTypes as types, validAiSettings } from './aiSettings'
 import { useNotifications } from '../notifications'
 import { SubjectCatalogProvider } from './SubjectCatalog'
+import { TopicField } from './TopicField'
+import { GradeField } from './GradeField'
 import { NewSubjectButton, SubjectCatalogNotice, SubjectField } from './SubjectField'
-import { assessmentSubject, mergeSubjects, subjectKey, useSubjectCatalog } from './subjects'
+import { assessmentLevel, assessmentSubject, gradeLabel, mergeSubjects, subjectKey, useSubjectCatalog } from './subjects'
 
 const QuestionTextEditor = lazy(() => import('../components/QuestionTextEditor').then(module => ({ default: module.QuestionTextEditor })))
 
@@ -174,7 +176,7 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
     if (!job?.result_json) return
     const definition = (JSON.parse(job.result_json) as { definition: Definition }).definition
     if (jobMode === 'append') { setDraft(previous => previous ? fillAiQuestions(previous, definition.questions) : previous); setShowAppendAi(false) }
-    else { setCurrent(null); setDraft({ ...definition, subject: aiSettings.subject || definition.subject, gradingScale: aiSettings.gradingScale, passThreshold: aiSettings.passThreshold }); setShowAi(false) }
+    else { setCurrent(null); setDraft({ ...definition, subject: aiSettings.subject || definition.subject, level: aiSettings.level, gradingScale: aiSettings.gradingScale, passThreshold: aiSettings.passThreshold }); setShowAi(false) }
     setJob(null)
   }
   const [current, setCurrent] = useState<Assessment | null>(null)
@@ -220,13 +222,13 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
         if (next.status === 'completed' && next.result_json) {
           const definition = (JSON.parse(next.result_json) as { definition: Definition }).definition
           if (jobMode === 'append') { setDraft(previous => previous ? fillAiQuestions(previous, definition.questions) : previous); setShowAppendAi(false) }
-          else { setCurrent(null); setDraft({ ...definition, subject: aiSettings.subject || definition.subject, gradingScale: aiSettings.gradingScale, passThreshold: aiSettings.passThreshold }); setShowAi(false) }
+          else { setCurrent(null); setDraft({ ...definition, subject: aiSettings.subject || definition.subject, level: aiSettings.level, gradingScale: aiSettings.gradingScale, passThreshold: aiSettings.passThreshold }); setShowAi(false) }
           setJob(null)
         } else setJob(next)
       }).catch(() => { if (active) setPollError('Не може да се провери AI заявката. Изчаква се връзка със сървъра.') }).finally(() => { inFlight = false })
     }, 2000)
     return () => { active = false; window.clearInterval(timer) }
-  }, [api, job, jobMode, aiSettings.subject, aiSettings.gradingScale, aiSettings.passThreshold])
+  }, [api, job, jobMode, aiSettings.subject, aiSettings.level, aiSettings.gradingScale, aiSettings.passThreshold])
   function openAppendAi() {
     if (!draft || saveDisabled || aiLimit < 1) return
     if (document.activeElement instanceof HTMLElement) appendTrigger.current = document.activeElement
@@ -245,7 +247,7 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
       appendQuestionCount.current = appendSettings.questionCount
       setJobMode('append'); setPollError('')
       setJob(await api.post<AiJob>('/ai/test-generations', {
-        ...generationPayload(appendSettings), level: draft.level, language: draft.language,
+        ...generationPayload(appendSettings), language: draft.language,
         ...(appendSettings.useSourceMaterial && appendSettings.sourceMaterial ? {
           additionalInformation: `${appendSettings.additionalInformation.trim()}\nВече включени въпроси (създай различни нови въпроси само по качения материал):\n${draft.questions.map(q => plainQuestionText(q.text)).join('\n')}`.slice(0, 20000),
         } : {
@@ -345,7 +347,7 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
       if (!validGeneration || action.busy || generating) return
       void action.run(async () => {
         setJobMode('new'); setPollError('')
-        setJob(await api.post<AiJob>('/ai/test-generations', { ...generationPayload(aiSettings), level: '', language: 'bg' }))
+        setJob(await api.post<AiJob>('/ai/test-generations', { ...generationPayload(aiSettings), language: 'bg' }))
       })
     }}>
       <AiTestFields api={api} value={aiSettings} onChange={setAiSettings} disabled={action.busy || generating} showGradingSettings />
@@ -359,7 +361,7 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
   </section>
   return <section className="ws-section">
     <SectionHead title={draft ? draft.title : 'Библиотека с тестове'} description={draft ? 'Попълни настройките и въпросите, след което натисни „Запази теста“.' : 'Създай тест ръчно или с AI. Тук ще намериш всички свои и добавени от други учители тестове.'}>
-      {draft ? <><button title="Към библиотеката" className="command-button" disabled={action.busy || generating || pendingImages > 0 || !!replacement} onClick={() => { setDraft(null); setCurrent(null); setJob(null); setShowAi(false); setShowAppendAi(false) }}><ArrowLeft size={18} /> Към библиотеката</button><button className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази теста</button></> : <div className="ws-actions"><button className="primary command-button" disabled={!!job && ['queued', 'running'].includes(job.status)} onClick={() => { setCurrent(null); setDraft({ ...blank(), subject: selectedSubject }); setJob(null); setShowAppendAi(false) }}><Plus size={17} /> Ръчен тест</button><button className="command-button" disabled={action.busy} onClick={() => { setPreview(null); setAiSettings(previous => ({ ...previous, subject: selectedSubject || previous.subject })); setShowAi(true) }}><Sparkles size={17} /> С AI</button></div>}
+      {draft ? <><button title="Към библиотеката" className="command-button" disabled={action.busy || generating || pendingImages > 0 || !!replacement} onClick={() => { setDraft(null); setCurrent(null); setJob(null); setShowAi(false); setShowAppendAi(false) }}><ArrowLeft size={18} /> Към библиотеката</button><button className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази теста</button></> : <div className="ws-actions"><button className="primary command-button" disabled={!!job && ['queued', 'running'].includes(job.status)} onClick={() => { setCurrent(null); setDraft({ ...blank(), subject: selectedSubject }); setJob(null); setShowAppendAi(false) }}><Plus size={17} /> Ръчен тест</button><button className="command-button" disabled={action.busy} onClick={() => { setPreview(null); setAiSettings(previous => ({ ...previous, subject: selectedSubject || previous.subject, topic: selectedSubject && selectedSubject !== previous.subject ? '' : previous.topic })); setShowAi(true) }}><Sparkles size={17} /> С AI</button></div>}
     </SectionHead>
     <Feedback error={action.error || list.error || pollError} busy={action.busy || list.loading} />
     {!draft ? <>
@@ -379,7 +381,7 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
         <span className="ws-summary" role="status">{visibleTests.length} от {list.data.length} теста</span>
       </div>
       <SubjectCatalogNotice />
-      <TableContainer label="Тестове — таблица"><table className="ws-table" aria-label="Тестове"><thead><tr><th>Тест</th><th>Дисциплина</th><th>Номер</th><th>Въпроси</th><th>Време</th><th>Телефон</th><th>Променен</th><th>Действия</th></tr></thead><tbody>{visibleTests.map(test => <tr key={test.id} aria-selected={preview?.assessment.id === test.id} className={`ws-selectable-row${preview?.assessment.id === test.id ? ' ws-selected-row' : ''}`} tabIndex={0} aria-disabled={action.busy} onClick={e => { if (!(e.target as HTMLElement).closest('button, a, input, select, textarea')) selectTest(test) }} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectTest(test) } }}><td><button className="ws-text-button" aria-pressed={preview?.assessment.id === test.id} disabled={action.busy} onClick={() => selectTest(test)}>{test.title}</button></td><td>{assessmentSubject(test) || 'Без дисциплина'}</td><td>{test.public_number ? <div className="ws-test-number"><code>{test.public_number}</code><button type="button" className="icon-button" title="Копирай номера на теста" aria-label={`Копирай номера на тест ${test.title}`} disabled={action.busy} onClick={() => void action.run(() => navigator.clipboard.writeText(test.public_number!), 'Номерът е копиран.')}><Copy size={16} /></button></div> : '—'}</td><td>{test.question_count}</td><td>{formatDuration(test.total_time_seconds)}</td><td>{test.owner_id === userId ? <label className="ws-check"><input type="checkbox" checked={test.mobile_allowed === true} aria-label={`Разреши решаване от телефон: ${test.title}`} ref={input => { if (input) input.indeterminate = test.mobile_allowed === null }} disabled={action.busy} onChange={event => { const mobileAllowed = event.target.checked; void action.run(async () => { await api.put(`/tests/${test.id}/mobile-mode`, { mobileAllowed }); list.setData(items => items.map(item => item.id === test.id ? { ...item, mobile_allowed: mobileAllowed } : item)) }, 'Настройката за телефон е приложена към всички възлагания.') }} /></label> : test.mobile_allowed === true ? 'Разрешено' : test.mobile_allowed === null ? 'Смесено' : 'Не е разрешено'}</td><td>{date(test.updated_at)}</td><td><div className="ws-actions">{test.owner_id === userId && <button className="command-button" aria-label="Редактирай теста" title="Редактирай теста" disabled={action.busy || generating} onClick={() => editTest(test)}><Pencil size={17} /> Редактирай</button>}<button className="icon-button danger" title="Изтрий теста" disabled={action.busy} onClick={() => setPendingDelete(test)}><Trash2 size={17} /></button></div></td></tr>)}</tbody></table></TableContainer>{!visibleTests.length && !list.loading && !list.error && <Empty>{librarySubject ? 'Няма тестове за избраната дисциплина и търсене.' : librarySearch ? 'Няма тестове, съвпадащи с търсенето.' : 'Все още няма тестове в библиотеката.'}</Empty>}
+      <TableContainer label="Тестове — таблица"><table className="ws-table" aria-label="Тестове"><thead><tr><th>Тест</th><th>Дисциплина</th><th>Номер</th><th>Въпроси</th><th>Време</th><th>Телефон</th><th>Променен</th><th>Действия</th></tr></thead><tbody>{visibleTests.map(test => <tr key={test.id} aria-selected={preview?.assessment.id === test.id} className={`ws-selectable-row${preview?.assessment.id === test.id ? ' ws-selected-row' : ''}`} tabIndex={0} aria-disabled={action.busy} onClick={e => { if (!(e.target as HTMLElement).closest('button, a, input, select, textarea')) selectTest(test) }} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectTest(test) } }}><td><button className="ws-text-button" aria-pressed={preview?.assessment.id === test.id} disabled={action.busy} onClick={() => selectTest(test)}>{test.title}</button></td><td>{assessmentSubject(test) || 'Без дисциплина'}{assessmentLevel(test) && <small className="ws-muted">{gradeLabel(assessmentLevel(test))}</small>}</td><td>{test.public_number ? <div className="ws-test-number"><code>{test.public_number}</code><button type="button" className="icon-button" title="Копирай номера на теста" aria-label={`Копирай номера на тест ${test.title}`} disabled={action.busy} onClick={() => void action.run(() => navigator.clipboard.writeText(test.public_number!), 'Номерът е копиран.')}><Copy size={16} /></button></div> : '—'}</td><td>{test.question_count}</td><td>{formatDuration(test.total_time_seconds)}</td><td>{test.owner_id === userId ? <label className="ws-check"><input type="checkbox" checked={test.mobile_allowed === true} aria-label={`Разреши решаване от телефон: ${test.title}`} ref={input => { if (input) input.indeterminate = test.mobile_allowed === null }} disabled={action.busy} onChange={event => { const mobileAllowed = event.target.checked; void action.run(async () => { await api.put(`/tests/${test.id}/mobile-mode`, { mobileAllowed }); list.setData(items => items.map(item => item.id === test.id ? { ...item, mobile_allowed: mobileAllowed } : item)) }, 'Настройката за телефон е приложена към всички възлагания.') }} /></label> : test.mobile_allowed === true ? 'Разрешено' : test.mobile_allowed === null ? 'Смесено' : 'Не е разрешено'}</td><td>{date(test.updated_at)}</td><td><div className="ws-actions">{test.owner_id === userId && <button className="command-button" aria-label="Редактирай теста" title="Редактирай теста" disabled={action.busy || generating} onClick={() => editTest(test)}><Pencil size={17} /> Редактирай</button>}<button className="icon-button danger" title="Изтрий теста" disabled={action.busy} onClick={() => setPendingDelete(test)}><Trash2 size={17} /></button></div></td></tr>)}</tbody></table></TableContainer>{!visibleTests.length && !list.loading && !list.error && <Empty>{librarySubject ? 'Няма тестове за избраната дисциплина и търсене.' : librarySearch ? 'Няма тестове, съвпадащи с търсенето.' : 'Все още няма тестове в библиотеката.'}</Empty>}
       </Panel>
       {preview && <section ref={previewRef} className="ws-test-preview" aria-label="Избран тест">
         <SectionHead title={preview.assessment.title}>
@@ -397,7 +399,7 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
     </> : <fieldset className="ws-editor" disabled={saveDisabled}>
       <div className="ws-test-settings" role="group" aria-labelledby="test-settings-title">
       <div className="ws-section-head"><h3 id="test-settings-title">Настройки на теста</h3><button type="button" className="command-button" disabled={saveDisabled || aiLimit < 1} onClick={openAppendAi}><Sparkles size={17} /> Добави с AI</button></div>
-      <div className="ws-form-grid"><label>Тема<input value={draft.title} maxLength={190} onChange={e => setDraft({ ...draft, title: e.target.value })} /></label><SubjectField value={draft.subject ?? ''} disabled={saveDisabled} onChange={subject => setDraft({ ...draft, subject })} /><label>Въпроси<input type="number" readOnly value={draft.questions.length} /></label><label>Трудност<input readOnly value={draftDifficulties.length === 1 ? difficulties[draftDifficulties[0]] : draftDifficulties.length ? difficulties.MIXED : ''} /></label></div>
+      <div className="ws-form-grid ws-context-fields"><SubjectField value={draft.subject ?? ''} disabled={saveDisabled} onChange={subject => setDraft({ ...draft, subject })} /><TopicField subject={draft.subject ?? ''} level={draft.level ?? ''} value={draft.title} disabled={saveDisabled} onChange={title => setDraft({ ...draft, title })} /><GradeField value={draft.level ?? ''} disabled={saveDisabled || !draft.subject} onChange={level => setDraft({ ...draft, level })} /><label>Въпроси<input type="number" readOnly value={draft.questions.length} /></label><label>Трудност<input readOnly value={draftDifficulties.length === 1 ? difficulties[draftDifficulties[0]] : draftDifficulties.length ? difficulties.MIXED : ''} /></label></div>
       <TestGradingFields value={draft} onChange={value => setDraft({ ...draft, ...value })} />
       <fieldset className="ws-ai-types" disabled><legend>Типове въпроси</legend><div className="ws-actions">{types.map(([key, text]) => <label className="ws-check" key={key}><input type="checkbox" readOnly checked={draft.questions.some(q => q.type === key)} />{text}</label>)}</div></fieldset>
       <div className="ws-ai-image-settings"><label className="ws-check"><input type="checkbox" disabled readOnly checked={draftImageCount > 0} />С изображения</label>{draftImageCount > 0 && <label>Въпроси с изображение<input type="number" readOnly value={draftImageCount} /></label>}</div>

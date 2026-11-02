@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 @Service
 public class SubjectService {
@@ -41,6 +42,38 @@ public class SubjectService {
         assessments.list(scope).forEach(row -> add(subjects, row.get("subject")));
         Collator order = Collator.getInstance(Locale.forLanguageTag("bg"));
         return subjects.values().stream().sorted((a, b) -> order.compare(a.name(), b.name())).toList();
+    }
+
+    public List<String> topics(OrgAccess.Scope scope, String subject, String level) {
+        requireTeacher(scope);
+        String discipline = clean(subject), grade = clean(level);
+        if (discipline.isEmpty() || discipline.length() > 190 || grade.length() > 190)
+            throw WorkspaceError.validation("Изберете дисциплина и валиден клас.");
+        Map<String, String> names = new LinkedHashMap<>();
+        List<String> examples = switch (key(discipline)) {
+            case "математика" -> List.of("Естествени числа", "Дроби", "Проценти", "Уравнения", "Геометрични фигури");
+            case "български език и литература" -> List.of("Правопис", "Части на речта", "Изречение", "Литературни произведения");
+            case "английски език", "немски език", "френски език" -> List.of("Граматика", "Лексика", "Четене с разбиране");
+            case "география", "география и икономика" -> List.of("Климат", "Води", "Почви", "Население");
+            case "биология", "биология и здравно образование" -> List.of("Клетка", "Човешко тяло", "Екосистеми");
+            case "физика", "физика и астрономия" -> List.of("Движение и сили", "Електричество", "Топлина");
+            case "химия", "химия и опазване на околната среда" -> List.of("Атоми и молекули", "Химични реакции", "Вещества");
+            case "информатика" -> List.of("Алгоритми", "Променливи и типове данни", "Условни конструкции", "Цикли");
+            case "информационни технологии" -> List.of("Работа с текст", "Електронни таблици", "Интернет и безопасност");
+            case "история", "история и цивилизации" -> List.of("Древни цивилизации", "Средновековие", "Българска история");
+            default -> List.of();
+        };
+        examples.forEach(name -> names.put(key(name), name));
+        assessments.list(scope).forEach(test -> {
+            String existingSubject = clean(Objects.toString(test.get("subject"), ""));
+            String existingLevel = clean(Objects.toString(test.get("level"), ""));
+            if (key(existingSubject).equals(key(discipline)) && (grade.isEmpty() || existingLevel.isEmpty() || key(existingLevel).equals(key(grade)))) {
+                String title = clean(Objects.toString(test.get("title"), ""));
+                if (!title.isEmpty()) names.putIfAbsent(key(title), title);
+            }
+        });
+        Collator order = Collator.getInstance(Locale.forLanguageTag("bg"));
+        return names.values().stream().sorted(order::compare).toList();
     }
 
     @Transactional

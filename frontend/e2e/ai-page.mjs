@@ -86,10 +86,11 @@ try {
   await page.getByRole('button', { name: 'Към библиотеката', exact: true }).click()
   await page.getByRole('button', { name: 'С AI', exact: true }).click()
   const creator = page.getByRole('region', { name: 'Създаване на тест с AI', exact: true })
+  await creator.getByLabel('Дисциплина', { exact: true }).selectOption('Java')
   const extra = creator.getByRole('textbox', { name: 'Допълнителна информация за теста', exact: true })
   await creator.getByRole('heading', { name: 'Създаване на тест с AI', exact: true }).waitFor()
   assert.equal(await page.getByRole('table', { name: 'Тестове', exact: true }).count(), 0)
-  assert.equal(await creator.getByLabel('Тема', { exact: true }).evaluate(element => element === document.activeElement), true)
+  assert.equal(await creator.getByLabel('Дисциплина', { exact: true }).evaluate(element => element === document.activeElement), true)
   for (const removed of ['Клас / ниво', 'Език', 'Учебен текст']) assert.equal(await creator.getByLabel(removed, { exact: true }).count(), 0)
   assert.equal(await extra.getAttribute('maxlength'), '20000')
   assert.equal(await extra.getAttribute('required'), null)
@@ -232,14 +233,15 @@ try {
   assert.equal(await bottomSave.isEnabled(), true)
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 844 })
-    await bottomSave.scrollIntoViewIfNeeded()
+    await bottomSave.evaluate(button => button.scrollIntoView({ block: 'center', inline: 'nearest' }))
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-    assert.equal(await bottomSave.evaluate(button => {
+    const saveBounds = await bottomSave.evaluate(button => {
       const bounds = button.getBoundingClientRect()
       const additions = document.querySelector('.ws-add-questions').getBoundingClientRect()
-      return bounds.top >= additions.bottom && bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight && button.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2))
-    }), true)
+      return { afterQuestions: bounds.top >= additions.bottom, withinViewport: bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight, clickable: button.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)) }
+    })
     await page.screenshot({ path: new URL(`test-bottom-save-${width}.png`, artifacts).pathname })
+    assert.deepEqual(saveBounds, { afterQuestions: true, withinViewport: true, clickable: true }, `Save button at ${width}px`)
   }
   await page.getByLabel('Минути за въпрос 1', { exact: true }).fill('0')
   await bottomSave.click()

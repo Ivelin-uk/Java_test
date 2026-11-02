@@ -55,6 +55,7 @@ Groups receive a unique eight-character `join_code` at creation; migration V21 a
 | GET `/groups/{id}/assignments` | Active student members only; own non-canceled recipient assignments whose source snapshot includes this group, using the student `/assignments` projection. Joining does not enroll a student in older assignments. Omits source snapshots, access codes and other recipients' details. |
 | GET/POST `/tests`, GET/PUT `/tests/{id}` | Own/shared editable assessment definition |
 | GET `/subjects` | Teacher-only subject catalog: built-in subjects, the caller's saved additions, and subjects from visible tests. Entries: `{name,preset}`. No test answers are included. |
+| GET `/subjects/topics?subject=…&level=…` | Teacher-only list of topic names for the selected subject. Includes general example topics and titles from visible tests in the selected grade, plus tests without a grade. An empty `level` includes all grades. Does not return question content or other teachers' private tests. |
 | POST `/subjects` | Teacher-only `{name}` (1–190 characters). Stores a personal subject; retries, case differences, NFKC equivalents and redundant whitespace reuse the existing entry. Other teachers' catalogs are unaffected. |
 | POST `/tests/{id}/publish` | Validate and copy immutable version |
 | GET `/tests/{id}/versions` | Authorized version IDs and publication timestamps |
