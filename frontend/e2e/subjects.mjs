@@ -8,10 +8,23 @@ const auth = { token: 'subject-fixture', user: { id: 101, name: 'Учител п
 const question = { type: 'SINGLE_CHOICE', text: 'Колко е 2 + 2?', difficulty: 'EASY', points: 1, timeSeconds: 60, options: [{ text: '4', correct: true }, { text: '5', correct: false }], acceptedAnswers: [], caseInsensitive: true, collapseWhitespace: true, criteria: '', explanation: '' }
 const definition = (title, subject) => ({ title, subject, description: '', level: '', instructions: '', language: 'bg', gradingScale: 'bulgarian', passThreshold: 50, questions: [question] })
 let tests = [['Първи тест', 'Математика'], ['Втори тест', 'МАТЕМАТИКА'], ['Стар тест', 'Авиация'], ['Тест без предмет', '']].map(([title, subject], index) => ({ id: index + 1, title, subject, owner_id: 101, public_number: String(123456789100 + index), status: 'published', shared: false, question_count: 1, total_time_seconds: 60, updated_at: '2026-11-02T10:00:00Z', definition_json: JSON.stringify(definition(title, subject)) }))
-let subjects = ['Математика', 'Английски език', 'Авиация'].map(name => ({ name, preset: name !== 'Авиация' }))
-const errors = [], creations = [], writes = [], generationRequests = [], topicQueries = []
+let subjects = ['Математика', 'Английски език', 'Авиация', 'Лична дисциплина'].map(name => ({
+  name, preset: name !== 'Авиация' && name !== 'Лична дисциплина', personal: name === 'Лична дисциплина',
+}))
+const errors = [], creations = [], writes = [], generationRequests = [], topicQueries = [], deletedSubjects = [], deletedTopics = []
+let personalTopics = ['Дроби']
 let generated
 let failCatalog = true, failCreate = true
+async function chooseSubject(region, name) {
+  const field = region.getByRole('combobox', { name: 'Дисциплина', exact: true })
+  await field.fill(name)
+  await region.getByRole('option', { name, exact: true }).click()
+}
+async function chooseTopic(region, name) {
+  const field = region.getByRole('combobox', { name: 'Тема', exact: true })
+  await field.fill(name)
+  await region.getByRole('option', { name, exact: true }).click()
+}
 const artifacts = new URL('../../.artifacts/', import.meta.url)
 await mkdir(artifacts, { recursive: true })
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined), headless: true })
@@ -30,10 +43,20 @@ try {
     assert.equal(request.headers().authorization, `Bearer ${auth.token}`)
     if (path === '/api/auth/me') return respond(auth.user)
     if (path === '/api/v1/subjects/topics') {
+      if (method === 'DELETE') {
+        const query = new URL(request.url()).searchParams
+        deletedTopics.push({ subject: query.get('subject'), name: query.get('name'), level: query.get('level') })
+        personalTopics = personalTopics.filter(name => name !== query.get('name'))
+        return route.fulfill({ status: 204, headers })
+      }
       const query = new URL(request.url()).searchParams
       const subject = query.get('subject'), level = query.get('level')
       topicQueries.push({ subject, level })
       return respond(subject === 'Математика' ? ['Уравнения', 'Дроби'] : subject === 'Английски език' ? ['Граматика'] : [])
+    }
+    if (path === '/api/v1/subjects/topics/personal') {
+      const query = new URL(request.url()).searchParams
+      return respond(query.get('subject') === 'Математика' ? personalTopics : [])
     }
     if (path === '/api/v1/ai/test-generations' && method === 'POST') {
       const body = request.postDataJSON(); generationRequests.push(body)
@@ -46,11 +69,17 @@ try {
         if (failCatalog) return respond({ detail: 'Temporary catalog failure' }, 503)
         return respond(subjects)
       }
+      if (method === 'DELETE') {
+        const name = new URL(request.url()).searchParams.get('name')
+        deletedSubjects.push(name)
+        subjects = subjects.filter(subject => subject.name !== name)
+        return route.fulfill({ status: 204, headers })
+      }
       const body = request.postDataJSON(); creations.push(body)
       if (failCreate) { failCreate = false; return respond({ detail: 'Временна грешка. Опитайте отново.' }, 503) }
       const name = body.name.normalize('NFKC').trim().replace(/\s+/g, ' ')
       let subject = subjects.find(value => value.name.toLocaleLowerCase('bg') === name.toLocaleLowerCase('bg'))
-      if (!subject) { subject = { name, preset: false }; subjects.push(subject) }
+      if (!subject) { subject = { name, preset: false, personal: true }; subjects.push(subject) }
       return respond(subject)
     }
     if (path === '/api/v1/tests' && method === 'GET') return respond(tests)
@@ -80,18 +109,47 @@ try {
   await filter.getByRole('option', { name: 'Английски език (0)', exact: true }).waitFor({ state: 'attached' })
   await page.getByRole('button', { name: 'С AI', exact: true }).click()
   let creator = page.getByRole('region', { name: 'Създаване на тест с AI', exact: true })
+  const contextFieldWidths = await creator.locator('.ws-context-fields').evaluate(element =>
+    [...element.children].map(child => child.getBoundingClientRect().width))
+  assert.equal(contextFieldWidths.length, 5)
+  assert.ok(contextFieldWidths[0] > contextFieldWidths[2])
+  assert.ok(contextFieldWidths[1] > contextFieldWidths[3])
+  assert.ok(contextFieldWidths[1] > contextFieldWidths[4])
   assert.equal(await creator.getByLabel('Тема', { exact: true }).isDisabled(), true)
   assert.equal(await creator.getByLabel('Клас', { exact: true }).isDisabled(), true)
-  await creator.getByLabel('Дисциплина', { exact: true }).selectOption('Математика')
+  const subjectSearch = creator.getByRole('combobox', { name: 'Дисциплина', exact: true })
+  await subjectSearch.fill('мат')
+  await creator.getByRole('option', { name: 'Математика', exact: true }).waitFor()
+  await chooseSubject(creator, 'Математика')
   await creator.getByLabel('Клас', { exact: true }).selectOption('7')
-  await creator.locator('datalist option[value="Уравнения"]').waitFor({ state: 'attached' })
-  await creator.getByLabel('Тема', { exact: true }).fill('Уравнения')
-  await creator.getByLabel('Дисциплина', { exact: true }).selectOption('Английски език')
+  const topicField = creator.getByRole('combobox', { name: 'Тема', exact: true })
+  await topicField.fill('Дро')
+  await creator.getByRole('option', { name: 'Дроби', exact: true }).waitFor()
+  await chooseTopic(creator, 'Дроби')
+  await creator.getByRole('button', { name: 'Изтрий темата Дроби', exact: true }).click()
+  const topicConfirm = page.getByRole('dialog', { name: 'Изтриване на тема', exact: true })
+  await topicConfirm.getByText('за клас 7').waitFor()
+  await topicConfirm.getByRole('button', { name: 'Изтрий', exact: true }).click()
+  await topicConfirm.waitFor({ state: 'detached' })
+  assert.deepEqual(deletedTopics, [{ subject: 'Математика', name: 'Дроби', level: '7' }])
+
+  await subjectSearch.fill('Лична')
+  await creator.getByRole('option', { name: 'Лична дисциплина', exact: true }).waitFor()
+  await chooseSubject(creator, 'Лична дисциплина')
+  await creator.getByRole('button', { name: 'Изтрий дисциплината Лична дисциплина', exact: true }).click()
+  const subjectConfirm = page.getByRole('dialog', { name: 'Изтриване на дисциплина', exact: true })
+  await subjectConfirm.getByText('и всички лични теми към нея?').waitFor()
+  await subjectConfirm.getByRole('button', { name: 'Изтрий', exact: true }).click()
+  await subjectConfirm.waitFor({ state: 'detached' })
+  assert.deepEqual(deletedSubjects, ['Лична дисциплина'])
+  await chooseSubject(creator, 'Математика')
+  await chooseTopic(creator, 'Уравнения')
+  await chooseSubject(creator, 'Английски език')
   assert.equal(await creator.getByLabel('Тема', { exact: true }).inputValue(), '')
-  await creator.locator('datalist option[value="Граматика"]').waitFor({ state: 'attached' })
-  assert.equal(await creator.locator('datalist option[value="Уравнения"]').count(), 0)
-  await creator.getByLabel('Дисциплина', { exact: true }).selectOption('Математика')
-  await creator.getByLabel('Тема', { exact: true }).fill('Уравнения')
+  await creator.getByRole('combobox', { name: 'Тема', exact: true }).fill('Грам')
+  await creator.getByRole('option', { name: 'Граматика', exact: true }).waitFor()
+  await chooseSubject(creator, 'Математика')
+  await chooseTopic(creator, 'Уравнения')
   await creator.getByRole('button', { name: 'Генерирай', exact: true }).click()
   let generatedSettings = page.getByRole('group', { name: 'Настройки на теста', exact: true })
   await generatedSettings.waitFor()
@@ -140,7 +198,7 @@ try {
   const row = library.getByRole('row').filter({ has: page.getByRole('button', { name: 'Първи тест', exact: true }) })
   await row.getByRole('button', { name: 'Редактирай теста', exact: true }).click()
   settings = page.getByRole('group', { name: 'Настройки на теста', exact: true })
-  await settings.getByLabel('Дисциплина', { exact: true }).selectOption('Английски език')
+  await chooseSubject(settings, 'Английски език')
   await settings.getByLabel('Клас', { exact: true }).selectOption('8')
   await page.getByRole('button', { name: 'Запази теста', exact: true }).click()
   await library.getByRole('button', { name: 'Първи тест', exact: true }).waitFor()
@@ -173,7 +231,7 @@ try {
   await page.keyboard.press('Escape')
   await dialog.waitFor({ state: 'detached' })
   assert.deepEqual(errors, [])
-  console.log('Passed: catalog retry, case-insensitive subject filters with search, unassigned/legacy tests, persistent creation, failed-create retry, manual and AI selection, nested-form safety, edit/save/publish, dark/light desktop/mobile, dialog Escape. API fixtures only.')
+  console.log('Passed: searchable subject/topic pickers, personal subject/topic deletion, catalog retry, unassigned/legacy tests, persistent creation, failed-create retry, manual and AI selection, nested-form safety, edit/save/publish, dark/light desktop/mobile, dialog Escape. API fixtures only.')
 } catch (error) {
   if (page) await page.screenshot({ path: new URL('subjects-failure.png', artifacts).pathname, fullPage: true })
   throw error

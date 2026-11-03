@@ -1,24 +1,27 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { Users, ShieldCheck, History, CreditCard, UserPlus, UserRoundCog, Pencil, KeyRound, UserCheck, UserX, RefreshCw, Save, X, Copy, Check, Search, Trash2, Mail } from 'lucide-react'
+import { Users, ShieldCheck, History, CreditCard, BookOpen, UserPlus, UserRoundCog, Pencil, KeyRound, UserCheck, UserX, RefreshCw, Save, X, Copy, Check, Search, Trash2, Mail } from 'lucide-react'
 import { api } from '../api/client'
 import { formatDate, roleLabels, subscriptionLabel } from '../api/access'
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog'
 import { AdminBilling } from './AdminBilling'
+import { AdminSubjects } from './AdminSubjects'
 import { useNotifications } from '../notifications'
 import { TableContainer } from '../workspace/ui'
 import type { AuditEntry, AuthResponse, PasswordResponse, PermissionChange, PermissionRow, Role, User, UserEdit } from '../types/models'
 import type { AdminTeacherPlan } from '../workspace/billingTypes'
 
 const modes = { ADMIN: 'Само администратор', PUBLIC: 'Публичен вход', PROFILE: 'Собствен профил', MANAGED: '' }
-const actions: Record<string, string> = { USER_CREATED: 'Нов потребител', USER_UPDATED: 'Промяна на профил', USER_DELETED: 'Изтриване на потребител', USER_ROLE_CHANGED: 'Смяна на роля', PASSWORD_RESET: 'Нова временна парола', PERMISSION_UPDATED: 'Промяна на права', TEACHER_AI_RESET: 'Нулиране на AI кредити', TEACHER_PLAN_CHANGED: 'Смяна на учителски план', EMAIL_VERIFICATION_SENT: 'Изпратено потвърждение на имейл' }
+const actions: Record<string, string> = { USER_CREATED: 'Нов потребител', USER_UPDATED: 'Промяна на профил', USER_DELETED: 'Изтриване на потребител', USER_ROLE_CHANGED: 'Смяна на роля', PASSWORD_RESET: 'Нова временна парола', PERMISSION_UPDATED: 'Промяна на права', TEACHER_AI_RESET: 'Нулиране на AI кредити', TEACHER_PLAN_CHANGED: 'Смяна на учителски план', EMAIL_VERIFICATION_SENT: 'Изпратено потвърждение на имейл', SUBJECT_CREATED: 'Добавена дисциплина', SUBJECT_UPDATED: 'Промяна на дисциплина', SUBJECT_DELETED: 'Изтрита дисциплина', TOPIC_CREATED: 'Добавена тема', TOPIC_UPDATED: 'Промяна на тема', TOPIC_DELETED: 'Изтрита тема' }
 const emptyUser: UserEdit = { name: '', email: '', role: 'STUDENT', active: true, subscriptionPaid: false, subscriptionPaidUntil: null }
 function userEdit(user: User): UserEdit {
   return { name: user.name, email: user.email, role: user.role, active: user.active, subscriptionPaid: user.subscription.paid, subscriptionPaidUntil: user.subscription.paidUntil }
 }
 
 export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onProfileRefresh: () => Promise<void> }) {
-  const [tab, setTab] = useState<'users' | 'permissions' | 'audit' | 'billing'>('users')
+  const [tab, setTab] = useState<'users' | 'permissions' | 'audit' | 'billing' | 'subjects'>('users')
+  const [catalogRevision, setCatalogRevision] = useState(0)
+  const [catalogBusy, setCatalogBusy] = useState(false)
   const [users, setUsers] = useState<User[]>([])
   const [rows, setRows] = useState<PermissionRow[]>([])
   const [changes, setChanges] = useState<Record<string, PermissionChange>>({})
@@ -136,12 +139,13 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
   return <section className="admin-panel">
     <div className="section-toolbar">
       <div className="app-tabs inner-tabs" role="tablist" aria-label="Администрация">
-        <button role="tab" aria-selected={tab === 'users'} className={tab === 'users' ? 'active' : ''} onClick={() => { setTab('users'); setQuery(''); setError('') }}><Users size={17} /> Потребители <span className="count-label">{users.length}</span></button>
-        <button role="tab" aria-selected={tab === 'permissions'} className={tab === 'permissions' ? 'active' : ''} onClick={() => { setTab('permissions'); setQuery(''); setError('') }}><ShieldCheck size={17} /> Права</button>
-        <button role="tab" aria-selected={tab === 'billing'} className={tab === 'billing' ? 'active' : ''} onClick={() => { setTab('billing'); setQuery(''); setRole(''); setError('') }}><CreditCard size={17} /> Абонаменти</button>
-        <button role="tab" aria-selected={tab === 'audit'} className={tab === 'audit' ? 'active' : ''} onClick={() => { setTab('audit'); setQuery(''); setError('') }}><History size={17} /> Журнал</button>
+        <button role="tab" aria-selected={tab === 'users'} className={tab === 'users' ? 'active' : ''} disabled={catalogBusy} onClick={() => { setTab('users'); setQuery(''); setError('') }}><Users size={17} /> Потребители <span className="count-label">{users.length}</span></button>
+        <button role="tab" aria-selected={tab === 'permissions'} className={tab === 'permissions' ? 'active' : ''} disabled={catalogBusy} onClick={() => { setTab('permissions'); setQuery(''); setError('') }}><ShieldCheck size={17} /> Права</button>
+        <button role="tab" aria-selected={tab === 'billing'} className={tab === 'billing' ? 'active' : ''} disabled={catalogBusy} onClick={() => { setTab('billing'); setQuery(''); setRole(''); setError('') }}><CreditCard size={17} /> Абонаменти</button>
+        <button role="tab" aria-selected={tab === 'subjects'} className={tab === 'subjects' ? 'active' : ''} disabled={catalogBusy || busy} onClick={() => { setTab('subjects'); setQuery(''); setError('') }}><BookOpen size={17} /> Дисциплини и теми</button>
+        <button role="tab" aria-selected={tab === 'audit'} className={tab === 'audit' ? 'active' : ''} disabled={catalogBusy} onClick={() => { setTab('audit'); setQuery(''); setError('') }}><History size={17} /> Журнал</button>
       </div>
-      <button className="icon-button" title="Обнови" aria-label="Обнови" disabled={busy || dirtyCount > 0} onClick={() => void perform(refresh)}><RefreshCw size={17} /></button>
+      <button className="icon-button" title="Обнови" aria-label="Обнови" disabled={busy || catalogBusy || dirtyCount > 0} onClick={() => tab === 'subjects' ? setCatalogRevision(value => value + 1) : void perform(refresh)}><RefreshCw size={17} /></button>
     </div>
     {loading && <p role="status">Зареждане...</p>}
     {error && !editing && !confirming && !roleChange && !verifying && <p className="error action-error" role="alert">{error}</p>}
@@ -197,6 +201,10 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
     {tab === 'billing' && <AdminBilling users={users} plans={billingPlans} token={token} busy={busy} loading={loading} onBusy={setBusy} onChanged={plan => {
       setBillingPlans(current => current.map(item => item.userId === plan.userId ? plan : item))
       void api.audit(token).then(setAudit).catch(() => setError('Кредитите са обновени, но журналът не се зареди. Натиснете „Обнови“.'))
+    }} />}
+
+    {tab === 'subjects' && <AdminSubjects token={token} revision={catalogRevision} onBusy={setCatalogBusy} onChanged={() => {
+      void api.audit(token).then(setAudit).catch(() => setError('Каталогът е обновен, но журналът не се зареди. Натиснете „Обнови“ в „Журнал“.'))
     }} />}
 
     {tab === 'audit' && <TableContainer label="Журнал — таблица"><table className="ws-table data-table" aria-label="Журнал"><thead><tr><th>Дата</th><th>Администратор</th><th>Действие</th><th>Промяна</th></tr></thead><tbody>

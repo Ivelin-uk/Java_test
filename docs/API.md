@@ -54,9 +54,15 @@ Groups receive a unique eight-character `join_code` at creation; migration V21 a
 | GET `/groups/{id}/summary` | Group assignments, attempts and published results; students only own rows |
 | GET `/groups/{id}/assignments` | Active student members only; own non-canceled recipient assignments whose source snapshot includes this group, using the student `/assignments` projection. Joining does not enroll a student in older assignments. Omits source snapshots, access codes and other recipients' details. |
 | GET/POST `/tests`, GET/PUT `/tests/{id}` | Own/shared editable assessment definition |
-| GET `/subjects` | Teacher-only subject catalog: built-in subjects, the caller's saved additions, and subjects from visible tests. Entries: `{name,preset}`. No test answers are included. |
-| GET `/subjects/topics?subject=…&level=…` | Teacher-only list of topic names for the selected subject. Includes general example topics and titles from visible tests in the selected grade, plus tests without a grade. An empty `level` includes all grades. Does not return question content or other teachers' private tests. |
-| POST `/subjects` | Teacher-only `{name}` (1–190 characters). Stores a personal subject; retries, case differences, NFKC equivalents and redundant whitespace reuse the existing entry. Other teachers' catalogs are unaffected. |
+| GET `/subjects` | Teacher-only subject list: shared subjects, the caller's personal additions, and subjects from their visible tests. Entries: `{name,preset,personal}`; `preset=true` identifies a shared catalog entry and `personal=true` identifies a deletable personal addition. No test answers are included. |
+| GET `/subjects/topics?subject=…&level=…` | Teacher-only list of shared topics, the caller's personal topics, and titles from their visible tests for the selected subject and grade, plus general topics without a grade. An empty `level` includes all grades. Does not return question content or other teachers' private tests. |
+| GET `/subjects/topics/personal?subject=…&level=…` | Teacher-only list of the caller's personal topics for the discipline and selected grade; used to distinguish deletable topics from shared or test-derived suggestions. |
+| POST `/subjects/topics` | Teacher-only `{subject,name,level}`; saves a topic to the caller's personal list and returns `{name}`. `level` is empty for a general topic or `1`–`12`; normalized duplicate requests are idempotent. |
+| DELETE `/subjects/topics?subject=…&name=…&level=…` | Teacher-only; deletes the matching personal topic for the caller. An empty level removes matching personal copies at every grade; shared catalog entries and tests are unchanged. |
+| POST `/subjects/syllabus-import` | Teacher-only `{fileName,base64}` for a PDF/DOCX up to 8 MB; sends the original file directly to AI (PDFs include scanned pages), uses one AI credit, and returns `{fileName,subject,topics}` as an editable draft without saving it. |
+| POST `/subjects/syllabus-import/confirm` | Teacher-only `{subject,topics}`; saves the edited discipline and up to 300 topics to the caller's personal list, returning `{subject,topics}`. |
+| POST `/subjects` | Teacher-only `{name}` (1–190 characters). Stores a personal subject; retries, case differences, NFKC equivalents and redundant whitespace reuse the existing entry. Other teachers' personal additions are unaffected. |
+| DELETE `/subjects?name=…` | Teacher-only; deletes the caller's personal discipline and all personal topics under it. Shared subjects, other teachers' entries and existing tests are unchanged. |
 | POST `/tests/{id}/publish` | Validate and copy immutable version |
 | GET `/tests/{id}/versions` | Authorized version IDs and publication timestamps |
 | POST `/tests/{id}/duplicate` | Independent editable copy |
@@ -72,6 +78,23 @@ Assessment definition: `{title,description,subject,level,instructions,language,g
 Question `text` remains a string (maximum 12,000 characters, including markup). Plain strings remain literal text. The editor prefixes formatted HTML with `<!--examai-rich-text:v1-->`; inline equations use `<span data-type="inline-math" data-latex="…"></span>`. Consumers must sanitize formatted content before rendering and render equations with untrusted KaTeX commands disabled. The frontend uses an explicit tag/attribute allowlist and restricts styles to paragraph alignment. Existing version/attempt snapshots preserve this string without changing the API shape.
 
 AI-generated images use the existing private-file contract, storage limits and owner/attempt authorization. Files and the completed job are committed atomically only while the worker still owns its lease. A failed image rolls back the whole image batch and releases the AI reservation; no partial image files remain. Heartbeats between image calls keep long batches active. Completed job metadata includes image model names and image token usage. Generation is opt-in and uses the configured OpenAI Image API model; no remote image URL is fetched. Teachers review the illustrated draft before publication.
+
+## Subject Catalog Administration
+
+Paths below are relative to `/api/admin`; all require an authenticated active administrator. Teacher and student roles cannot read or modify the administration routes. The shared catalog is global. Personal teacher catalogs remain separate.
+
+| Method / path | Contract |
+|---|---|
+| GET `/subjects` | Shared database catalog, entries `{id,name,topicCount}`. |
+| POST `/subjects` | `{name}` (1–190 characters), returns the subject. Normalized duplicate creation reuses the existing entry. |
+| PUT `/subjects/{id}` | `{name}`, returns the updated subject; a name already used by another shared subject returns 409. |
+| DELETE `/subjects/{id}` | 204; deletes the shared subject and its catalog topics, preserving all saved tests and personal subjects. |
+| GET `/subjects/{subjectId}/topics` | Catalog topics for that subject, entries `{id,subjectId,name,level}`. |
+| POST `/subjects/{subjectId}/topics` | `{name,level}`; `level` is empty for a general topic or a string from `1` to `12`. A duplicate normalized name and grade under the same subject reuses the existing topic. |
+| PUT `/subjects/{subjectId}/topics/{id}` | `{name,level}`, returns the updated topic. The topic must belong to the subject in the URL; duplicates return 409. |
+| DELETE `/subjects/{subjectId}/topics/{id}` | 204; removes only that catalog topic, preserving saved test content. |
+
+Catalog writes use service transactions, database serialization and unique constraints. Names use Unicode NFKC, whitespace and case normalization. Mutations are recorded in the administrator audit log. Renaming a catalog entry does not rewrite existing assessment definitions or published versions. Migration V33 seeds the catalog once; runtime code does not recreate removed defaults.
 
 ## AI And Assignment
 

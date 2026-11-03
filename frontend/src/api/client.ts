@@ -16,6 +16,7 @@ import type {
   AuditEntry,
 } from '../types/models'
 import type { AdminTeacherPlan, TeacherPayment } from '../workspace/billingTypes'
+import type { CatalogSubject, CatalogTopic } from '../types/catalog'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
@@ -84,6 +85,14 @@ export const api = {
   permissions: (token: string) => request<PermissionRow[]>('/api/admin/permissions', {}, token),
   updatePermissions: (token: string, changes: PermissionChange[]) => request<PermissionRow[]>('/api/admin/permissions', { method: 'PUT', body: JSON.stringify({ changes }) }, token),
   audit: (token: string) => request<AuditEntry[]>('/api/admin/audit', {}, token),
+  catalogSubjects: (token: string) => request<CatalogSubject[]>('/api/admin/subjects', {}, token),
+  createCatalogSubject: (token: string, name: string) => request<CatalogSubject>('/api/admin/subjects', { method: 'POST', body: JSON.stringify({ name }) }, token),
+  updateCatalogSubject: (token: string, id: number, name: string) => request<CatalogSubject>(`/api/admin/subjects/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }, token),
+  deleteCatalogSubject: (token: string, id: number) => request<void>(`/api/admin/subjects/${id}`, { method: 'DELETE' }, token),
+  catalogTopics: (token: string, subjectId: number) => request<CatalogTopic[]>(`/api/admin/subjects/${subjectId}/topics`, {}, token),
+  createCatalogTopic: (token: string, subjectId: number, name: string, level: string) => request<CatalogTopic>(`/api/admin/subjects/${subjectId}/topics`, { method: 'POST', body: JSON.stringify({ name, level }) }, token),
+  updateCatalogTopic: (token: string, subjectId: number, id: number, name: string, level: string) => request<CatalogTopic>(`/api/admin/subjects/${subjectId}/topics/${id}`, { method: 'PUT', body: JSON.stringify({ name, level }) }, token),
+  deleteCatalogTopic: (token: string, subjectId: number, id: number) => request<void>(`/api/admin/subjects/${subjectId}/topics/${id}`, { method: 'DELETE' }, token),
   studentTests: (token: string) => request<TestSummary[]>('/api/student/tests', {}, token),
   studentResults: (token: string) => request<CreatorResult[]>('/api/student/results', {}, token),
   dashboard: (token: string) => request<DashboardStats>('/api/dashboard', {}, token),

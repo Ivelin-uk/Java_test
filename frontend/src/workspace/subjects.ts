@@ -1,7 +1,9 @@
 import { createContext, useContext } from 'react'
 import type { Assessment } from './types'
 
-export interface Subject { name: string; preset: boolean }
+export interface Subject { name: string; preset: boolean; personal?: boolean }
+export interface SyllabusDraft { fileName: string; subject: string; topics: string[] }
+export interface SavedSyllabus { subject: Subject; topics: string[] }
 export const normalizeSubject = (value: string) => value.normalize('NFKC').trim().replace(/\s+/gu, ' ')
 export const subjectKey = (value: string) => normalizeSubject(value).toLocaleLowerCase('bg-BG')
 export function assessmentSubject(test: Assessment): string {
@@ -25,7 +27,14 @@ export interface SubjectCatalogValue {
   error: string
   reload: () => void
   create: (name: string) => Promise<Subject>
+  deleteSubject: (name: string) => Promise<void>
   loadTopics: (subject: string, level: string) => Promise<string[]>
+  loadPersonalTopics: (subject: string, level: string) => Promise<string[]>
+  saveTopic: (subject: string, level: string, name: string) => Promise<{ name: string }>
+  deleteTopic: (subject: string, level: string, name: string) => Promise<void>
+  importSyllabus: (fileName: string, base64: string) => Promise<SyllabusDraft>
+  saveSyllabus: (subject: string, topics: string[]) => Promise<SavedSyllabus>
+  refreshTopics: () => void
 }
 export const SubjectCatalogContext = createContext<SubjectCatalogValue | null>(null)
 export function useSubjectCatalog() {

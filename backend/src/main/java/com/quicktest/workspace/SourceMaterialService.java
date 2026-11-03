@@ -29,6 +29,39 @@ public class SourceMaterialService {
     private static final Set<String> FORMATS = Set.of("pdf", "pptx", "docx", "txt");
 
     public Material extract(OrgAccess.Scope scope, Upload request) {
+        DecodedUpload upload = decode(scope, request, FORMATS);
+        String text;
+        try {
+            text = switch (upload.format()) {
+                case "txt" -> plainText(upload.bytes());
+                case "pdf" -> pdfText(upload.bytes());
+                default -> officeText(upload.bytes(), upload.format());
+            };
+        } catch (WorkspaceError error) { throw error; }
+        catch (Exception error) { throw WorkspaceError.validation("Файлът не може да бъде прочетен. Проверете формата и премахнете защитата с парола."); }
+        text = normalizeText(text);
+        if (text.isBlank()) throw WorkspaceError.validation("Във файла няма разпознаваем текст. За сканиран материал използвайте версия с избираем текст.");
+        if (text.length() > MAX_TEXT_LENGTH) throw textLimit();
+        return new Material(upload.fileName(), text, text.length());
+    }
+
+    public SyllabusMaterial prepareSyllabus(OrgAccess.Scope scope, Upload request) {
+        DecodedUpload upload = decode(scope, request, Set.of("pdf", "docx"));
+        String text = "";
+        try {
+            if (upload.format().equals("pdf")) {
+                validatePdf(upload.bytes());
+                text = normalizeText(pdfText(upload.bytes()));
+            } else {
+                text = normalizeText(officeText(upload.bytes(), upload.format()));
+                if (text.isBlank()) throw WorkspaceError.validation("Във файла няма разпознаваем текст.");
+            }
+        } catch (WorkspaceError error) { throw error; }
+        catch (Exception error) { throw WorkspaceError.validation("Файлът не може да бъде прочетен. Проверете формата и премахнете защитата с парола."); }
+        return new SyllabusMaterial(upload.fileName(), text, Base64.getEncoder().encodeToString(upload.bytes()));
+    }
+
+    private DecodedUpload decode(OrgAccess.Scope scope, Upload request, Set<String> allowedFormats) {
         if (!scope.roles().contains("TEACHER") && !scope.roles().contains("ORG_ADMIN")) throw WorkspaceError.forbidden();
         if (request == null || request.fileName() == null || request.fileName().isBlank()
                 || request.fileName().length() > 255 || request.fileName().contains("/") || request.fileName().contains("\\")
@@ -37,7 +70,8 @@ public class SourceMaterialService {
         }
         String name = request.fileName().strip();
         String format = name.substring(name.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
-        if (!FORMATS.contains(format)) throw WorkspaceError.validation("Изберете PDF, PPTX, DOCX или TXT файл.");
+        if (!allowedFormats.contains(format)) throw WorkspaceError.validation(allowedFormats.equals(Set.of("pdf", "docx"))
+                ? "Изберете PDF или DOCX файл." : "Изберете PDF, PPTX, DOCX или TXT файл.");
         if (request.base64() == null || request.base64().isEmpty() || request.base64().length() > MAX_BASE64_LENGTH) {
             throw WorkspaceError.validation("Учебният материал трябва да е до 8 MB.");
         }
@@ -45,20 +79,20 @@ public class SourceMaterialService {
         try { bytes = Base64.getDecoder().decode(request.base64()); }
         catch (IllegalArgumentException error) { throw WorkspaceError.validation("Невалиден файл."); }
         if (bytes.length == 0 || bytes.length > MAX_FILE_BYTES) throw WorkspaceError.validation("Изберете непразен файл до 8 MB.");
-        String text;
-        try {
-            text = switch (format) {
-                case "txt" -> plainText(bytes);
-                case "pdf" -> pdfText(bytes);
-                default -> officeText(bytes, format);
-            };
-        } catch (WorkspaceError error) { throw error; }
-        catch (Exception error) { throw WorkspaceError.validation("Файлът не може да бъде прочетен. Проверете формата и премахнете защитата с парола."); }
+        return new DecodedUpload(name, format, bytes);
+    }
+
+    private String normalizeText(String text) {
         text = text.replace("\r\n", "\n").replace('\r', '\n').replace('\f', '\n').strip();
         if (text.startsWith("\uFEFF")) text = text.substring(1).strip();
-        if (text.isBlank()) throw WorkspaceError.validation("Във файла няма разпознаваем текст. За сканиран материал използвайте версия с избираем текст.");
-        if (text.length() > MAX_TEXT_LENGTH) throw textLimit();
-        return new Material(name, text, text.length());
+        return text;
+    }
+
+    private void validatePdf(byte[] bytes) throws IOException {
+        try (var document = Loader.loadPDF(bytes)) {
+            if (document.isEncrypted()) throw WorkspaceError.validation("Изберете PDF без защита с парола.");
+            if (document.getNumberOfPages() > 200) throw WorkspaceError.validation("PDF материалът трябва да е до 200 страници.");
+        }
     }
 
     private String plainText(byte[] bytes) throws IOException {
@@ -205,4 +239,6 @@ public class SourceMaterialService {
 
     public record Upload(@NotBlank @Size(max = 255) String fileName, @NotBlank @Size(max = MAX_BASE64_LENGTH) String base64) {}
     public record Material(String fileName, String sourceText, int characterCount) {}
+    public record SyllabusMaterial(String fileName, String sourceText, String fileBase64) {}
+    private record DecodedUpload(String fileName, String format, byte[] bytes) {}
 }

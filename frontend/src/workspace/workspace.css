@@ -335,11 +335,24 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-library-search > .ws-library-subject-filter { flex: 1 1 250px; }
 .ws-subject-field { display: grid; align-content: start; gap: 8px; min-width: 0; }
 .ws-topic-hint { color: var(--muted); font-size: 12px; line-height: 1.5; margin: 0; }
-.ws-context-fields { align-items: start; }
+.ws-context-fields { align-items: start; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) max-content max-content max-content; }
+.ws-context-fields > label:nth-child(3) select, .ws-context-fields > label:nth-child(5) select { width: max-content; max-width: 100%; }
+.ws-context-fields > label:nth-child(4) input { width: 6ch; min-width: 5ch; max-width: 100%; }
 .ws-table[aria-label="Тестове"] td:nth-child(2) > small { display: block; margin-top: 4px; }
 .ws-subject-control { display: flex; align-items: stretch; gap: 8px; min-width: 0; }
-.ws-subject-control > select { flex: 1 1 auto; min-width: 0; }
-.ws-subject-control > button { height: auto; min-height: 46px; }
+.ws-subject-control > input { flex: 1 1 auto; min-width: 0; }
+.ws-subject-control > button { width: 46px; min-width: 46px; height: auto; min-height: 46px; flex: 0 0 46px; padding: 0; }
+.ws-subject-picker, .ws-topic-picker { position: relative; flex: 1 1 auto; min-width: 0; }
+.ws-subject-picker > input, .ws-topic-picker > input { width: 100%; min-width: 0; }
+.ws-subject-picker > input { padding-right: 76px; }
+.ws-topic-picker > input { padding-right: 44px; }
+.ws-subject-picker-tools { position: absolute; top: 50%; right: 4px; display: flex; transform: translateY(-50%); }
+.ws-subject-picker-tools .icon-button, .ws-topic-list-button { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; background: transparent; }
+.ws-topic-list-button { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); }
+.ws-subject-picker-results { position: absolute; z-index: 8; top: calc(100% + 4px); right: 0; left: 0; max-height: 280px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 6px 18px #18212b1a; }
+.ws-subject-picker-results > [role="option"] { display: block; width: 100%; padding: 9px 14px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; text-align: left; overflow-wrap: anywhere; }
+.ws-subject-picker-results > [role="option"]:hover, .ws-subject-picker-results > [role="option"][aria-selected="true"] { background: var(--hover); }
+.ws-subject-picker-results > p { padding: 10px; margin: 0; color: var(--muted); font-size: 13px; }
 .ws-subject-notice { display: grid; gap: 8px; font-size: 14px; }
 .ws-subject-notice > button { justify-self: start; }
 .ws-subject-dialog { width: min(500px, calc(100% - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); }
@@ -347,6 +360,9 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-subject-dialog > form { display: grid; gap: 20px; }
 .ws-subject-dialog h2 { font-size: 22px; }
 .ws-subject-dialog .dialog-actions { justify-content: flex-end; }
+.ws-syllabus-import-button { display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+.ws-syllabus-dialog { width: min(620px, calc(100% - 32px)); }
+.ws-syllabus-dialog textarea { min-height: 180px; }
 .ws-test-import > label { flex: 0 1 300px; min-width: 0; }
 .ws-test-import > p { flex-basis: 100%; margin: 0; font-size: 14px; }
 .ws-test-number { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }

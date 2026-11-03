@@ -1,9 +1,11 @@
 package com.quicktest.ai;
 
+import com.quicktest.exception.ApiException;
 import com.quicktest.tests.Difficulty;
 import com.quicktest.tests.QuestionType;
 import com.quicktest.tests.QuizDtos;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -70,6 +72,24 @@ public class MockAiProvider implements AiProvider {
         );
         var prompts = questions.stream().limit(request.imageCount()).map(q -> "Educational diagram for " + request.topic() + ": " + q.question()).toList();
         return new GeneratedTest(test, "mock-ai-provider", 250 + count * 20, 500 + count * 80, prompts);
+    }
+
+    @Override
+    public ExtractedSyllabus extractSyllabus(ExtractSyllabusRequest request) {
+        String text = request == null || request.text() == null ? "" : request.text();
+        var lines = text.lines().map(String::strip).filter(line -> !line.isBlank()).toList();
+        if (lines.size() < 2) throw unsupportedSyllabus();
+        String subject = lines.getFirst().replaceFirst("(?iu)^(?:дисциплина|subject)\\s*:\\s*", "").strip();
+        List<String> topics = lines.subList(1, lines.size()).stream()
+                .map(line -> line.replaceFirst("^[\\s•*\\-\\d.)]+", "").strip())
+                .filter(line -> !line.isBlank()).toList();
+        if (subject.isBlank() || topics.isEmpty()) throw unsupportedSyllabus();
+        return new ExtractedSyllabus(subject, topics, "mock-ai-provider", 0, 0);
+    }
+
+    private ApiException unsupportedSyllabus() {
+        return new ApiException(HttpStatus.BAD_GATEWAY,
+                "Тестовият AI не може да разпознае конспекта. За обработка на сканиран PDF изберете реалния AI доставчик.");
     }
 
     @Override

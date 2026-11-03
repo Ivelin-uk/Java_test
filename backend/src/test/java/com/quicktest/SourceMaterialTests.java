@@ -99,6 +99,19 @@ class SourceMaterialTests {
         assertTrue(text.contains("Java classes contain fields and methods."));
     }
 
+    @Test void keepsPdfTextForMockSyllabusImportAndPreservesOriginalFileForAi() throws Exception {
+        byte[] bytes = pdf(1, "Subject: Mathematics\n1. Algebraic expressions", false);
+        var material = service.prepareSyllabus(teacher, upload("syllabus.pdf", bytes));
+        var extracted = new com.quicktest.ai.MockAiProvider().extractSyllabus(
+                new com.quicktest.ai.AiProvider.ExtractSyllabusRequest(
+                        material.sourceText(), material.fileName(), material.fileBase64()));
+
+        assertTrue(material.sourceText().contains("Subject: Mathematics"));
+        assertEquals(Base64.getEncoder().encodeToString(bytes), material.fileBase64());
+        assertEquals("Mathematics", extracted.subject());
+        assertEquals(java.util.List.of("Algebraic expressions"), extracted.topics());
+    }
+
     @Test void requiresTeachingRoleEvenForPlatformScopes() {
         var upload = upload("lecture.txt", "Lecture".getBytes(StandardCharsets.UTF_8));
         for (var scope : new OrgAccess.Scope[]{new OrgAccess.Scope(1, 2, Set.of("STUDENT")),
@@ -203,7 +216,10 @@ class SourceMaterialTests {
                         content.beginText();
                         content.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
                         content.newLineAtOffset(50, 700);
-                        content.showText(text);
+                        for (String line : text.split("\\R")) {
+                            content.showText(line);
+                            content.newLineAtOffset(0, -14);
+                        }
                         content.endText();
                     }
                 }

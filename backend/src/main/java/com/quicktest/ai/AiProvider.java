@@ -4,6 +4,9 @@ import com.quicktest.tests.QuizDtos;
 
 public interface AiProvider {
     GeneratedTest generateTest(GenerateTestRequest request);
+    default ExtractedSyllabus extractSyllabus(ExtractSyllabusRequest request) {
+        throw new UnsupportedOperationException("Syllabus extraction is not supported by this provider");
+    }
     default GeneratedImage generateImage(GenerateImageRequest request) {
         throw new UnsupportedOperationException("AI image generation is not supported by this provider");
     }
@@ -18,6 +21,10 @@ public interface AiProvider {
     record GeneratedTest(QuizDtos.TestRequest test, String model, int inputTokens, int outputTokens, java.util.List<String> imagePrompts) {
         public GeneratedTest(QuizDtos.TestRequest test,String model,int inputTokens,int outputTokens) {this(test,model,inputTokens,outputTokens,java.util.List.of());}
     }
+    record ExtractSyllabusRequest(String text, String fileName, String fileData) {
+        public ExtractSyllabusRequest(String text) { this(text, null, null); }
+    }
+    record ExtractedSyllabus(String subject, java.util.List<String> topics, String model, int inputTokens, int outputTokens) {}
     record GenerateImageRequest(String prompt, String language) {}
     record GeneratedImage(String base64, String model, int inputTokens, int outputTokens) {}
     record GradingQuestion(long id, String type, String question, java.math.BigDecimal maximumPoints,

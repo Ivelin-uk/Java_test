@@ -90,6 +90,57 @@ class OpenAiProviderTests {
     }
 
     @Test
+    void extractsSyllabusAsStrictStructuredOutput() {
+        ObjectNode draft = (ObjectNode) mapper.valueToTree(Map.of(
+                "subject", "Математика", "topics", List.of("Алгебрични изрази", "Теорема на Питагор")));
+        responseBody = response(draft);
+
+        AiProvider.ExtractedSyllabus extracted = provider().extractSyllabus(
+                new AiProvider.ExtractSyllabusRequest("Дисциплина: Математика\n1. Алгебрични изрази"));
+
+        assertEquals("Математика", extracted.subject());
+        assertEquals(List.of("Алгебрични изрази", "Теорема на Питагор"), extracted.topics());
+        assertEquals(123, extracted.inputTokens());
+        assertEquals(456, extracted.outputTokens());
+        assertEquals("gpt-4.1-mini", received.path("model").asString());
+        assertTrue(received.path("text").path("format").path("strict").asBoolean());
+        assertEquals(300, received.path("text").path("format").path("schema").path("properties").path("topics").path("maxItems").asInt());
+        assertTrue(received.path("input").get(1).path("content").get(0).path("text").asString().contains("<syllabus>"));
+        assertFalse(received.path("text").path("format").path("schema").toString().contains("minLength"));
+    }
+
+    @Test
+    void sendsPdfAsAFileForDirectAiProcessing() {
+        ObjectNode draft = (ObjectNode) mapper.valueToTree(Map.of(
+                "subject", "Математика", "topics", List.of("Алгебрични изрази")));
+        responseBody = response(draft);
+
+        provider().extractSyllabus(new AiProvider.ExtractSyllabusRequest(null, "syllabus.pdf", "JVBERi0xLjQ="));
+
+        JsonNode file = received.path("input").get(1).path("content").get(0);
+        assertEquals("input_file", file.path("type").asString());
+        assertEquals("syllabus.pdf", file.path("filename").asString());
+        assertEquals("data:application/pdf;base64,JVBERi0xLjQ=", file.path("file_data").asString());
+        assertEquals("high", file.path("detail").asString());
+    }
+
+    @Test
+    void sendsDocxAsAnOriginalFileForDirectAiProcessing() {
+        ObjectNode draft = (ObjectNode) mapper.valueToTree(Map.of(
+                "subject", "Математика", "topics", List.of("Алгебрични изрази")));
+        responseBody = response(draft);
+
+        provider().extractSyllabus(new AiProvider.ExtractSyllabusRequest(
+                "Дисциплина: Математика", "syllabus.docx", "UEsDBA=="));
+
+        JsonNode file = received.path("input").get(1).path("content").get(0);
+        assertEquals("input_file", file.path("type").asString());
+        assertEquals("syllabus.docx", file.path("filename").asString());
+        assertEquals("data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,UEsDBA==",
+                file.path("file_data").asString());
+    }
+
+    @Test
     void visualQuestionsHaveOrderedImagePromptsAndAStrictSchema() {
         var draft = draft();
         draft.set("imagePrompts", mapper.valueToTree(List.of("Triangle ABC with the stated dimensions, without a solution.")));
