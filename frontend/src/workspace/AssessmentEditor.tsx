@@ -165,6 +165,8 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
   const importing = useRef(false)
   const [pendingImages, setPendingImages] = useState(0)
   const [addCount, setAddCount] = useState(1)
+  const [questionCountInput, setQuestionCountInput] = useState('1')
+  const [defaultDraftDifficulty, setDefaultDraftDifficulty] = useState<Question['difficulty']>('MEDIUM')
   const [jobMode, setJobMode] = useState<'new' | 'append'>('new')
   const [aiSettings, setAiSettings] = useState(() => newAiSettings())
   const [appendSettings, setAppendSettings] = useState(() => newAiSettings())
@@ -176,7 +178,7 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
     if (!job?.result_json) return
     const definition = (JSON.parse(job.result_json) as { definition: Definition }).definition
     if (jobMode === 'append') { setDraft(previous => previous ? fillAiQuestions(previous, definition.questions) : previous); setShowAppendAi(false) }
-    else { setCurrent(null); setDraft({ ...definition, subject: aiSettings.subject || definition.subject, level: aiSettings.level, gradingScale: aiSettings.gradingScale, passThreshold: aiSettings.passThreshold }); setShowAi(false) }
+    else { setCurrent(null); setDefaultDraftDifficulty(definition.questions.at(-1)?.difficulty ?? 'MEDIUM'); setDraft({ ...definition, subject: aiSettings.subject || definition.subject, level: aiSettings.level, gradingScale: aiSettings.gradingScale, passThreshold: aiSettings.passThreshold }); setShowAi(false) }
     setJob(null)
   }
   const [current, setCurrent] = useState<Assessment | null>(null)
@@ -202,6 +204,7 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
   const draftDifficulties = [...new Set(draft?.questions.map(q => q.difficulty))]
   const draftImageCount = draft?.questions.filter(q => q.imageId).length ?? 0
 
+  useEffect(() => { setQuestionCountInput(String(draft?.questions.length ?? 0)) }, [draft?.questions.length])
   useEffect(() => { window.scrollTo({ top: 0 }) }, [showAi])
 
   useEffect(() => {
@@ -222,7 +225,7 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
         if (next.status === 'completed' && next.result_json) {
           const definition = (JSON.parse(next.result_json) as { definition: Definition }).definition
           if (jobMode === 'append') { setDraft(previous => previous ? fillAiQuestions(previous, definition.questions) : previous); setShowAppendAi(false) }
-          else { setCurrent(null); setDraft({ ...definition, subject: aiSettings.subject || definition.subject, level: aiSettings.level, gradingScale: aiSettings.gradingScale, passThreshold: aiSettings.passThreshold }); setShowAi(false) }
+          else { setCurrent(null); setDefaultDraftDifficulty(definition.questions.at(-1)?.difficulty ?? 'MEDIUM'); setDraft({ ...definition, subject: aiSettings.subject || definition.subject, level: aiSettings.level, gradingScale: aiSettings.gradingScale, passThreshold: aiSettings.passThreshold }); setShowAi(false) }
           setJob(null)
         } else setJob(next)
       }).catch(() => { if (active) setPollError('Не може да се провери AI заявката. Изчаква се връзка със сървъра.') }).finally(() => { inFlight = false })
@@ -264,6 +267,28 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
     })
   }
   function patchQuestion(index: number, patch: Partial<Question>) { if (draft) setDraft({ ...draft, questions: draft.questions.map((q, i) => i === index ? { ...q, ...patch } : q) }) }
+  function resizeDraftQuestions(count: number) {
+    setDraft(previous => {
+      if (!previous) return previous
+      const current = previous.questions.length
+      const questions = count < current
+        ? previous.questions.slice(0, count)
+        : [...previous.questions, ...Array.from({ length: count - current }, () => ({ ...question(), difficulty: defaultDraftDifficulty }))]
+      return { ...previous, questions }
+    })
+  }
+  function commitQuestionCount() {
+    const count = Number(questionCountInput)
+    if (!Number.isInteger(count) || count < 1 || count > 100) {
+      setQuestionCountInput(String(draft?.questions.length ?? 0))
+      return
+    }
+    resizeDraftQuestions(count)
+  }
+  function setDraftDifficulty(difficulty: Question['difficulty']) {
+    setDefaultDraftDifficulty(difficulty)
+    setDraft(previous => previous ? { ...previous, questions: previous.questions.map(item => ({ ...item, difficulty })) } : previous)
+  }
   function openReplacement(index: number) {
     if (!draft || saveDisabled || !draft.questions[index]) return
     replacementTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -317,7 +342,8 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
   function editTest(test: Assessment) {
     void action.run(async () => {
       const row = await api.get<Assessment>(`/tests/${test.id}`)
-      setCurrent(row); setDraft(JSON.parse(row.definition_json) as Definition); setShowAi(false); setShowAppendAi(false)
+      const definition = JSON.parse(row.definition_json) as Definition
+      setCurrent(row); setDefaultDraftDifficulty(definition.questions.at(-1)?.difficulty ?? 'MEDIUM'); setDraft(definition); setShowAi(false); setShowAppendAi(false)
       window.scrollTo({ top: 0 })
     })
   }
@@ -361,7 +387,7 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
   </section>
   return <section className="ws-section">
     <SectionHead title={draft ? draft.title : 'Библиотека с тестове'} description={draft ? 'Попълни настройките и въпросите, след което натисни „Запази теста“.' : 'Създай тест ръчно или с AI. Тук ще намериш всички свои и добавени от други учители тестове.'}>
-      {draft ? <><button type="button" title="Към библиотеката" className="command-button" disabled={action.busy || generating || pendingImages > 0 || !!replacement} onClick={() => { setDraft(null); setCurrent(null); setJob(null); setShowAi(false); setShowAppendAi(false) }}><ArrowLeft size={18} /> Към библиотеката</button><button type="button" className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази теста</button></> : <div className="ws-actions"><button type="button" className="primary command-button" disabled={!!job && ['queued', 'running'].includes(job.status)} onClick={() => { setCurrent(null); setDraft({ ...blank(), subject: selectedSubject }); setJob(null); setShowAppendAi(false) }}><Plus size={17} /> Ръчен тест</button><button type="button" className="command-button" disabled={action.busy} onClick={() => { setPreview(null); setAiSettings(previous => ({ ...previous, subject: selectedSubject || previous.subject, topic: selectedSubject && selectedSubject !== previous.subject ? '' : previous.topic })); setShowAi(true) }}><Sparkles size={17} /> С AI</button></div>}
+      {draft ? <><button type="button" title="Към библиотеката" className="command-button" disabled={action.busy || generating || pendingImages > 0 || !!replacement} onClick={() => { setDraft(null); setCurrent(null); setJob(null); setShowAi(false); setShowAppendAi(false) }}><ArrowLeft size={18} /> Към библиотеката</button><button type="button" className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази теста</button></> : <div className="ws-actions"><button type="button" className="primary command-button" disabled={!!job && ['queued', 'running'].includes(job.status)} onClick={() => { setCurrent(null); setDefaultDraftDifficulty('MEDIUM'); setDraft({ ...blank(), subject: selectedSubject }); setJob(null); setShowAppendAi(false) }}><Plus size={17} /> Ръчен тест</button><button type="button" className="command-button" disabled={action.busy} onClick={() => { setPreview(null); setAiSettings(previous => ({ ...previous, subject: selectedSubject || previous.subject, topic: selectedSubject && selectedSubject !== previous.subject ? '' : previous.topic })); setShowAi(true) }}><Sparkles size={17} /> С AI</button></div>}
     </SectionHead>
     <Feedback error={action.error || list.error || pollError} busy={action.busy || list.loading} />
     {!draft ? <>
@@ -399,7 +425,7 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
     </> : <fieldset className="ws-editor" disabled={saveDisabled}>
       <div className="ws-test-settings" role="group" aria-labelledby="test-settings-title">
       <div className="ws-section-head"><h3 id="test-settings-title">Настройки на теста</h3><button type="button" className="command-button" disabled={saveDisabled || aiLimit < 1} onClick={openAppendAi}><Sparkles size={17} /> Добави с AI</button></div>
-      <div className="ws-form-grid ws-context-fields"><SubjectField value={draft.subject ?? ''} disabled={saveDisabled} onChange={subject => setDraft({ ...draft, subject })} /><TopicField subject={draft.subject ?? ''} level={draft.level ?? ''} value={draft.title} disabled={saveDisabled} onChange={title => setDraft({ ...draft, title })} /><GradeField value={draft.level ?? ''} disabled={saveDisabled || !draft.subject} onChange={level => setDraft({ ...draft, level })} /><label>Въпроси<input type="number" readOnly value={draft.questions.length} /></label><label>Трудност<input readOnly value={draftDifficulties.length === 1 ? difficulties[draftDifficulties[0]] : draftDifficulties.length ? difficulties.MIXED : ''} /></label></div>
+      <div className="ws-form-grid ws-context-fields"><SubjectField value={draft.subject ?? ''} disabled={saveDisabled} onChange={subject => setDraft({ ...draft, subject })} /><TopicField subject={draft.subject ?? ''} level={draft.level ?? ''} value={draft.title} disabled={saveDisabled} onChange={title => setDraft({ ...draft, title })} /><GradeField value={draft.level ?? ''} disabled={saveDisabled || !draft.subject} onChange={level => setDraft({ ...draft, level })} /><label>Въпроси<input aria-label="Брой въпроси" type="number" min={1} max={100} step={1} value={questionCountInput} disabled={saveDisabled} onChange={event => setQuestionCountInput(event.target.value)} onBlur={commitQuestionCount} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur() }} /></label><label>Трудност<select aria-label="Трудност" value={draftDifficulties.length > 1 ? '' : draftDifficulties[0] ?? defaultDraftDifficulty} disabled={saveDisabled} onChange={event => setDraftDifficulty(event.target.value as Question['difficulty'])}>{draftDifficulties.length > 1 && <option value="" disabled>Различна</option>}{Object.entries(difficulties).filter(([key]) => key !== 'MIXED').map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label></div>
       <TestGradingFields value={draft} onChange={value => setDraft({ ...draft, ...value })} />
       <fieldset className="ws-ai-types" disabled><legend>Типове въпроси</legend><div className="ws-actions">{types.map(([key, text]) => <label className="ws-check" key={key}><input type="checkbox" readOnly checked={draft.questions.some(q => q.type === key)} />{text}</label>)}</div></fieldset>
       <div className="ws-ai-image-settings"><label className="ws-check"><input type="checkbox" disabled readOnly checked={draftImageCount > 0} />С изображения</label>{draftImageCount > 0 && <label>Въпроси с изображение<input type="number" readOnly value={draftImageCount} /></label>}</div>
