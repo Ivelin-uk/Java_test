@@ -350,8 +350,11 @@ small.ws-attempt-outcome { display: block; margin-top: 4px; }
 .ws-subject-picker-tools .icon-button, .ws-topic-list-button { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; background: transparent; }
 .ws-topic-list-button { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); }
 .ws-subject-picker-results { position: absolute; z-index: 8; top: calc(100% + 4px); right: 0; left: 0; max-height: 280px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 6px 18px #18212b1a; }
-.ws-subject-picker-results > [role="option"] { display: block; width: 100%; padding: 9px 14px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; text-align: left; overflow-wrap: anywhere; }
-.ws-subject-picker-results > [role="option"]:hover, .ws-subject-picker-results > [role="option"][aria-selected="true"] { background: var(--hover); }
+.ws-subject-picker-option { display: flex; align-items: center; gap: 4px; padding: 4px; border-bottom: 1px solid var(--border); }
+.ws-subject-picker-option:last-of-type { border-bottom: 0; }
+.ws-subject-picker-option > [role="option"] { flex: 1 1 auto; min-width: 0; padding: 9px 10px; border: 0; background: transparent; text-align: left; overflow-wrap: anywhere; }
+.ws-subject-picker-option > [role="option"]:hover, .ws-subject-picker-option > [role="option"][aria-selected="true"] { background: var(--hover); }
+.ws-subject-picker-option > .icon-button { flex: 0 0 34px; width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 0; }
 .ws-subject-picker-results > p { padding: 10px; margin: 0; color: var(--muted); font-size: 13px; }
 .ws-subject-notice { display: grid; gap: 8px; font-size: 14px; }
 .ws-subject-notice > button { justify-self: start; }

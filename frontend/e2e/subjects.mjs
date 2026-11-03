@@ -11,8 +11,9 @@ let tests = [['Първи тест', 'Математика'], ['Втори те�
 let subjects = ['Математика', 'Английски език', 'Авиация', 'Лична дисциплина'].map(name => ({
   name, preset: name !== 'Авиация' && name !== 'Лична дисциплина', personal: name === 'Лична дисциплина',
 }))
-const errors = [], creations = [], writes = [], generationRequests = [], topicQueries = [], deletedSubjects = [], deletedTopics = []
+const errors = [], creations = [], createdTopics = [], writes = [], generationRequests = [], topicQueries = [], deletedSubjects = [], deletedTopics = []
 let personalTopics = ['Дроби']
+let linkedTopics = ['Тема към личната дисциплина']
 let generated
 let failCatalog = true, failCreate = true
 async function chooseSubject(region, name) {
@@ -49,14 +50,21 @@ try {
         personalTopics = personalTopics.filter(name => name !== query.get('name'))
         return route.fulfill({ status: 204, headers })
       }
+      if (method === 'POST') {
+        const body = request.postDataJSON()
+        createdTopics.push(body)
+        if (body.subject === 'Математика') personalTopics.push(body.name)
+        if (body.subject === 'Лична дисциплина') linkedTopics.push(body.name)
+        return respond({ name: body.name })
+      }
       const query = new URL(request.url()).searchParams
       const subject = query.get('subject'), level = query.get('level')
       topicQueries.push({ subject, level })
-      return respond(subject === 'Математика' ? ['Уравнения', 'Дроби'] : subject === 'Английски език' ? ['Граматика'] : [])
+      return respond(subject === 'Математика' ? [...new Set(['Уравнения', 'Дроби', ...personalTopics])] : subject === 'Английски език' ? ['Граматика'] : subject === 'Лична дисциплина' ? linkedTopics : [])
     }
     if (path === '/api/v1/subjects/topics/personal') {
       const query = new URL(request.url()).searchParams
-      return respond(query.get('subject') === 'Математика' ? personalTopics : [])
+      return respond(query.get('subject') === 'Математика' ? personalTopics : query.get('subject') === 'Лична дисциплина' ? linkedTopics : [])
     }
     if (path === '/api/v1/ai/test-generations' && method === 'POST') {
       const body = request.postDataJSON(); generationRequests.push(body)
@@ -73,6 +81,7 @@ try {
         const name = new URL(request.url()).searchParams.get('name')
         deletedSubjects.push(name)
         subjects = subjects.filter(subject => subject.name !== name)
+        if (name === 'Лична дисциплина') linkedTopics = []
         return route.fulfill({ status: 204, headers })
       }
       const body = request.postDataJSON(); creations.push(body)
@@ -121,27 +130,58 @@ try {
   await subjectSearch.fill('мат')
   await creator.getByRole('option', { name: 'Математика', exact: true }).waitFor()
   await chooseSubject(creator, 'Математика')
+  const sharedSubjectDelete = creator.getByRole('button', { name: 'Общата дисциплина Математика не може да бъде изтрита', exact: true })
+  await sharedSubjectDelete.waitFor()
+  assert.equal(await sharedSubjectDelete.isDisabled(), true)
   await creator.getByLabel('Клас', { exact: true }).selectOption('7')
   const topicField = creator.getByRole('combobox', { name: 'Тема', exact: true })
+  await topicField.fill('Ура')
+  await creator.getByRole('option', { name: 'Уравнения', exact: true }).waitFor()
+  await chooseTopic(creator, 'Уравнения')
+  await creator.getByRole('button', { name: 'Изтрий темата Уравнения', exact: true }).waitFor({ state: 'detached' })
   await topicField.fill('Дро')
   await creator.getByRole('option', { name: 'Дроби', exact: true }).waitFor()
   await chooseTopic(creator, 'Дроби')
-  await creator.getByRole('button', { name: 'Изтрий темата Дроби', exact: true }).click()
+  await topicField.fill('Нова лична тема')
+  await creator.getByRole('button', { name: 'Запази темата лично', exact: true }).click()
+  await page.getByText('Темата е запазена в личния ти списък.').waitFor()
+  assert.deepEqual(createdTopics, [{ subject: 'Математика', level: '7', name: 'Нова лична тема' }])
+  await creator.getByRole('option', { name: 'Нова лична тема', exact: true }).waitFor()
+  assert.ok(personalTopics.includes('Нова лична тема'))
+  const selectedTopicDelete = creator.getByRole('button', { name: 'Изтрий темата Нова лична тема', exact: true }).last()
+  assert.equal(await selectedTopicDelete.isDisabled(), false)
+  await selectedTopicDelete.click()
+  const addedTopicConfirm = page.getByRole('dialog', { name: 'Изтриване на тема', exact: true })
+  await addedTopicConfirm.getByText('Нова лична тема', { exact: false }).waitFor()
+  await addedTopicConfirm.getByRole('button', { name: 'Изтрий', exact: true }).click()
+  await addedTopicConfirm.waitFor({ state: 'detached' })
+  assert.deepEqual(deletedTopics, [{ subject: 'Математика', name: 'Нова лична тема', level: '7' }])
+  await topicField.fill('Дро')
+  await creator.getByRole('option', { name: 'Дроби', exact: true }).waitFor()
+  await chooseTopic(creator, 'Дроби')
+  await creator.getByRole('button', { name: 'Покажи темите', exact: true }).click()
+  await creator.getByRole('listbox', { name: 'Теми по дисциплината', exact: true }).getByRole('button', { name: 'Изтрий темата Дроби', exact: true }).click()
   const topicConfirm = page.getByRole('dialog', { name: 'Изтриване на тема', exact: true })
   await topicConfirm.getByText('за клас 7').waitFor()
   await topicConfirm.getByRole('button', { name: 'Изтрий', exact: true }).click()
   await topicConfirm.waitFor({ state: 'detached' })
-  assert.deepEqual(deletedTopics, [{ subject: 'Математика', name: 'Дроби', level: '7' }])
+  assert.deepEqual(deletedTopics, [
+    { subject: 'Математика', name: 'Нова лична тема', level: '7' },
+    { subject: 'Математика', name: 'Дроби', level: '7' },
+  ])
+  assert.deepEqual(topicQueries.some(query => query.subject === 'Математика' && query.level === '7'), true)
 
-  await subjectSearch.fill('Лична')
+  await subjectSearch.fill('Лична дисциплина')
   await creator.getByRole('option', { name: 'Лична дисциплина', exact: true }).waitFor()
-  await chooseSubject(creator, 'Лична дисциплина')
-  await creator.getByRole('button', { name: 'Изтрий дисциплината Лична дисциплина', exact: true }).click()
+  assert.ok(linkedTopics.includes('Тема към личната дисциплина'))
+  await creator.getByRole('listbox', { name: 'Дисциплини', exact: true })
+    .getByRole('button', { name: 'Изтрий дисциплината Лична дисциплина', exact: true }).click()
   const subjectConfirm = page.getByRole('dialog', { name: 'Изтриване на дисциплина', exact: true })
   await subjectConfirm.getByText('и всички лични теми към нея?').waitFor()
   await subjectConfirm.getByRole('button', { name: 'Изтрий', exact: true }).click()
   await subjectConfirm.waitFor({ state: 'detached' })
   assert.deepEqual(deletedSubjects, ['Лична дисциплина'])
+  assert.deepEqual(linkedTopics, [])
   await chooseSubject(creator, 'Математика')
   await chooseTopic(creator, 'Уравнения')
   await chooseSubject(creator, 'Английски език')

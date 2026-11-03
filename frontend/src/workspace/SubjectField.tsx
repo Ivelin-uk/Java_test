@@ -1,11 +1,11 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, Plus, RefreshCw, X } from 'lucide-react'
+import { ChevronDown, CirclePlus, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { useSubjectCatalog, normalizeSubject, subjectKey, mergeSubjects } from './subjects'
 import type { Subject } from './subjects'
 import { useNotifications } from '../notifications'
 import { SyllabusImportButton } from './SyllabusImport'
-import { DeleteConfirmationButton } from '../components/DeleteConfirmationDialog'
+import { DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
 
 function NewSubjectDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (subject: Subject) => void }) {
   const catalog = useSubjectCatalog()
@@ -50,7 +50,7 @@ function NewSubjectDialog({ onClose, onCreated }: { onClose: () => void; onCreat
 export function NewSubjectButton({ onCreated, disabled = false, compact = false }: { onCreated?: (subject: Subject) => void; disabled?: boolean; compact?: boolean }) {
   const [open, setOpen] = useState(false)
   return <>
-    <button type="button" className={compact ? 'icon-button' : 'command-button'} aria-label="Добави дисциплина" title="Добави дисциплина" disabled={disabled} onClick={() => setOpen(true)}><Plus size={17} aria-hidden="true" />{!compact && 'Добави дисциплина'}</button>
+    <button type="button" className={compact ? 'icon-button' : 'command-button'} aria-label="Добави дисциплина" title="Добави дисциплина" disabled={disabled} onClick={() => setOpen(true)}>{compact ? <CirclePlus size={18} aria-hidden="true" /> : <Plus size={17} aria-hidden="true" />}{!compact && 'Добави дисциплина'}</button>
     {open && <NewSubjectDialog onClose={() => setOpen(false)} onCreated={subject => onCreated?.(subject)} />}
   </>
 }
@@ -67,14 +67,20 @@ export function SubjectField({ value, onChange, disabled = false, autoFocus = fa
   const selected = options.find(subject => subjectKey(subject.name) === subjectKey(value))?.name ?? ''
   const [query, setQuery] = useState(selected)
   const [open, setOpen] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState('')
   useEffect(() => { if (!open) setQuery(selected) }, [selected, open])
   const results = options.filter(subject => subject.name.toLocaleLowerCase('bg-BG').includes(query.trim().toLocaleLowerCase('bg-BG')))
+  const deleteCandidate = (open ? query.trim() : selected)
+    ? options.find(subject => subjectKey(subject.name) === subjectKey(open ? query : selected))
+    : undefined
+  const deletableSubject = deleteCandidate
   function choose(name: string) { onChange(name); setQuery(name); setOpen(false) }
   return <div className="ws-subject-field">
     <label htmlFor={id}>Дисциплина</label>
     <div className="ws-subject-control">
       <div className="ws-subject-picker" onBlur={event => {
-        if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) {
+        const control = event.currentTarget.parentElement
+        if (!(event.relatedTarget instanceof Node) || !control?.contains(event.relatedTarget)) {
           setOpen(false)
           setQuery(selected)
         }
@@ -92,23 +98,26 @@ export function SubjectField({ value, onChange, disabled = false, autoFocus = fa
           <button type="button" className="icon-button" aria-label="Покажи дисциплините" aria-expanded={open} disabled={disabled || catalog.loading} onMouseDown={event => event.preventDefault()} onClick={() => { setOpen(value => !value); setQuery(selected) }}><ChevronDown size={17} aria-hidden="true" /></button>
         </div>
         {open && !disabled && <div className="ws-subject-picker-results" id={`${id}-results`} role="listbox" aria-label="Дисциплини">
-          {results.map(subject => <button type="button" role="option" aria-selected={subjectKey(value) === subjectKey(subject.name)} key={subjectKey(subject.name)} onMouseDown={event => event.preventDefault()} onClick={() => choose(subject.name)}>{subject.name}</button>)}
+          {results.map(subject => <div className="ws-subject-picker-option" role="presentation" key={subjectKey(subject.name)}>
+            <button type="button" role="option" aria-selected={subjectKey(value) === subjectKey(subject.name)} onMouseDown={event => event.preventDefault()} onClick={() => choose(subject.name)}>{subject.name}</button>
+            {!subject.preset && <button type="button" className="icon-button danger" title={`Изтрий дисциплината ${subject.name}`} aria-label={`Изтрий дисциплината ${subject.name}`} disabled={disabled || catalog.loading} onMouseDown={event => event.preventDefault()} onClick={() => setPendingDelete(subject.name)}><Trash2 size={17} aria-hidden="true" /></button>}
+          </div>)}
           {!results.length && <p>Няма намерени дисциплини.</p>}
         </div>}
       </div>
       <NewSubjectButton compact disabled={disabled || catalog.loading} onCreated={subject => choose(subject.name)} />
-      {selected && options.find(subject => subjectKey(subject.name) === subjectKey(selected))?.personal && <DeleteConfirmationButton
-        label={`Изтрий дисциплината ${selected}`}
+      {deletableSubject && <button type="button" className={`icon-button${!deletableSubject.preset ? ' danger' : ''}`} aria-label={!deletableSubject.preset ? `Изтрий дисциплината ${deletableSubject.name}` : `Общата дисциплина ${deletableSubject.name} не може да бъде изтрита`} title={!deletableSubject.preset ? `Изтрий дисциплината ${deletableSubject.name}` : 'Общите дисциплини не могат да бъдат изтрити'} disabled={disabled || catalog.loading || deletableSubject.preset} onClick={() => setPendingDelete(deletableSubject.name)}><Trash2 size={17} aria-hidden="true" /></button>}
+      {pendingDelete && <DeleteConfirmationDialog
         title="Изтриване на дисциплина"
-        description={<>Да изтрия ли дисциплината <strong>{selected}</strong> и всички лични теми към нея?</>}
+        description={<>Да изтрия ли дисциплината <strong>{pendingDelete}</strong> и всички лични теми към нея?</>}
         successMessage="Дисциплината и личните ѝ теми са изтрити."
-        disabled={disabled || catalog.loading}
         onConfirm={async () => {
-          await catalog.deleteSubject(selected)
-          onChange('')
+          await catalog.deleteSubject(pendingDelete)
+          if (subjectKey(value) === subjectKey(pendingDelete)) onChange('')
           setQuery('')
           setOpen(false)
         }}
+        onCancel={() => setPendingDelete('')}
       />}
     </div>
     <SyllabusImportButton disabled={disabled || catalog.loading} onImported={subject => onChange(subject.name)} />

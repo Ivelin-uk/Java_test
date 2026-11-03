@@ -1,11 +1,11 @@
 import { useEffect, useId, useState } from 'react'
-import { ChevronDown, Plus, RefreshCw } from 'lucide-react'
+import { ChevronDown, CirclePlus, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react'
 import { subjectKey, useSubjectCatalog } from './subjects'
 import { useNotifications } from '../notifications'
 import { DeleteConfirmationButton } from '../components/DeleteConfirmationDialog'
 
 export function TopicField({ subject, level, value, onChange, disabled = false, requireSubject = false }: { subject: string; level: string; value: string; onChange: (value: string) => void; disabled?: boolean; requireSubject?: boolean }) {
-  const { loadTopics, loadPersonalTopics, saveTopic, deleteTopic } = useSubjectCatalog()
+  const { loadTopics, loadPersonalTopics, saveTopic, deleteTopic, refreshTopics } = useSubjectCatalog()
   const notify = useNotifications()
   const id = useId()
   const [revision, setRevision] = useState(0)
@@ -26,13 +26,15 @@ export function TopicField({ subject, level, value, onChange, disabled = false, 
   const values = result.key === key ? result.values : []
   const personal = result.key === key ? result.personal : []
   const matches = values.filter(topic => topic.toLocaleLowerCase('bg-BG').includes(value.trim().toLocaleLowerCase('bg-BG')))
+  const selectedPersonalTopic = personal.find(topic => subjectKey(topic) === subjectKey(value))
   async function addTopic() {
     if (saving || !subject.trim() || !value.trim()) return
     setSaving(true)
     setSaveError('')
     try {
       await saveTopic(subject, level, value)
-      setRevision(current => current + 1)
+      refreshTopics()
+      setOpen(true)
       notify('Темата е запазена в личния ти списък.')
     } catch (cause) {
       setSaveError(cause instanceof Error ? cause.message : 'Темата не може да бъде запазена.')
@@ -40,7 +42,6 @@ export function TopicField({ subject, level, value, onChange, disabled = false, 
       setSaving(false)
     }
   }
-  const selectedPersonalTopic = personal.find(topic => subjectKey(topic) === subjectKey(value))
   return <div className="ws-subject-field">
     <label htmlFor={`${id}-input`}>Тема</label>
     <div className="ws-subject-control">
@@ -57,13 +58,32 @@ export function TopicField({ subject, level, value, onChange, disabled = false, 
           }} />
         {subject.trim() && <button type="button" className="icon-button ws-topic-list-button" aria-label="Покажи темите" title="Покажи темите" aria-expanded={open} disabled={disabled || (requireSubject && !subject.trim())} onMouseDown={event => event.preventDefault()} onClick={() => setOpen(value => !value)}><ChevronDown size={17} aria-hidden="true" /></button>}
         {open && !disabled && subject.trim() && <div className="ws-subject-picker-results" id={`${id}-results`} role="listbox" aria-label="Теми по дисциплината">
-          {matches.map(topic => <button type="button" role="option" aria-selected={subjectKey(value) === subjectKey(topic)} key={topic} onMouseDown={event => event.preventDefault()} onClick={() => { onChange(topic); setOpen(false) }}>{topic}</button>)}
+          {matches.map(topic => {
+            const isPersonal = personal.some(name => subjectKey(name) === subjectKey(topic))
+            return <div className="ws-subject-picker-option" role="presentation" key={topic}>
+              <button type="button" role="option" aria-selected={subjectKey(value) === subjectKey(topic)} onMouseDown={event => event.preventDefault()} onClick={() => { onChange(topic); setOpen(false) }}>{topic}</button>
+              {isPersonal && <DeleteConfirmationButton
+                label={`Изтрий темата ${topic}`}
+                icon={Trash2}
+                title="Изтриване на тема"
+                description={<>Да изтрия ли личната тема <strong>{topic}</strong> от дисциплината <strong>{subject}</strong>{level ? <> за клас <strong>{level}</strong></> : ' без зададен клас'}?</>}
+                successMessage="Темата е изтрита от личния ти списък."
+                disabled={disabled}
+                onConfirm={async () => {
+                  await deleteTopic(subject, level, topic)
+                  if (subjectKey(value) === subjectKey(topic)) onChange('')
+                  setRevision(current => current + 1)
+                }}
+              />}
+            </div>
+          })}
           {!matches.length && <p>Няма намерени теми. Можеш да въведеш нова.</p>}
         </div>}
       </div>
-      {subject.trim() && <button type="button" className="icon-button" aria-label="Запази темата лично" title={value.trim() ? 'Запази темата лично' : 'Въведи тема, за да я запазиш лично'} disabled={disabled || saving || !value.trim()} onClick={() => void addTopic()}><Plus size={18} aria-hidden="true" /></button>}
+      {subject.trim() && <button type="button" className="icon-button" aria-label="Запази темата лично" title={value.trim() ? 'Запази темата лично' : 'Въведи тема, за да я запазиш лично'} disabled={disabled || saving || !value.trim()} onClick={() => void addTopic()}>{saving ? <LoaderCircle size={18} className="spin" aria-hidden="true" /> : <CirclePlus size={18} aria-hidden="true" />}</button>}
       {selectedPersonalTopic && <DeleteConfirmationButton
         label={`Изтрий темата ${selectedPersonalTopic}`}
+        icon={Trash2}
         title="Изтриване на тема"
         description={<>Да изтрия ли личната тема <strong>{selectedPersonalTopic}</strong> от дисциплината <strong>{subject}</strong>{level ? <> за клас <strong>{level}</strong></> : ' без зададен клас'}?</>}
         successMessage="Темата е изтрита от личния ти списък."
