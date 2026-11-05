@@ -19,6 +19,7 @@
     "test:group-multiselect": "node e2e/group-multiselect.mjs",
     "test:student-groups": "node e2e/student-groups.mjs",
     "test:library": "node e2e/test-library.mjs",
+    "test:library-filters": "node e2e/library-filters.mjs",
     "test:test-import": "node e2e/test-import.mjs",
     "test:themes": "node e2e/themes.mjs",
     "test:subjects": "node e2e/subjects.mjs",

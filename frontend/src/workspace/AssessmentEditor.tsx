@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { Plus, Save, Trash2, Sparkles, ArrowLeft, X, Check, Pencil, ImagePlus, Copy, Download, Search } from 'lucide-react'
+import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { Plus, Save, Trash2, Sparkles, ArrowLeft, ArrowRight, X, Check, Pencil, ImagePlus, Copy, Download, Search, BookOpen, Hash, Smartphone, FolderOpen } from 'lucide-react'
 import { useAction, useRemote } from './api'
 import type { WorkspaceApi } from './api'
 import type { AiJob, Assessment, Definition, Question, QuestionType } from './types'
@@ -22,6 +22,7 @@ import { TopicField } from './TopicField'
 import { GradeField } from './GradeField'
 import { NewSubjectButton, SubjectCatalogNotice, SubjectField } from './SubjectField'
 import { assessmentLevel, assessmentSubject, gradeLabel, mergeSubjects, subjectKey, useSubjectCatalog } from './subjects'
+import './assessmentLibrary.css'
 
 const QuestionTextEditor = lazy(() => import('../components/QuestionTextEditor').then(module => ({ default: module.QuestionTextEditor })))
 
@@ -29,6 +30,15 @@ const question = (): Question => ({ type: 'SINGLE_CHOICE', text: '', difficulty:
 const duration = (questions: Question[]) => formatDuration(questions.reduce((total, q) => total + q.timeSeconds, 0))
 const blank = (): Definition => ({ title: 'Нов тест', description: '', subject: '', level: '', instructions: '', language: 'bg', gradingScale: 'bulgarian', passThreshold: 50, questions: [question()], additionalInformation: '' })
 const librarySearchText = (value: string) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('bg-BG')
+function assessmentDifficulty(test: Assessment): string {
+  try {
+    const questions = (JSON.parse(test.definition_json) as Definition)?.questions
+    if (!Array.isArray(questions) || !questions.length) return ''
+    const values = new Set(questions.map(q => q?.difficulty))
+    if ([...values].some(value => typeof value !== 'string' || !Object.hasOwn(difficulties, value) || value === 'MIXED')) return ''
+    return values.size > 1 ? 'MIXED' : questions[0].difficulty
+  } catch { return '' }
+}
 
 function escapeHtml(value: string) {
   return value
@@ -147,9 +157,17 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
   const notify = useNotifications()
   const catalog = useSubjectCatalog()
   const list = useRemote<Assessment[]>(api, '/tests', [])
+  const libraryId = useId()
+  const [libraryTab, setLibraryTab] = useState<'library' | 'import'>('library')
   const [libraryQuery, setLibraryQuery] = useState('')
   const [librarySubject, setLibrarySubject] = useState('')
+  const [libraryTopic, setLibraryTopic] = useState('')
+  const [libraryLevel, setLibraryLevel] = useState('')
+  const [libraryQuestionCount, setLibraryQuestionCount] = useState('')
+  const [libraryDifficulty, setLibraryDifficulty] = useState('')
   const librarySearch = librarySearchText(libraryQuery)
+  const topicSearch = librarySearchText(libraryTopic)
+  const libraryEntries = useMemo(() => list.data.map(test => ({ test, subject: assessmentSubject(test), level: assessmentLevel(test).trim(), difficulty: assessmentDifficulty(test) })), [list.data])
   const librarySubjects = mergeSubjects([...catalog.subjects, ...list.data.map(test => ({ name: assessmentSubject(test), preset: false }))])
   const subjectCounts = new Map<string, number>()
   for (const test of list.data) {
@@ -158,8 +176,19 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
   }
   const subjectCount = (name: string) => subjectCounts.get(subjectKey(name)) ?? 0
   const selectedSubject = librarySubjects.find(subject => `subject:${subjectKey(subject.name)}` === librarySubject)?.name ?? ''
-  const visibleTests = list.data.filter(test => (!librarySearch || librarySearchText(test.title).includes(librarySearch) || (test.public_number ?? '').includes(librarySearch))
-    && (!librarySubject || (librarySubject === 'unassigned' ? !assessmentSubject(test) : `subject:${subjectKey(assessmentSubject(test))}` === librarySubject)))
+  const matchesSubject = (subject: string) => !librarySubject || (librarySubject === 'unassigned' ? !subject : `subject:${subjectKey(subject)}` === librarySubject)
+  const matchesLevel = (level: string) => !libraryLevel || (libraryLevel === 'unassigned' ? !level : level === libraryLevel)
+  const libraryTopics = mergeSubjects(libraryEntries.filter(entry => matchesSubject(entry.subject) && matchesLevel(entry.level)).map(({ test }) => ({ name: test.title, preset: false })))
+  const libraryGrades = [...new Set([...Array.from({ length: 12 }, (_, index) => String(index + 1)), ...libraryEntries.map(entry => entry.level).filter(Boolean)])]
+  const hasLibraryFilters = !!(libraryQuery || librarySubject || libraryTopic || libraryLevel || libraryQuestionCount || libraryDifficulty)
+  const visibleTests = libraryEntries.filter(({ test, subject, level, difficulty }) => (!librarySearch || librarySearchText(test.title).includes(librarySearch) || (test.public_number ?? '').includes(librarySearch))
+    && matchesSubject(subject) && matchesLevel(level)
+    && (!topicSearch || librarySearchText(test.title).includes(topicSearch))
+    && (!libraryQuestionCount || Number(libraryQuestionCount) === test.question_count)
+    && (!libraryDifficulty || difficulty === libraryDifficulty)).map(entry => entry.test)
+  function resetLibraryFilters() {
+    setLibraryQuery(''); setLibrarySubject(''); setLibraryTopic(''); setLibraryLevel(''); setLibraryQuestionCount(''); setLibraryDifficulty('')
+  }
   const action = useAction()
   const [importNumber, setImportNumber] = useState('')
   const importing = useRef(false)
@@ -333,9 +362,10 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
         const copy = await api.post<Assessment>('/tests/import', { number })
         await list.reload()
         setImportNumber('')
-        setLibraryQuery('')
-        setLibrarySubject('')
+        resetLibraryFilters()
+        setLibraryTab('library')
         setPreview({ assessment: copy, definition: JSON.parse(copy.definition_json) as Definition })
+        window.requestAnimationFrame(() => document.getElementById(`${libraryId}-library-tab`)?.focus({ preventScroll: true }))
       }, 'Тестът е добавен в твоята библиотека.')
     } finally { importing.current = false }
   }
@@ -359,7 +389,7 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
       await api.post(`/tests/${saved.id}/publish`)
       await list.reload()
       setDraft(null); setCurrent(null); setPreview(null); setShowAi(false); setShowAppendAi(false); setJob(null)
-      setLibraryQuery('')
+      resetLibraryFilters()
       if (librarySubject) setLibrarySubject(subjectKey(draft.subject || '') ? `subject:${subjectKey(draft.subject)}` : 'unassigned')
       void catalog.reload()
       window.scrollTo({ top: 0 })
@@ -385,29 +415,44 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
       </div>
     </form>
   </section>
-  return <section className="ws-section">
+  return <section className={`ws-section${!draft ? ' ws-library' : ''}`}>
     <SectionHead title={draft ? draft.title : 'Библиотека с тестове'} description={draft ? 'Попълни настройките и въпросите, след което натисни „Запази теста“.' : 'Създай тест ръчно или с AI. Тук ще намериш всички свои и добавени от други учители тестове.'}>
-      {draft ? <><button type="button" title="Към библиотеката" className="command-button" disabled={action.busy || generating || pendingImages > 0 || !!replacement} onClick={() => { setDraft(null); setCurrent(null); setJob(null); setShowAi(false); setShowAppendAi(false) }}><ArrowLeft size={18} /> Към библиотеката</button><button type="button" className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази теста</button></> : <div className="ws-actions"><button type="button" className="primary command-button" disabled={!!job && ['queued', 'running'].includes(job.status)} onClick={() => { setCurrent(null); setDefaultDraftDifficulty('MEDIUM'); setDraft({ ...blank(), subject: selectedSubject }); setJob(null); setShowAppendAi(false) }}><Plus size={17} /> Ръчен тест</button><button type="button" className="command-button" disabled={action.busy} onClick={() => { setPreview(null); setAiSettings(previous => ({ ...previous, subject: selectedSubject || previous.subject, topic: selectedSubject && selectedSubject !== previous.subject ? '' : previous.topic })); setShowAi(true) }}><Sparkles size={17} /> С AI</button></div>}
+      {draft ? <><button type="button" title="Към библиотеката" className="command-button" disabled={action.busy || generating || pendingImages > 0 || !!replacement} onClick={() => { setDraft(null); setCurrent(null); setJob(null); setShowAi(false); setShowAppendAi(false) }}><ArrowLeft size={18} /> Към библиотеката</button><button type="button" className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази теста</button></> : <div className="ws-actions"><button type="button" className="primary command-button" disabled={!!job && ['queued', 'running'].includes(job.status)} onClick={() => { setLibraryTab('library'); setCurrent(null); setDefaultDraftDifficulty('MEDIUM'); setDraft({ ...blank(), subject: selectedSubject }); setJob(null); setShowAppendAi(false) }}><Plus size={17} /> Ръчен тест</button><button type="button" className="command-button" disabled={action.busy} onClick={() => { setLibraryTab('library'); setPreview(null); setAiSettings(previous => ({ ...previous, subject: selectedSubject || previous.subject, topic: selectedSubject && selectedSubject !== previous.subject ? '' : previous.topic })); setShowAi(true) }}><Sparkles size={17} /> С AI</button></div>}
     </SectionHead>
     <Feedback error={action.error || list.error || pollError} busy={action.busy || list.loading} />
     {!draft ? <>
-      <Panel title="Добави тест от друг учител" description="Въведи споделения 12-цифрен номер, за да добавиш собствено копие в библиотеката си.">
-      <form className="ws-test-import" aria-label="Добавяне на тест по номер" noValidate onSubmit={event => { event.preventDefault(); void importTest() }}>
-        <label>Номер на тест<input type="text" inputMode="numeric" autoComplete="off" maxLength={32} placeholder="12-цифрен номер" value={importNumber} disabled={action.busy || generating} onChange={event => { setImportNumber(event.target.value); action.clearFeedback() }} /></label>
-        <button type="submit" className="command-button" disabled={action.busy || generating || !importNumber.trim()}><Download size={17} /> Добави по номер</button>
-
-      </form>
-      </Panel>
-      <Panel title="Твоите тестове" description="Отметни „Телефон“, за да разрешиш решаване от телефон за всички съществуващи и бъдещи възлагания на теста. Избери име на тест, за да видиш въпросите.">
+      <div className="ws-library-tabs" role="tablist" aria-label="Раздели на библиотеката" onKeyDown={event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+        const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+        const index = tabs.indexOf(event.target as HTMLButtonElement)
+        if (index < 0) return
+        event.preventDefault()
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length
+        tabs[next]?.focus(); tabs[next]?.click()
+      }}>
+        <button type="button" role="tab" id={`${libraryId}-library-tab`} aria-controls={`${libraryId}-library-panel`} aria-selected={libraryTab === 'library'} tabIndex={libraryTab === 'library' ? 0 : -1} disabled={action.busy || generating} onClick={() => { setLibraryTab('library'); action.clearFeedback() }}><span className="ws-library-tab-icon"><BookOpen size={20} aria-hidden="true" /></span><span className="ws-library-tab-copy"><strong>Моите тестове</strong><small aria-hidden="true">Създавай и управлявай</small></span><span className="ws-library-tab-count" aria-hidden="true">{list.data.length}</span></button>
+        <button type="button" role="tab" id={`${libraryId}-import-tab`} aria-controls={`${libraryId}-import-panel`} aria-selected={libraryTab === 'import'} tabIndex={libraryTab === 'import' ? 0 : -1} disabled={action.busy || generating} onClick={() => { setLibraryTab('import'); action.clearFeedback() }}><span className="ws-library-tab-icon"><Download size={20} aria-hidden="true" /></span><span className="ws-library-tab-copy"><strong>Добави от учител</strong><small aria-hidden="true">Използвай споделен номер</small></span><ArrowRight className="ws-library-tab-arrow" size={18} aria-hidden="true" /></button>
+      </div>
+      <div className="ws-library-view ws-library-collection" role="tabpanel" id={`${libraryId}-library-panel`} aria-labelledby={`${libraryId}-library-tab`} tabIndex={0} hidden={libraryTab !== 'library'}>
+      <Panel title="Моите тестове" description="Всичките ти тестове на едно място. Избери тест, за да прегледаш въпросите.">
       <div className="ws-library-search" role="search" aria-label="Търсене в библиотеката">
+        <div className="ws-library-search-main">
         <label>Търси тест по име или номер<div className="ws-library-search-input"><Search size={18} aria-hidden="true" /><input type="search" placeholder="Име на тест или номер" value={libraryQuery} onChange={event => setLibraryQuery(event.target.value)} /></div></label>
-        <label className="ws-library-subject-filter">Дисциплина<select aria-label="Филтрирай по дисциплина" value={librarySubject} onChange={event => setLibrarySubject(event.target.value)}><option value="">Всички дисциплини ({list.data.length})</option><option value="unassigned">Без дисциплина ({subjectCount('')})</option>{librarySubjects.map(subject => <option key={subjectKey(subject.name)} value={`subject:${subjectKey(subject.name)}`}>{subject.name} ({subjectCount(subject.name)})</option>)}</select></label>
-        <NewSubjectButton disabled={action.busy || catalog.loading} onCreated={subject => { setLibraryQuery(''); setLibrarySubject(`subject:${subjectKey(subject.name)}`) }} />
-        <button type="button" className="command-button" disabled={!libraryQuery} onClick={() => setLibraryQuery('')}><X size={16} aria-hidden="true" />Изчисти търсенето</button>
+        <NewSubjectButton disabled={action.busy || catalog.loading} onCreated={subject => { setLibraryQuery(''); setLibraryTopic(''); setLibrarySubject(`subject:${subjectKey(subject.name)}`) }} />
+        <button type="button" className="command-button" disabled={!hasLibraryFilters} onClick={resetLibraryFilters}><X size={16} aria-hidden="true" />Изчисти търсенето</button>
         <span className="ws-summary" role="status">{visibleTests.length} от {list.data.length} теста</span>
+        </div>
+        <div className="ws-library-filters">
+          <label>Дисциплина<select aria-label="Филтрирай по дисциплина" value={librarySubject} onChange={event => { setLibrarySubject(event.target.value); setLibraryTopic('') }}><option value="">Всички дисциплини ({list.data.length})</option><option value="unassigned">Без дисциплина ({subjectCount('')})</option>{librarySubjects.map(subject => <option key={subjectKey(subject.name)} value={`subject:${subjectKey(subject.name)}`}>{subject.name} ({subjectCount(subject.name)})</option>)}</select></label>
+          <label>Тема<input type="text" aria-label="Филтрирай по тема" autoComplete="off" list={`${libraryId}-topics`} placeholder="Всички теми" value={libraryTopic} onChange={event => setLibraryTopic(event.target.value)} /><datalist id={`${libraryId}-topics`}>{libraryTopics.map(topic => <option key={subjectKey(topic.name)} value={topic.name} />)}</datalist></label>
+          <label>Клас<select aria-label="Филтрирай по клас" value={libraryLevel} onChange={event => setLibraryLevel(event.target.value)}><option value="">Всички класове</option><option value="unassigned">Без зададен клас</option>{libraryGrades.map(level => <option key={level} value={level}>{gradeLabel(level)}</option>)}</select></label>
+          <label>Въпроси<input type="number" aria-label="Филтрирай по брой въпроси" min={1} max={100} step={1} placeholder="Всички" value={libraryQuestionCount} onChange={event => setLibraryQuestionCount(event.target.value)} /></label>
+          <label>Трудност<select aria-label="Филтрирай по трудност" value={libraryDifficulty} onChange={event => setLibraryDifficulty(event.target.value)}><option value="">Всички трудности</option>{Object.entries(difficulties).map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
+        </div>
       </div>
       <SubjectCatalogNotice />
-      <TableContainer label="Тестове — таблица"><table className="ws-table" aria-label="Тестове"><thead><tr><th>Тест</th><th>Дисциплина</th><th>Номер</th><th>Въпроси</th><th>Време</th><th>Телефон</th><th>Променен</th><th>Действия</th></tr></thead><tbody>{visibleTests.map(test => <tr key={test.id} aria-selected={preview?.assessment.id === test.id} className={`ws-selectable-row${preview?.assessment.id === test.id ? ' ws-selected-row' : ''}`} tabIndex={0} aria-disabled={action.busy} onClick={e => { if (!(e.target as HTMLElement).closest('button, a, input, select, textarea')) selectTest(test) }} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectTest(test) } }}><td><button className="ws-text-button" aria-pressed={preview?.assessment.id === test.id} disabled={action.busy} onClick={() => selectTest(test)}>{test.title}</button></td><td>{assessmentSubject(test) || 'Без дисциплина'}{assessmentLevel(test) && <small className="ws-muted">{gradeLabel(assessmentLevel(test))}</small>}</td><td>{test.public_number ? <div className="ws-test-number"><code>{test.public_number}</code><button type="button" className="icon-button" title="Копирай номера на теста" aria-label={`Копирай номера на тест ${test.title}`} disabled={action.busy} onClick={() => void action.run(() => navigator.clipboard.writeText(test.public_number!), 'Номерът е копиран.')}><Copy size={16} /></button></div> : '—'}</td><td>{test.question_count}</td><td>{formatDuration(test.total_time_seconds)}</td><td>{test.owner_id === userId ? <label className="ws-check"><input type="checkbox" checked={test.mobile_allowed === true} aria-label={`Разреши решаване от телефон: ${test.title}`} ref={input => { if (input) input.indeterminate = test.mobile_allowed === null }} disabled={action.busy} onChange={event => { const mobileAllowed = event.target.checked; void action.run(async () => { await api.put(`/tests/${test.id}/mobile-mode`, { mobileAllowed }); list.setData(items => items.map(item => item.id === test.id ? { ...item, mobile_allowed: mobileAllowed } : item)) }, 'Настройката за телефон е приложена към всички възлагания.') }} /></label> : test.mobile_allowed === true ? 'Разрешено' : test.mobile_allowed === null ? 'Смесено' : 'Не е разрешено'}</td><td>{date(test.updated_at)}</td><td><div className="ws-actions">{test.owner_id === userId && <button className="command-button" aria-label="Редактирай теста" title="Редактирай теста" disabled={action.busy || generating} onClick={() => editTest(test)}><Pencil size={17} /> Редактирай</button>}<button className="icon-button danger" title="Изтрий теста" disabled={action.busy} onClick={() => setPendingDelete(test)}><Trash2 size={17} /></button></div></td></tr>)}</tbody></table></TableContainer>{!visibleTests.length && !list.loading && !list.error && <Empty>{librarySubject ? 'Няма тестове за избраната дисциплина и търсене.' : librarySearch ? 'Няма тестове, съвпадащи с търсенето.' : 'Все още няма тестове в библиотеката.'}</Empty>}
+      <TableContainer label="Тестове — таблица"><table className="ws-table ws-library-table" aria-label="Тестове"><thead><tr><th>Тест</th><th>Дисциплина</th><th>Номер</th><th>Въпроси</th><th>Време</th><th>Телефон</th><th>Променен</th><th>Действия</th></tr></thead><tbody>{visibleTests.map(test => <tr key={test.id} aria-selected={preview?.assessment.id === test.id} className={`ws-selectable-row${preview?.assessment.id === test.id ? ' ws-selected-row' : ''}`} tabIndex={0} aria-disabled={action.busy} onClick={e => { if (!(e.target as HTMLElement).closest('button, a, input, select, textarea, label')) selectTest(test) }} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectTest(test) } }}><td><button className="ws-text-button ws-library-title" aria-pressed={preview?.assessment.id === test.id} disabled={action.busy} onClick={() => selectTest(test)}><span className="ws-library-file-icon" aria-hidden="true"><BookOpen size={18} /></span><span>{test.title}</span></button></td><td><span className="ws-library-subject">{assessmentSubject(test) || 'Без дисциплина'}</span>{assessmentLevel(test) && <small className="ws-muted">{gradeLabel(assessmentLevel(test))}</small>}</td><td>{test.public_number ? <div className="ws-test-number"><code>{test.public_number}</code><button type="button" className="icon-button" title="Копирай номера на теста" aria-label={`Копирай номера на тест ${test.title}`} disabled={action.busy} onClick={() => void action.run(() => navigator.clipboard.writeText(test.public_number!), 'Номерът е копиран.')}><Copy size={16} /></button></div> : '—'}</td><td><span className="ws-library-question-count">{test.question_count}</span></td><td>{formatDuration(test.total_time_seconds)}</td><td>{test.owner_id === userId ? <label className="ws-check ws-library-mobile"><input type="checkbox" checked={test.mobile_allowed === true} aria-label={`Разреши решаване от телефон: ${test.title}`} ref={input => { if (input) input.indeterminate = test.mobile_allowed === null }} disabled={action.busy} onChange={event => { const mobileAllowed = event.target.checked; void action.run(async () => { await api.put(`/tests/${test.id}/mobile-mode`, { mobileAllowed }); list.setData(items => items.map(item => item.id === test.id ? { ...item, mobile_allowed: mobileAllowed } : item)) }, 'Настройката за телефон е приложена към всички възлагания.') }} /><span aria-hidden="true" /></label> : test.mobile_allowed === true ? 'Разрешено' : test.mobile_allowed === null ? 'Смесено' : 'Не е разрешено'}</td><td>{date(test.updated_at)}</td><td><div className="ws-actions">{test.owner_id === userId && <button className="command-button" aria-label="Редактирай теста" title="Редактирай теста" disabled={action.busy || generating} onClick={() => editTest(test)}><Pencil size={17} /> Редактирай</button>}<button className="icon-button danger" title="Изтрий теста" disabled={action.busy} onClick={() => setPendingDelete(test)}><Trash2 size={17} /></button></div></td></tr>)}</tbody></table></TableContainer>{!visibleTests.length && !list.loading && !list.error && <div className="ws-library-empty"><FolderOpen size={32} aria-hidden="true" /><Empty>{libraryTopic || libraryLevel || libraryQuestionCount || libraryDifficulty ? 'Няма тестове, съвпадащи с избраните филтри.' : librarySubject ? 'Няма тестове за избраната дисциплина и търсене.' : librarySearch ? 'Няма тестове, съвпадащи с търсенето.' : 'Все още няма тестове в библиотеката.'}</Empty></div>}
+      <p className="ws-library-hint"><Smartphone size={16} aria-hidden="true" /><span>„Телефон“ разрешава мобилно решаване за всички настоящи и бъдещи възлагания на теста.</span></p>
       </Panel>
       {preview && <section ref={previewRef} className="ws-test-preview" aria-label="Избран тест">
         <SectionHead title={preview.assessment.title}>
@@ -422,6 +467,32 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
         <TableContainer label="Въпроси на избрания тест — таблица"><table className="ws-table" aria-label="Въпроси на избрания тест"><thead><tr><th>#</th><th>Въпрос и отговори</th><th>Тип</th><th>Точки</th><th>Време</th></tr></thead><tbody>{preview.definition.questions.map((q, index) => <tr key={index}><td>{index + 1}</td><td className="ws-preview-question"><QuestionText value={q.text} className="ws-preview-prompt" /><WorkspaceImage api={api} id={q.imageId} />{q.options.length > 0 && <ol className="ws-preview-options">{q.options.map((option, i) => <li key={i} className={option.correct ? 'ws-correct-option' : undefined}>{option.correct && <Check size={15} aria-label="Верен отговор" />}{option.text}</li>)}</ol>}{q.acceptedAnswers.length > 0 && <p>Допустими отговори: {q.acceptedAnswers.join(', ')}</p>}{q.criteria && <p>Критерии: {q.criteria}</p>}{q.explanation && <p className="ws-muted">{q.explanation}</p>}</td><td>{types.find(([key]) => key === q.type)?.[1] ?? q.type}</td><td>{q.points}</td><td>{formatDuration(q.timeSeconds)}</td></tr>)}</tbody></table></TableContainer>
         {!preview.definition.questions.length && <Empty>Няма въпроси в този тест.</Empty>}
       </section>}
+      </div>
+      <div className="ws-library-view" role="tabpanel" id={`${libraryId}-import-panel`} aria-labelledby={`${libraryId}-import-tab`} tabIndex={0} hidden={libraryTab !== 'import'}>
+        <div className="ws-library-import-layout">
+          <section className="ws-library-import-card" aria-labelledby={`${libraryId}-import-title`}>
+            <span className="ws-library-import-icon"><Download size={28} aria-hidden="true" /></span>
+            <span className="ws-library-eyebrow">Споделяйте знания</span>
+            <h3 id={`${libraryId}-import-title`}>Добави тест от друг учител</h3>
+            <p>Получи готов тест от колега и го направи свой. Нужен ти е само неговият 12-цифрен номер.</p>
+            <form className="ws-test-import" aria-label="Добавяне на тест по номер" noValidate onSubmit={event => { event.preventDefault(); void importTest() }}>
+              <label htmlFor={`${libraryId}-number`}>Номер на тест</label>
+              <div className="ws-library-number-input"><Hash size={21} aria-hidden="true" /><input id={`${libraryId}-number`} aria-describedby={`${libraryId}-number-help`} type="text" inputMode="numeric" autoComplete="off" maxLength={32} placeholder="123456789012" value={importNumber} disabled={action.busy || generating} onChange={event => { setImportNumber(event.target.value); action.clearFeedback() }} /></div>
+              <small id={`${libraryId}-number-help`}>Поискай номера от учителя, който е създал теста.</small>
+              <button type="submit" className="primary command-button" aria-label="Добави по номер" disabled={action.busy || generating || !importNumber.trim()}><Download size={18} aria-hidden="true" />{action.busy ? 'Добавяне…' : 'Добави по номер'}<ArrowRight size={17} aria-hidden="true" /></button>
+            </form>
+          </section>
+          <aside className="ws-library-import-guide" aria-labelledby={`${libraryId}-guide-title`}>
+            <h3 id={`${libraryId}-guide-title`}>От споделен номер до твой тест</h3>
+            <ol>
+              <li><span aria-hidden="true">1</span><div><strong>Вземи номера</strong><p>Колегата ти го копира от своята библиотека с тестове.</p></div></li>
+              <li><span aria-hidden="true">2</span><div><strong>Добави в библиотеката</strong><p>Получаваш собствено копие с въпросите, отговорите и изображенията.</p></div></li>
+              <li><span aria-hidden="true">3</span><div><strong>Адаптирай за своя клас</strong><p>Редактирай въпросите и възложи теста, когато си готов.</p></div></li>
+            </ol>
+            <div className="ws-library-import-note"><Copy size={19} aria-hidden="true" /><p>Копието е твое. Промените ти не засягат оригиналния тест.</p></div>
+          </aside>
+        </div>
+      </div>
     </> : <fieldset className="ws-editor" disabled={saveDisabled}>
       <div className="ws-test-settings" role="group" aria-labelledby="test-settings-title">
       <div className="ws-section-head"><h3 id="test-settings-title">Настройки на теста</h3><button type="button" className="command-button" disabled={saveDisabled || aiLimit < 1} onClick={openAppendAi}><Sparkles size={17} /> Добави с AI</button></div>
