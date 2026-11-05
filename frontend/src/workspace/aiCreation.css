@@ -1,0 +1,150 @@
+.ws-ai-create-page {
+  --ai-tint: color-mix(in srgb, var(--link) 8%, var(--surface));
+  --ai-line: color-mix(in srgb, var(--link) 30%, var(--border));
+  --ai-soft-border: color-mix(in srgb, var(--border) 72%, transparent);
+  gap: 26px;
+}
+.ws-ai-create-page > .ws-section-head { align-items: center; padding-top: 4px; }
+.ws-ai-create-page > .ws-section-head .ws-heading { max-width: 780px; }
+.ws-ai-create-page > .ws-section-head .ws-heading p { max-width: 70ch; line-height: 1.75; }
+.ws-ai-create-page > .ws-section-head .command-button { min-height: 44px; padding: 10px 16px; border-radius: 10px; }
+.ws-ai-mode-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; min-width: 0; }
+.ws-ai-mode-tabs > button { display: flex; align-items: center; gap: 15px; min-width: 0; padding: 20px; border-radius: 14px; background: var(--surface); text-align: left; transition: background 150ms, border-color 150ms; }
+.ws-ai-mode-tabs > button:hover { border-color: var(--ai-line); background: var(--hover); }
+.ws-ai-mode-tabs > button[aria-selected="true"] { border-color: var(--link); background: var(--ai-tint); box-shadow: inset 0 -3px var(--link); }
+.ws-ai-mode-tabs > button > svg { width: 24px; height: 24px; flex: 0 0 24px; color: var(--link); }
+.ws-ai-mode-tabs > button > div { display: grid; gap: 5px; min-width: 0; }
+.ws-ai-mode-tabs strong { font-size: 16px; font-weight: 750; }
+.ws-ai-mode-tabs small { color: var(--muted); font-size: 13px; line-height: 1.5; font-weight: 450; }
+.ws-ai-mode-tabs > button:focus-visible { outline: 3px solid var(--link); outline-offset: 4px; }
+.ws-ai-create-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: start; gap: 24px; min-width: 0; }
+.ws-ai-create-main, .ws-ai-create-aside { display: grid; gap: 20px; min-width: 0; }
+.ws-ai-create-aside { position: sticky; top: 24px; }
+.ws-ai-create-page .ws-ai-create-form { gap: 20px; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.ws-ai-fields { min-width: 0; }
+.ws-ai-fields-full { --ai-tint: color-mix(in srgb, var(--link) 8%, var(--surface)); --ai-line: color-mix(in srgb, var(--link) 30%, var(--border)); gap: 20px; }
+.ws-ai-fields-full .ws-ai-card { display: grid; gap: 22px; min-width: 0; padding: 24px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: 0 3px 12px #10182803; }
+.ws-ai-card-head { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.ws-ai-card-step { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 34px; border: 1px solid var(--ai-line); border-radius: 10px; color: var(--link); background: var(--ai-tint); font-size: 12px; font-weight: 750; }
+.ws-ai-card-head > div { display: grid; gap: 5px; flex: 1; min-width: 0; }
+.ws-ai-fields-full .ws-ai-card-head h3 { display: block; margin: 0; font-size: 18px; line-height: 1.4; letter-spacing: -.02em; }
+.ws-ai-card-head p { color: var(--muted); font-size: 13px; line-height: 1.65; font-weight: 450; }
+.ws-ai-card-head > svg { flex: 0 0 auto; margin-top: 5px; color: var(--muted); }
+.ws-ai-fields-full .ws-context-fields { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1.55fr) minmax(0, 1fr) minmax(65px, .5fr) minmax(0, .9fr); gap: 14px; align-items: start; }
+.ws-ai-fields-full label, .ws-ai-fields-full .ws-subject-field { min-width: 0; font-size: 13px; gap: 8px; }
+.ws-ai-fields-full input, .ws-ai-fields-full select, .ws-ai-fields-full textarea { min-width: 0; border-radius: 9px; font-size: 14px; }
+.ws-ai-fields-full .ws-context-fields input, .ws-ai-fields-full .ws-context-fields select { min-height: 46px; }
+.ws-ai-fields-full .ws-context-fields > label:nth-child(3) select, .ws-ai-fields-full .ws-context-fields > label:nth-child(4) input, .ws-ai-fields-full .ws-context-fields > label:nth-child(5) select { width: 100%; min-width: 0; }
+.ws-ai-fields-full .ws-subject-control { gap: 6px; }
+.ws-ai-fields-full .ws-subject-control > .icon-button { width: 36px; min-width: 36px; flex-basis: 36px; border-radius: 9px; }
+.ws-ai-fields-full .ws-subject-field .ws-text-button { font-size: 12px; }
+.ws-ai-fields-full .ws-topic-hint { font-size: 11px; line-height: 1.6; }
+.ws-ai-fields-full .ws-ai-types legend { margin-bottom: 12px; font-size: 13px; }
+.ws-ai-fields-full .ws-ai-type-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; align-items: stretch; }
+.ws-ai-fields-full .ws-ai-type-option { position: relative; display: grid; align-content: start; align-items: start; gap: 14px; min-width: 0; padding: 15px 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--page); cursor: pointer; }
+.ws-ai-fields-full .ws-ai-type-option[data-selected="true"] { border-color: var(--link); background: var(--ai-tint); }
+.ws-ai-fields-full .ws-ai-type-option:has(input:focus-visible) { outline: 3px solid var(--link); outline-offset: 3px; }
+.ws-ai-fields-full .ws-ai-type-option > input { position: absolute; top: 15px; right: 12px; width: 16px; height: 16px; margin: 0; }
+.ws-ai-fields-full .ws-ai-type-option > svg { color: var(--muted); }
+.ws-ai-fields-full .ws-ai-type-option[data-selected="true"] > svg { color: var(--link); }
+.ws-ai-fields-full .ws-ai-type-option > span { display: grid; gap: 5px; min-width: 0; }
+.ws-ai-fields-full .ws-ai-type-option strong { font-size: 13px; line-height: 1.5; }
+.ws-ai-fields-full .ws-ai-type-option small { color: var(--muted); font-size: 11px; line-height: 1.5; font-weight: 450; }
+.ws-ai-fields-full .ws-ai-image-settings { gap: 12px 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.ws-ai-fields-full .ws-ai-image-settings > label:not(.ws-check) { display: flex; align-items: center; gap: 10px; width: auto; }
+.ws-ai-fields-full .ws-ai-image-settings > label:not(.ws-check) input { width: 72px; }
+.ws-ai-field-hint { color: var(--muted); font-size: 12px; line-height: 1.65; font-weight: 450; }
+.ws-ai-distribution { display: grid; gap: 14px; padding: 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--page); }
+.ws-ai-distribution > p { color: var(--muted); font-size: 13px; font-weight: 650; }
+.ws-ai-fields-full .ws-ai-distribution .ws-form-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ws-ai-fields-full .ws-ai-source { gap: 14px; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.ws-ai-fields-full .ws-ai-source > legend { margin-bottom: 12px; padding: 0; font-size: 13px; }
+.ws-ai-material-dropzone { display: grid; grid-template-columns: 48px minmax(0, 1fr); align-items: start; gap: 12px 16px; min-width: 0; padding: 20px; border: 1px dashed var(--border); border-radius: 12px; background: var(--page); }
+.ws-ai-material-dragging { border-color: var(--link); background: var(--ai-tint); outline: 2px solid var(--link); outline-offset: 2px; }
+.ws-ai-material-ready { border-style: solid; border-color: var(--ai-line); }
+.ws-ai-material-icon { display: grid; place-items: center; width: 48px; height: 48px; border: 1px solid var(--border); border-radius: 12px; color: var(--link); background: var(--surface); }
+.ws-ai-material-copy { display: grid; gap: 6px; min-width: 0; }
+.ws-ai-material-copy > strong { font-size: 14px; line-height: 1.5; }
+.ws-ai-fields-full .ws-ai-material-copy > p { color: var(--muted); font-size: 12px; line-height: 1.75; font-weight: 450; }
+.ws-ai-material-dropzone > .ws-actions { grid-column: 2; gap: 8px; }
+.ws-ai-material-dropzone .command-button { min-height: 38px; border-radius: 8px; font-size: 12px; }
+.ws-ai-fields-full .ws-ai-source-status { padding: 12px 14px; border: 1px solid var(--ai-line); border-radius: 9px; background: var(--ai-tint); font-size: 12px; line-height: 1.65; }
+.ws-ai-fields-full .ws-ai-source-status > span { overflow-wrap: anywhere; }
+.ws-ai-fields-full .ws-ai-source > .ws-muted { font-size: 12px; }
+.ws-ai-additional { margin-top: 2px; }
+.ws-ai-fields-full .ws-ai-additional textarea { min-height: 110px; padding: 12px 14px; font-size: 14px; line-height: 1.7; }
+.ws-ai-additional > .ws-ai-field-hint { justify-self: end; font-size: 11px; }
+.ws-ai-fields-full .ws-ai-grading-card .ws-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ws-ai-summary-card { display: grid; gap: 20px; min-width: 0; padding: 22px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+.ws-ai-summary-card > header { display: grid; gap: 12px; }
+.ws-ai-summary-card > header > svg { width: 24px; height: 24px; color: var(--link); }
+.ws-ai-create-page .ws-ai-summary-card h3 { display: block; margin: 0; font-size: 17px; line-height: 1.4; letter-spacing: -.015em; }
+.ws-ai-summary-card p { color: var(--muted); font-size: 12px; line-height: 1.75; }
+.ws-ai-summary-list { display: grid; gap: 0; margin: 0; min-width: 0; }
+.ws-ai-summary-list > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; min-width: 0; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.ws-ai-summary-list dt { color: var(--muted); font-size: 12px; }
+.ws-ai-summary-list dd { min-width: 0; max-width: 65%; margin: 0; color: var(--text); font-size: 13px; font-weight: 700; text-align: right; overflow-wrap: anywhere; }
+.ws-ai-summary-note { display: flex; align-items: flex-start; gap: 9px; padding: 14px; border: 1px solid var(--ai-line); border-radius: 10px; background: var(--ai-tint); }
+.ws-ai-summary-note > svg { flex: 0 0 auto; margin-top: 2px; color: var(--link); }
+.ws-ai-summary-note p { font-size: 12px; line-height: 1.7; }
+.ws-ai-guide-steps { display: grid; gap: 20px; list-style: none; padding: 0; margin: 0; }
+.ws-ai-guide-steps li { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.ws-ai-guide-steps li > svg { flex: 0 0 18px; width: 18px; height: 18px; margin-top: 2px; color: var(--link); }
+.ws-ai-guide-steps li > div { display: grid; gap: 5px; min-width: 0; }
+.ws-ai-guide-steps strong { font-size: 13px; }
+.ws-ai-guide-steps p { font-size: 12px; }
+.ws-ai-generate-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 20px 24px; border: 1px solid var(--ai-line); border-radius: 14px; background: var(--surface); }
+.ws-ai-generate-hint { display: flex; align-items: flex-start; gap: 10px; flex: 1 1 240px; min-width: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.ws-ai-generate-hint > svg { flex: 0 0 auto; margin-top: 2px; color: var(--link); }
+.ws-ai-generate-bar > .primary { min-height: 48px; padding: 12px 22px; border-radius: 10px; font-size: 14px; }
+.ws-ai-fields-compact .ws-ai-card { display: grid; gap: 18px; min-width: 0; padding: 0; border: 0; }
+.ws-ai-fields-compact .ws-ai-card-head { display: none; }
+.ws-ai-fields-compact .ws-ai-type-option > svg, .ws-ai-fields-compact .ws-ai-type-option small { display: none; }
+.ws-ai-fields-compact .ws-ai-type-option strong { font-size: inherit; }
+.ws-ai-fields-compact .ws-ai-material-dropzone { padding: 16px; }
+.ws-ai-fields-compact .ws-ai-material-copy > p { font-size: 12px; }
+.ws-ai-fields-compact .ws-ai-image-settings > .ws-ai-field-hint { display: none; }
+
+@media (max-width: 1250px) {
+  .ws-ai-fields-full .ws-context-fields { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .ws-ai-fields-full .ws-context-fields > :nth-child(1), .ws-ai-fields-full .ws-context-fields > :nth-child(2) { grid-column: span 3; }
+  .ws-ai-fields-full .ws-context-fields > :nth-child(n+3) { grid-column: span 2; }
+}
+@media (max-width: 1020px) {
+  .ws-ai-create-layout { grid-template-columns: minmax(0, 1fr); }
+  .ws-ai-create-aside { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .ws-ai-mode-tabs { gap: 10px; }
+  .ws-ai-mode-tabs > button { align-items: flex-start; flex-direction: column; gap: 12px; padding: 16px 14px; border-radius: 12px; }
+  .ws-ai-mode-tabs strong { font-size: 14px; line-height: 1.5; }
+  .ws-ai-mode-tabs small { font-size: 11px; }
+  .ws-ai-create-layout { gap: 20px; }
+  .ws-ai-create-aside { grid-template-columns: minmax(0, 1fr); }
+  .ws-ai-fields-full .ws-ai-card { padding: 20px 16px; gap: 20px; border-radius: 14px; }
+  .ws-ai-card-head { gap: 10px; }
+  .ws-ai-fields-full .ws-ai-card-head h3 { font-size: 16px; }
+  .ws-ai-card-head p { font-size: 12px; }
+  .ws-ai-card-head > svg { display: none; }
+  .ws-ai-fields-full .ws-context-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 12px; }
+  .ws-ai-fields-full .ws-context-fields > :nth-child(1), .ws-ai-fields-full .ws-context-fields > :nth-child(2), .ws-ai-fields-full .ws-context-fields > :nth-child(5) { grid-column: 1 / -1; }
+  .ws-ai-fields-full .ws-context-fields > :nth-child(3), .ws-ai-fields-full .ws-context-fields > :nth-child(4) { grid-column: span 1; }
+  .ws-ai-fields-full .ws-ai-type-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ws-ai-fields-full .ws-ai-type-option { min-height: 132px; padding: 14px 12px; }
+  .ws-ai-fields-full .ws-ai-type-option:last-child { grid-column: 1 / -1; min-height: 105px; }
+  .ws-ai-fields-full .ws-ai-type-option strong { font-size: 12px; }
+  .ws-ai-fields-full .ws-ai-type-option small { font-size: 11px; }
+  .ws-ai-fields-full .ws-ai-image-settings { align-items: flex-start; }
+  .ws-ai-fields-full .ws-ai-image-settings > label:not(.ws-check) { flex-wrap: wrap; }
+  .ws-ai-fields-full .ws-ai-distribution .ws-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ws-ai-material-dropzone { grid-template-columns: minmax(0, 1fr); padding: 18px 14px; }
+  .ws-ai-material-dropzone > .ws-actions { grid-column: 1; }
+  .ws-ai-material-dropzone .command-button { flex: 1 1 100%; }
+  .ws-ai-fields-full .ws-ai-grading-card .ws-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .ws-ai-summary-card { padding: 20px; }
+  .ws-ai-generate-bar { padding: 18px 16px; }
+  .ws-ai-generate-bar > .primary { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-ai-mode-tabs > button { transition: none; }
+}

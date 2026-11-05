@@ -12,8 +12,11 @@ import org.springframework.web.bind.annotation.*;
 @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT)
 @PreAuthorize("isAuthenticated()")
 public class WorkspaceAiController {
-    private final OrgAccess access;private final WorkspaceAiService service;private final SourceMaterialService materials;
-    public WorkspaceAiController(OrgAccess access,WorkspaceAiService service,SourceMaterialService materials) {this.access=access;this.service=service;this.materials=materials;}
+    private final OrgAccess access;private final WorkspaceAiService service;private final SourceMaterialService materials;private final TestDocumentImportService imports;
+    public WorkspaceAiController(OrgAccess access,WorkspaceAiService service,SourceMaterialService materials,TestDocumentImportService imports) {this.access=access;this.service=service;this.materials=materials;this.imports=imports;}
+    @PostMapping("/import") public ResponseEntity<TestDocumentImportService.ImportedDraft> importDocument(@Valid @RequestBody SourceMaterialService.Upload request) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(imports.extract(access.teacher(),request));
+    }
     @PostMapping("/source-material") public ResponseEntity<SourceMaterialService.Material> sourceMaterial(@Valid @RequestBody SourceMaterialService.Upload request) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(materials.extract(access.teacher(),request));
     }

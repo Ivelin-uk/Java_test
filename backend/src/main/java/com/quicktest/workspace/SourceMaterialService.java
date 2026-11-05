@@ -27,6 +27,56 @@ public class SourceMaterialService {
     private static final int MAX_EXPANDED_BYTES = 32 * 1024 * 1024;
     private static final int MAX_XML_BYTES = 4 * 1024 * 1024;
     private static final Set<String> FORMATS = Set.of("pdf", "pptx", "docx", "txt");
+    public static final int MAX_TEST_PDF_PAGES = 50;
+    public static final int MAX_TEST_IMAGE_PIXELS = 24_000_000;
+
+    /** Validates files locally; only PDF pages and canonical raster bytes need vision input. */
+    public TestDocument prepareTestDocument(OrgAccess.Scope scope, Upload request) {
+        DecodedUpload upload = decode(scope, request, Set.of("pdf", "docx", "png", "jpg", "jpeg"));
+        try {
+            if (upload.format().equals("docx")) {
+                if (upload.bytes().length < 4 || upload.bytes()[0] != 'P' || upload.bytes()[1] != 'K'
+                        || upload.bytes()[2] != 3 || upload.bytes()[3] != 4) throw WorkspaceError.validation("Невалиден Word документ.");
+                String text = normalizeText(officeText(upload.bytes(), "docx"));
+                if (text.isBlank()) throw WorkspaceError.validation("Word документът няма четим текст. Запазете го като PDF или качете снимка.");
+                return new TestDocument(upload.fileName(), text, "text/plain", "");
+            }
+            if (upload.format().equals("pdf")) {
+                if (upload.bytes().length < 5 || !new String(upload.bytes(), 0, 5, StandardCharsets.US_ASCII).equals("%PDF-"))
+                    throw WorkspaceError.validation("Невалиден PDF документ.");
+                try (var document = Loader.loadPDF(upload.bytes())) {
+                    if (document.isEncrypted()) throw WorkspaceError.validation("Изберете PDF без защита с парола.");
+                    if (document.getNumberOfPages() < 1 || document.getNumberOfPages() > MAX_TEST_PDF_PAGES)
+                        throw WorkspaceError.validation("Тестът в PDF трябва да е от 1 до 50 страници.");
+                }
+                return new TestDocument(upload.fileName(), normalizeText(pdfText(upload.bytes())), "application/pdf",
+                        Base64.getEncoder().encodeToString(upload.bytes()));
+            }
+            boolean png = upload.format().equals("png");
+            byte[] bytes = upload.bytes();
+            boolean signature = png ? bytes.length >= 8 && Arrays.equals(Arrays.copyOf(bytes, 8),
+                    new byte[]{(byte)137,80,78,71,13,10,26,10}) : bytes.length >= 3 && bytes[0] == (byte)255 && bytes[1] == (byte)216 && bytes[2] == (byte)255;
+            if (!signature) throw WorkspaceError.validation("Форматът на снимката не съответства на PNG/JPEG файла.");
+            try (var input = javax.imageio.ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+                var readers = javax.imageio.ImageIO.getImageReaders(input);
+                if (!readers.hasNext()) throw WorkspaceError.validation("Снимката не може да бъде прочетена.");
+                var imageReader = readers.next();
+                try {
+                    imageReader.setInput(input);
+                    String format = imageReader.getFormatName().toLowerCase(Locale.ROOT);
+                    int width = imageReader.getWidth(0), height = imageReader.getHeight(0);
+                    if (!format.equals(png ? "png" : "jpeg") || width < 1 || height < 1 || width > 8192 || height > 8192
+                            || (long)width * height > MAX_TEST_IMAGE_PIXELS)
+                        throw WorkspaceError.validation("Снимката трябва да е PNG/JPEG до 8192 px и 24 MP.");
+                    var output = new ByteArrayOutputStream();
+                    if (!javax.imageio.ImageIO.write(imageReader.read(0), format, output) || output.size() > MAX_FILE_BYTES)
+                        throw WorkspaceError.validation("Обработената снимка трябва да е до 8 MB. Изберете JPEG или намалете размера.");
+                    return new TestDocument(upload.fileName(), "", "image/" + format, Base64.getEncoder().encodeToString(output.toByteArray()));
+                } finally { imageReader.dispose(); }
+            }
+        } catch (WorkspaceError error) { throw error; }
+        catch (Exception error) { throw WorkspaceError.validation("Файлът не може да бъде прочетен. Проверете формата и премахнете защитата с парола."); }
+    }
 
     public Material extract(OrgAccess.Scope scope, Upload request) {
         DecodedUpload upload = decode(scope, request, FORMATS);
@@ -70,7 +120,8 @@ public class SourceMaterialService {
         }
         String name = request.fileName().strip();
         String format = name.substring(name.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
-        if (!allowedFormats.contains(format)) throw WorkspaceError.validation(allowedFormats.equals(Set.of("pdf", "docx"))
+        if (!allowedFormats.contains(format)) throw WorkspaceError.validation(allowedFormats.contains("png")
+                ? "Изберете Word (DOCX), PDF или PNG/JPEG снимка." : allowedFormats.equals(Set.of("pdf", "docx"))
                 ? "Изберете PDF или DOCX файл." : "Изберете PDF, PPTX, DOCX или TXT файл.");
         if (request.base64() == null || request.base64().isEmpty() || request.base64().length() > MAX_BASE64_LENGTH) {
             throw WorkspaceError.validation("Учебният материал трябва да е до 8 MB.");
@@ -240,5 +291,6 @@ public class SourceMaterialService {
     public record Upload(@NotBlank @Size(max = 255) String fileName, @NotBlank @Size(max = MAX_BASE64_LENGTH) String base64) {}
     public record Material(String fileName, String sourceText, int characterCount) {}
     public record SyllabusMaterial(String fileName, String sourceText, String fileBase64) {}
+    public record TestDocument(String fileName, String sourceText, String mediaType, String fileBase64) {}
     private record DecodedUpload(String fileName, String format, byte[] bytes) {}
 }

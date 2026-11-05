@@ -4,6 +4,10 @@ import com.quicktest.tests.QuizDtos;
 
 public interface AiProvider {
     GeneratedTest generateTest(GenerateTestRequest request);
+    default ImportedTest importTestDocument(ImportTestDocumentRequest request) {
+        throw new com.quicktest.exception.ApiException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                "Избраният AI доставчик не поддържа разпознаване на тестове от файл.");
+    }
     default ExtractedSyllabus extractSyllabus(ExtractSyllabusRequest request) {
         throw new UnsupportedOperationException("Syllabus extraction is not supported by this provider");
     }
@@ -25,6 +29,9 @@ public interface AiProvider {
         public ExtractSyllabusRequest(String text) { this(text, null, null); }
     }
     record ExtractedSyllabus(String subject, java.util.List<String> topics, String model, int inputTokens, int outputTokens) {}
+    record ImportTestDocumentRequest(String text, String fileName, String mediaType, String fileData) {}
+    record ImportedTest(com.quicktest.workspace.AssessmentService.Definition definition, java.util.List<String> warnings,
+                        String model, int inputTokens, int outputTokens) {}
     record GenerateImageRequest(String prompt, String language) {}
     record GeneratedImage(String base64, String model, int inputTokens, int outputTokens) {}
     record GradingQuestion(long id, String type, String question, java.math.BigDecimal maximumPoints,
