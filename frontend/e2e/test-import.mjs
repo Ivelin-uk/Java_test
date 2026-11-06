@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright'
+import { chooseTestCreation } from './helpers/test-creation.mjs'
 
 const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173'
 const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
@@ -168,12 +169,12 @@ try {
   await library.getByRole('button', { name: copy.title, exact: true }).click()
   await preview.getByText(definition.questions[0].text, { exact: true }).waitFor()
   await importTab.click()
-  await page.getByRole('button', { name: 'Ръчен тест', exact: true }).click()
+  await chooseTestCreation(page, 'manual')
   await page.getByLabel('Тема', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Към библиотеката', exact: true }).click()
   await assertSelectedTab('library')
   await importTab.click()
-  await page.getByRole('button', { name: 'С AI', exact: true }).click()
+  await chooseTestCreation(page, 'ai')
   await page.getByRole('heading', { name: 'Създаване на тест с AI', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Към библиотеката', exact: true }).click()
   await assertSelectedTab('library')

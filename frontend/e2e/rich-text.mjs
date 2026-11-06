@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright'
+import { chooseTestCreation } from './helpers/test-creation.mjs'
 
 const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173'
 const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
@@ -75,7 +76,7 @@ try {
   assert.equal(await page.evaluate(() => window.richXss), undefined)
   assert.equal(await preview.locator('.question-text > p').evaluate(element => element.style.cssText), 'text-align: center;')
 
-  await page.getByRole('button', { name: 'Ръчен тест', exact: true }).click()
+  await chooseTestCreation(page, 'manual')
   await page.getByLabel('Тема', { exact: true }).fill('Форматиран тест')
   const prompt = page.getByRole('textbox', { name: 'Текст', exact: true })
   await prompt.fill('x2')

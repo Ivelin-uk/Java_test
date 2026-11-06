@@ -22,9 +22,15 @@ import { TopicField } from './TopicField'
 import { GradeField } from './GradeField'
 import { NewSubjectButton, SubjectCatalogNotice, SubjectField } from './SubjectField'
 import { assessmentLevel, assessmentSubject, gradeLabel, mergeSubjects, subjectKey, useSubjectCatalog } from './subjects'
+import { TestCreationOptions } from './TestCreationOptions'
+import type { TestCreationMode } from './TestCreationOptions'
+import { TestDocumentImport } from './TestDocumentImport'
+import type { ImportedTestDraft } from './TestDocumentImport'
 import './assessmentLibrary.css'
+import './manualCreation.css'
 
 const QuestionTextEditor = lazy(() => import('../components/QuestionTextEditor').then(module => ({ default: module.QuestionTextEditor })))
+export type AssessmentCreationRequest = { id: number; mode: TestCreationMode }
 
 const question = (): Question => ({ type: 'SINGLE_CHOICE', text: '', difficulty: 'MEDIUM', points: 1, timeSeconds: 60, options: [{ text: '', correct: true }, { text: '', correct: false }], acceptedAnswers: [], caseInsensitive: true, collapseWhitespace: true, criteria: '', explanation: '' })
 const duration = (questions: Question[]) => formatDuration(questions.reduce((total, q) => total + q.timeSeconds, 0))
@@ -149,16 +155,21 @@ function QuestionPrompt({ api, question: q, textChanged, imageChanged, uploadCha
   </div>
 }
 
-export function AssessmentEditor({ api, userId }: { api: WorkspaceApi; userId: number }) {
-  return <SubjectCatalogProvider api={api}><AssessmentEditorContent api={api} userId={userId} /></SubjectCatalogProvider>
+export function AssessmentEditor({ api, userId, creationRequest, onCreationRequestHandled }: { api: WorkspaceApi; userId: number; creationRequest?: AssessmentCreationRequest | null; onCreationRequestHandled?: (id: number) => void }) {
+  return <SubjectCatalogProvider api={api}><AssessmentEditorContent api={api} userId={userId} creationRequest={creationRequest} onCreationRequestHandled={onCreationRequestHandled} /></SubjectCatalogProvider>
 }
 
-function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: number }) {
+function AssessmentEditorContent({ api, userId, creationRequest, onCreationRequestHandled }: { api: WorkspaceApi; userId: number; creationRequest?: AssessmentCreationRequest | null; onCreationRequestHandled?: (id: number) => void }) {
   const notify = useNotifications()
   const catalog = useSubjectCatalog()
   const list = useRemote<Assessment[]>(api, '/tests', [])
   const libraryId = useId()
   const [libraryTab, setLibraryTab] = useState<'library' | 'import'>('library')
+  const [showCreationOptions, setShowCreationOptions] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+  const [importMode, setImportMode] = useState<'google-forms' | 'photo'>('google-forms')
+  const [importBusy, setImportBusy] = useState(false)
+  const [importWarnings, setImportWarnings] = useState<string[]>([])
   const [libraryQuery, setLibraryQuery] = useState('')
   const [librarySubject, setLibrarySubject] = useState('')
   const [libraryTopic, setLibraryTopic] = useState('')
@@ -188,6 +199,42 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
     && (!libraryDifficulty || difficulty === libraryDifficulty)).map(entry => entry.test)
   function resetLibraryFilters() {
     setLibraryQuery(''); setLibrarySubject(''); setLibraryTopic(''); setLibraryLevel(''); setLibraryQuestionCount(''); setLibraryDifficulty('')
+  }
+  function startCreation(mode: TestCreationMode) {
+    action.clearFeedback()
+    setShowCreationOptions(false)
+    setLibraryTab('library')
+    setCurrent(null)
+    setPreview(null)
+    setJob(null)
+    setShowAppendAi(false)
+    setImportWarnings([])
+    if (mode === 'manual') {
+      setDefaultDraftDifficulty('MEDIUM')
+      setDraft({ ...blank(), subject: selectedSubject })
+      setShowAi(false)
+      setShowImport(false)
+    } else if (mode === 'ai') {
+      setDraft(null)
+      setShowImport(false)
+      setAiSettings(previous => ({ ...previous, subject: selectedSubject || previous.subject, topic: selectedSubject && selectedSubject !== previous.subject ? '' : previous.topic }))
+      setShowAi(true)
+    } else {
+      setDraft(null)
+      setShowAi(false)
+      setImportMode(mode)
+      setShowImport(true)
+    }
+  }
+  function importedTest(result: ImportedTestDraft) {
+    setCurrent(null)
+    setDefaultDraftDifficulty(result.definition.questions.at(-1)?.difficulty ?? 'MEDIUM')
+    setDraft(result.definition)
+    setImportWarnings(result.warnings)
+    setShowImport(false)
+    setShowAi(false)
+    setJob(null)
+    setLibraryTab('library')
   }
   const action = useAction()
   const [importNumber, setImportNumber] = useState('')
@@ -235,6 +282,32 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
 
   useEffect(() => { setQuestionCountInput(String(draft?.questions.length ?? 0)) }, [draft?.questions.length])
   useEffect(() => { window.scrollTo({ top: 0 }) }, [showAi])
+  useEffect(() => {
+    if (!creationRequest) return
+    setLibraryTab('library')
+    setCurrent(null)
+    setPreview(null)
+    setJob(null)
+    setShowAppendAi(false)
+    if (creationRequest.mode === 'manual') {
+      setDefaultDraftDifficulty('MEDIUM')
+      setDraft({ ...blank(), subject: selectedSubject })
+      setShowAi(false)
+      setShowImport(false)
+    } else if (creationRequest.mode === 'ai') {
+      setDraft(null)
+      setShowImport(false)
+      setAiSettings(previous => ({ ...previous, subject: selectedSubject || previous.subject, topic: selectedSubject && selectedSubject !== previous.subject ? '' : previous.topic }))
+      setShowAi(true)
+    } else {
+      setDraft(null)
+      setShowAi(false)
+      setImportMode(creationRequest.mode)
+      setImportWarnings([])
+      setShowImport(true)
+    }
+    onCreationRequestHandled?.(creationRequest.id)
+  }, [creationRequest, onCreationRequestHandled, selectedSubject])
 
   useEffect(() => {
     if (!preview) return
@@ -389,16 +462,22 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
       await api.post(`/tests/${saved.id}/publish`)
       await list.reload()
       setDraft(null); setCurrent(null); setPreview(null); setShowAi(false); setShowAppendAi(false); setJob(null)
+      setImportWarnings([])
       resetLibraryFilters()
       if (librarySubject) setLibrarySubject(subjectKey(draft.subject || '') ? `subject:${subjectKey(draft.subject)}` : 'unassigned')
       void catalog.reload()
       window.scrollTo({ top: 0 })
     }, 'Тестът е запазен.')
   }
-  if (showAi && !draft) return <section className="ws-section" aria-label="Създаване на тест с AI">
+  if (showAi && !draft) return <section className="ws-section ws-ai-create-page" aria-label="Създаване на тест с AI">
     <SectionHead title="Създаване на тест с AI" description="Опиши темата и избери настройките. Ще можеш да прегледаш и редактираш въпросите, преди да запазиш теста."><button type="button" title="Към библиотеката" className="command-button" disabled={action.busy || generating} onClick={() => setShowAi(false)}><ArrowLeft size={18} /> Към библиотеката</button></SectionHead>
+    <div className="ws-ai-create-intro">
+      <span className="ws-ai-create-intro-icon"><Sparkles size={21} aria-hidden="true" /></span>
+      <div><strong>Чернова, съобразена с твоя урок</strong><p>Задай контекст и формат — AI ще подготви въпросите, а ти ще решиш какво да запазиш.</p></div>
+      <span className="ws-ai-create-intro-note"><Check size={16} aria-hidden="true" /> Всеки въпрос е за преглед</span>
+    </div>
     <Feedback error={action.error || pollError || (job?.status === 'failed' ? job.error_message ?? 'AI заявката не успя.' : '')} busy={action.busy || generating} />
-    <form className="ws-ai-form" onSubmit={e => {
+    <form className="ws-ai-form ws-ai-create-form" onSubmit={e => {
       e.preventDefault()
       if (!validGeneration || action.busy || generating) return
       void action.run(async () => {
@@ -406,20 +485,57 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
         setJob(await api.post<AiJob>('/ai/test-generations', { ...generationPayload(aiSettings), language: 'bg' }))
       })
     }}>
-      <AiTestFields api={api} value={aiSettings} onChange={setAiSettings} disabled={action.busy || generating} showGradingSettings />
-      <div className="ws-actions">
-        <button type="submit" className="primary command-button" disabled={action.busy || generating || !validGeneration}><Sparkles size={17} />{generating ? 'Генериране...' : 'Генерирай'}</button>
-        {job && <span role="status">{label(job.status)}</span>}
-        {job?.status === 'completed' && <button type="button" className="command-button" onClick={reviewJob}><Check size={17} /> Прегледай черновата</button>}
-        {job?.status === 'failed' && <button type="button" className="command-button" disabled={action.busy} onClick={() => void action.run(async () => { setPollError(''); setJob(await api.post<AiJob>(`/ai/test-generations/${job.id}/retry`)) })}><Sparkles size={17} /> Повтори</button>}
+      <div className="ws-ai-create-layout">
+        <div className="ws-ai-create-main">
+          <AiTestFields api={api} value={aiSettings} onChange={setAiSettings} disabled={action.busy || generating} showGradingSettings />
+          <div className="ws-ai-generate-bar">
+            <p className="ws-ai-generate-hint"><Check size={17} aria-hidden="true" /> Въпросите ще се появят като чернова. Прегледай отговорите и редактирай съдържанието преди да запазиш теста.</p>
+            <div className="ws-actions">
+              <button type="submit" className="primary command-button" disabled={action.busy || generating || !validGeneration}><Sparkles size={17} />{generating ? 'Генериране...' : 'Генерирай'}</button>
+              {job && <span className="ws-ai-create-status" role="status">{label(job.status)}</span>}
+              {job?.status === 'completed' && <button type="button" className="command-button" onClick={reviewJob}><Check size={17} /> Прегледай черновата</button>}
+              {job?.status === 'failed' && <button type="button" className="command-button" disabled={action.busy} onClick={() => void action.run(async () => { setPollError(''); setJob(await api.post<AiJob>(`/ai/test-generations/${job.id}/retry`)) })}><Sparkles size={17} /> Повтори</button>}
+            </div>
+          </div>
+        </div>
+        <aside className="ws-ai-create-aside" aria-label="Преглед на настройките и следващи стъпки">
+          <section className="ws-ai-summary-card" aria-labelledby="ai-settings-summary-title">
+            <header><Sparkles aria-hidden="true" /><div><h3 id="ai-settings-summary-title">Твоят тест накратко</h3><p>Променя се веднага с настройките.</p></div></header>
+            <dl className="ws-ai-summary-list">
+              <div><dt>Тема</dt><dd>{aiSettings.topic.trim() || 'Не е зададена'}</dd></div>
+              <div><dt>Дисциплина</dt><dd>{aiSettings.subject || 'Не е избрана'}</dd></div>
+              <div><dt>Брой въпроси</dt><dd>{aiSettings.questionCount}</dd></div>
+              <div><dt>Трудност</dt><dd>{difficulties[aiSettings.difficulty] ?? 'Не е избрана'}</dd></div>
+              <div><dt>Типове</dt><dd>{types.filter(([key]) => aiSettings.questionTypes.includes(key)).map(([, title]) => title).join(', ') || 'Не са избрани'}</dd></div>
+              <div><dt>Източник</dt><dd>{aiSettings.sourceMaterialLoading ? 'Обработва се' : aiSettings.useSourceMaterial && aiSettings.sourceMaterial ? aiSettings.sourceMaterial.fileName : 'Твоите насоки'}</dd></div>
+            </dl>
+            <div className="ws-ai-summary-note"><Check size={17} aria-hidden="true" /><p>Запазваш пълен контрол — прегледай и редактирай черновата преди да продължиш.</p></div>
+          </section>
+          <section className="ws-ai-summary-card" aria-labelledby="ai-next-steps-title">
+            <header><BookOpen aria-hidden="true" /><div><h3 id="ai-next-steps-title">Какво следва?</h3><p>Три кратки стъпки до готов тест.</p></div></header>
+            <ol className="ws-ai-guide-steps">
+              <li><span className="ws-ai-card-step" aria-hidden="true">1</span><div><strong>Настрой параметрите</strong><p>Избери тема, типове и трудност.</p></div></li>
+              <li><span className="ws-ai-card-step" aria-hidden="true">2</span><div><strong>Генерирай чернова</strong><p>AI подготвя въпросите по твоите насоки.</p></div></li>
+              <li><span className="ws-ai-card-step" aria-hidden="true">3</span><div><strong>Прегледай и запази</strong><p>Редактирай съдържанието преди публикуване.</p></div></li>
+            </ol>
+          </section>
+        </aside>
       </div>
     </form>
   </section>
-  return <section className={`ws-section${!draft ? ' ws-library' : ''}`}>
+  if (showImport && !draft) return <section className="ws-section ws-manual-create-page" aria-label={importMode === 'photo' ? 'Импортиране на тест от снимка' : 'Импортиране на тест от Google Forms'}>
+    <SectionHead title={importMode === 'photo' ? 'Създаване на тест от снимка' : 'Добавяне на тест от Google Forms'} description="AI ще подготви чернова, която можеш да редактираш преди да запазиш.">
+      <button type="button" className="command-button" disabled={importBusy} onClick={() => setShowImport(false)}><ArrowLeft size={18} /> Към тестовете</button>
+    </SectionHead>
+    <Feedback error={action.error} busy={action.busy} />
+    <TestDocumentImport api={api} sourceMode={importMode} onBusyChange={setImportBusy} onImported={importedTest} />
+  </section>
+  return <section className={`ws-section${!draft ? ' ws-library' : ' ws-manual-create-page'}`}>
     <SectionHead title={draft ? draft.title : 'Библиотека с тестове'} description={draft ? 'Попълни настройките и въпросите, след което натисни „Запази теста“.' : 'Създай тест ръчно или с AI. Тук ще намериш всички свои и добавени от други учители тестове.'}>
-      {draft ? <><button type="button" title="Към библиотеката" className="command-button" disabled={action.busy || generating || pendingImages > 0 || !!replacement} onClick={() => { setDraft(null); setCurrent(null); setJob(null); setShowAi(false); setShowAppendAi(false) }}><ArrowLeft size={18} /> Към библиотеката</button><button type="button" className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази теста</button></> : <div className="ws-actions"><button type="button" className="primary command-button" disabled={!!job && ['queued', 'running'].includes(job.status)} onClick={() => { setLibraryTab('library'); setCurrent(null); setDefaultDraftDifficulty('MEDIUM'); setDraft({ ...blank(), subject: selectedSubject }); setJob(null); setShowAppendAi(false) }}><Plus size={17} /> Ръчен тест</button><button type="button" className="command-button" disabled={action.busy} onClick={() => { setLibraryTab('library'); setPreview(null); setAiSettings(previous => ({ ...previous, subject: selectedSubject || previous.subject, topic: selectedSubject && selectedSubject !== previous.subject ? '' : previous.topic })); setShowAi(true) }}><Sparkles size={17} /> С AI</button></div>}
+      {draft ? <><button type="button" title="Към библиотеката" className="command-button" disabled={action.busy || generating || pendingImages > 0 || !!replacement} onClick={() => { setDraft(null); setCurrent(null); setJob(null); setShowAi(false); setShowAppendAi(false); setImportWarnings([]) }}><ArrowLeft size={18} /> Към библиотеката</button><button type="button" className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази теста</button></> : <button type="button" className="primary command-button" disabled={action.busy || !!job && ['queued', 'running'].includes(job.status)} onClick={() => setShowCreationOptions(true)}><Plus size={17} /> Създай тест</button>}
     </SectionHead>
     <Feedback error={action.error || list.error || pollError} busy={action.busy || list.loading} />
+    {!draft && showCreationOptions && <TestCreationOptions onClose={() => setShowCreationOptions(false)} onChoose={startCreation} />}
     {!draft ? <>
       <div className="ws-library-tabs" role="tablist" aria-label="Раздели на библиотеката" onKeyDown={event => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
@@ -493,19 +609,24 @@ function AssessmentEditorContent({ api, userId }: { api: WorkspaceApi; userId: n
           </aside>
         </div>
       </div>
-    </> : <fieldset className="ws-editor" disabled={saveDisabled}>
+    </> : <fieldset className="ws-editor ws-manual-editor" disabled={saveDisabled}>
+      {importWarnings.length > 0 && <div className="ws-import-warnings" role="status"><strong>Провери разчетения тест</strong><ul>{importWarnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}</ul></div>}
       <div className="ws-test-settings" role="group" aria-labelledby="test-settings-title">
-      <div className="ws-section-head"><h3 id="test-settings-title">Настройки на теста</h3><button type="button" className="command-button" disabled={saveDisabled || aiLimit < 1} onClick={openAppendAi}><Sparkles size={17} /> Добави с AI</button></div>
+      <div className="ws-manual-step-head"><span className="ws-ai-card-step" aria-hidden="true">01</span><div><h3 id="test-settings-title">Настройки на теста</h3><p>Определи предмета, класа и начина на оценяване.</p></div><button type="button" className="command-button" disabled={saveDisabled || aiLimit < 1} onClick={openAppendAi}><Sparkles size={17} /> Добави с AI</button></div>
       <div className="ws-form-grid ws-context-fields"><SubjectField value={draft.subject ?? ''} disabled={saveDisabled} onChange={subject => setDraft({ ...draft, subject })} /><TopicField subject={draft.subject ?? ''} level={draft.level ?? ''} value={draft.title} disabled={saveDisabled} onChange={title => setDraft({ ...draft, title })} /><GradeField value={draft.level ?? ''} disabled={saveDisabled || !draft.subject} onChange={level => setDraft({ ...draft, level })} /><label>Въпроси<input aria-label="Брой въпроси" type="number" min={1} max={100} step={1} value={questionCountInput} disabled={saveDisabled} onChange={event => setQuestionCountInput(event.target.value)} onBlur={commitQuestionCount} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur() }} /></label><label>Трудност<select aria-label="Трудност" value={draftDifficulties.length > 1 ? '' : draftDifficulties[0] ?? defaultDraftDifficulty} disabled={saveDisabled} onChange={event => setDraftDifficulty(event.target.value as Question['difficulty'])}>{draftDifficulties.length > 1 && <option value="" disabled>Различна</option>}{Object.entries(difficulties).filter(([key]) => key !== 'MIXED').map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label></div>
-      <TestGradingFields value={draft} onChange={value => setDraft({ ...draft, ...value })} />
-      <fieldset className="ws-ai-types" disabled><legend>Типове въпроси</legend><div className="ws-actions">{types.map(([key, text]) => <label className="ws-check" key={key}><input type="checkbox" readOnly checked={draft.questions.some(q => q.type === key)} />{text}</label>)}</div></fieldset>
-      <div className="ws-ai-image-settings"><label className="ws-check"><input type="checkbox" disabled readOnly checked={draftImageCount > 0} />С изображения</label>{draftImageCount > 0 && <label>Въпроси с изображение<input type="number" readOnly value={draftImageCount} /></label>}</div>
-      {draftDifficulties.length > 1 && <div className="ws-form-grid">{Object.entries(difficulties).filter(([key]) => key !== 'MIXED').map(([key, text]) => <label key={key}>{text}<input type="number" readOnly value={draft.questions.filter(q => q.difficulty === key).length} /></label>)}</div>}
-      <label>Допълнителна информация за теста<textarea aria-label="Допълнителна информация за теста" rows={5} maxLength={20000} value={draft.additionalInformation ?? ''} onChange={e => setDraft({ ...draft, additionalInformation: e.target.value })} /></label>
-      <label>Инструкции за изпита<textarea aria-label="Инструкции за изпита" value={draft.instructions ?? ''} onChange={e => setDraft({ ...draft, instructions: e.target.value })} /></label>
-      <p className="ws-summary">{draft.questions.length} въпроса · {draft.questions.reduce((sum, q) => sum + q.points, 0)} точки · {duration(draft.questions)}</p>
+      <div className="ws-manual-grading"><div className="ws-manual-subhead"><h4>Оценяване</h4><p>Настрой скалата и минималния резултат за успех.</p></div><TestGradingFields value={draft} onChange={value => setDraft({ ...draft, ...value })} /></div>
+      <div className="ws-manual-meta">
+        <fieldset className="ws-ai-types" disabled><legend>Типове въпроси</legend><div className="ws-actions">{types.map(([key, text]) => <label className="ws-check" key={key}><input type="checkbox" readOnly checked={draft.questions.some(q => q.type === key)} />{text}</label>)}</div></fieldset>
+        <div className="ws-ai-image-settings"><label className="ws-check"><input type="checkbox" disabled readOnly checked={draftImageCount > 0} />С изображения</label>{draftImageCount > 0 && <label>Въпроси с изображение<input type="number" readOnly value={draftImageCount} /></label>}</div>
+        {draftDifficulties.length > 1 && <div className="ws-form-grid">{Object.entries(difficulties).filter(([key]) => key !== 'MIXED').map(([key, text]) => <label key={key}>{text}<input type="number" readOnly value={draft.questions.filter(q => q.difficulty === key).length} /></label>)}</div>}
       </div>
-      {draft.questions.map((q, index) => <article className="ws-question" key={index}><div className="ws-question-head"><strong>Въпрос {index + 1}</strong><select aria-label={`Тип на въпрос ${index + 1}`} value={q.type} onChange={e => typeChange(index, e.target.value as QuestionType)}>{types.map(([type, text]) => <option key={type} value={type}>{text}</option>)}</select><button type="button" className="command-button" aria-label={`Подмени въпрос ${index + 1} с AI`} disabled={saveDisabled} onClick={() => openReplacement(index)}><Sparkles size={17} /> Подмени с AI</button><button className="icon-button danger" title="Изтрий въпрос" onClick={() => setPendingRemoval({ questionIndex: index })}><Trash2 size={17} /></button></div><QuestionPrompt disabled={saveDisabled} api={api} question={q} textChanged={text => patchQuestion(index, { text })} imageChanged={imageId => patchQuestion(index, { imageId })} uploadChanged={busy => setPendingImages(previous => previous + (busy ? 1 : -1))} /><div className="ws-form-grid"><label>Трудност<select value={q.difficulty} onChange={e => patchQuestion(index, { difficulty: e.target.value, timeSeconds: ({ EASY: 30, MEDIUM: 60, HARD: 120, VERY_HARD: 180 })[e.target.value as 'EASY'] })}><option value="EASY">Лесен</option><option value="MEDIUM">Среден</option><option value="HARD">Труден</option><option value="VERY_HARD">Много труден</option></select></label><label>Точки<input type="number" min={0.0001} step="0.1" value={q.points} onChange={e => patchQuestion(index, { points: Number(e.target.value) })} /></label><DurationInput seconds={q.timeSeconds} question={index + 1} onChange={timeSeconds => patchQuestion(index, { timeSeconds })} /></div>
+      <div className="ws-manual-extra-fields">
+        <label>Допълнителна информация за теста<textarea aria-label="Допълнителна информация за теста" rows={5} maxLength={20000} value={draft.additionalInformation ?? ''} onChange={e => setDraft({ ...draft, additionalInformation: e.target.value })} /></label>
+        <label>Инструкции за изпита<textarea aria-label="Инструкции за изпита" value={draft.instructions ?? ''} onChange={e => setDraft({ ...draft, instructions: e.target.value })} /></label>
+      </div>
+      </div>
+      <div className="ws-manual-questions-heading"><div className="ws-manual-step-head"><span className="ws-ai-card-step" aria-hidden="true">02</span><div><h3>Въпроси и отговори</h3><p>Добави условие, избери формат и отбележи верните отговори.</p></div></div><div className="ws-manual-question-count"><strong>{draft.questions.length}</strong><span>от 100 въпроса</span></div></div>
+      {draft.questions.map((q, index) => <article className="ws-question ws-manual-question" key={index}><div className="ws-question-head"><div className="ws-manual-question-title"><span>{String(index + 1).padStart(2, '0')}</span><div><h4>Въпрос {index + 1}</h4><p>{types.find(([type]) => type === q.type)?.[1] ?? 'Добави условие и отговори'}</p></div></div><select aria-label={`Тип на въпрос ${index + 1}`} value={q.type} onChange={e => typeChange(index, e.target.value as QuestionType)}>{types.map(([type, text]) => <option key={type} value={type}>{text}</option>)}</select><button type="button" className="command-button" aria-label={`Подмени въпрос ${index + 1} с AI`} disabled={saveDisabled} onClick={() => openReplacement(index)}><Sparkles size={17} /> Подмени с AI</button><button className="icon-button danger" title="Изтрий въпрос" onClick={() => setPendingRemoval({ questionIndex: index })}><Trash2 size={17} /></button></div><QuestionPrompt disabled={saveDisabled} api={api} question={q} textChanged={text => patchQuestion(index, { text })} imageChanged={imageId => patchQuestion(index, { imageId })} uploadChanged={busy => setPendingImages(previous => previous + (busy ? 1 : -1))} /><div className="ws-form-grid"><label>Трудност<select value={q.difficulty} onChange={e => patchQuestion(index, { difficulty: e.target.value, timeSeconds: ({ EASY: 30, MEDIUM: 60, HARD: 120, VERY_HARD: 180 })[e.target.value as 'EASY'] })}><option value="EASY">Лесен</option><option value="MEDIUM">Среден</option><option value="HARD">Труден</option><option value="VERY_HARD">Много труден</option></select></label><label>Точки<input type="number" min={0.0001} step="0.1" value={q.points} onChange={e => patchQuestion(index, { points: Number(e.target.value) })} /></label><DurationInput seconds={q.timeSeconds} question={index + 1} onChange={timeSeconds => patchQuestion(index, { timeSeconds })} /></div>
         {q.options.map((option, i) => <div className="ws-option-editor" key={i}><input aria-label={`Верен отговор ${i + 1}`} type={q.type === 'MULTIPLE_CHOICE' ? 'checkbox' : 'radio'} name={`correct-${index}`} checked={option.correct} onChange={e => patchQuestion(index, { options: q.options.map((o, j) => j === i ? { ...o, correct: e.target.checked } : q.type === 'MULTIPLE_CHOICE' ? o : { ...o, correct: false }) })} /><input aria-label={`Опция ${i + 1}`} value={option.text} onChange={e => patchQuestion(index, { options: q.options.map((o, j) => j === i ? { ...o, text: e.target.value } : o) })} /><button className="icon-button danger" title="Премахни опция" onClick={() => setPendingRemoval({ questionIndex: index, optionIndex: i })}><X size={16} /></button></div>)}
         {['SINGLE_CHOICE', 'MULTIPLE_CHOICE'].includes(q.type) && <button className="command-button" onClick={() => patchQuestion(index, { options: [...q.options, { text: '', correct: false }] })}><Plus size={16} /> Опция</button>}
         {q.type === 'SHORT_ANSWER' && <><label>Допустими отговори (по един на ред)<textarea value={q.acceptedAnswers.join('\n')} onChange={e => patchQuestion(index, { acceptedAnswers: e.target.value ? e.target.value.split('\n') : [] })} /></label><div className="ws-actions"><label className="ws-check"><input type="checkbox" checked={q.caseInsensitive} onChange={e => patchQuestion(index, { caseInsensitive: e.target.checked })} /> Без разлика малки / главни</label><label className="ws-check"><input type="checkbox" checked={q.collapseWhitespace} onChange={e => patchQuestion(index, { collapseWhitespace: e.target.checked })} /> Нормализирай интервали</label></div></>}

@@ -1,0 +1,172 @@
+/* Feature surfaces share the application palette; meaningful states also retain their labels and icons. */
+.ws-shell .ws-table .ws-attempt-pending:hover td, .ws-shell .ws-table .ws-assignment-upcoming:hover td { background: var(--warning-bg); }
+.ws-shell .ws-table .ws-attempt-finalized:hover td, .ws-shell .ws-table .ws-assignment-active:hover td, .ws-shell .ws-table .ws-selected-row:hover td, .ws-shell .admin-catalog-table tr[aria-selected="true"]:hover td { background: var(--success-bg); }
+.ws-shell .ws-table .ws-attempt-failed:hover td, .ws-shell .ws-table .ws-assignment-expired:hover td { background: var(--danger-bg); }
+.ws-shell .ws-table .ws-assignment-canceled:hover td { background: var(--subtle); }
+.ws-group-settings, .ws-group-members, .ws-group-access, .ws-group-join, .ws-assignment-context, .ws-profile-form, .ws-best-results, .ws-billing-current, .ws-billing-plan, .result-review-summary, .result-review-question { border-radius: 18px; box-shadow: var(--shadow-sm, 0 3px 14px #0c1a3008); }
+.ws-group-settings > .ws-editor, .ws-profile-form > .ws-editor { gap: 20px; }
+.ws-group-members > h3, .ws-group-access > h3, .ws-profile-form > h3 { padding-bottom: 16px; border-bottom: 1px solid var(--border); line-height: 1.5; }
+.ws-profile-form > h3 > svg, .ws-group-access > h3 > svg { flex: 0 0 auto; color: var(--link); }
+.ws-group-code output, .ws-assignment-access-panel > output { padding: 10px 14px; border: 1px solid var(--control-border); border-radius: 11px; background: var(--page); color: var(--text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.ws-group-code { flex-wrap: wrap; gap: 10px; }
+.ws-group-access > .ws-muted { max-width: 85ch; line-height: 1.8; }
+.ws-group-join > .ws-inline-form { gap: 16px; }
+.ws-group-search, .ws-assignment-filters, .ws-grading-filters { gap: 16px; padding: 20px; border-radius: 13px; }
+.ws-group-search label, .ws-assignment-filters label, .ws-grading-filters label { gap: 8px; font-size: 13px; }
+.ws-group-search > .ws-muted, .ws-assignment-filters > .ws-summary, .ws-grading-filters > .ws-summary { font-size: 13px; line-height: 1.6; }
+.ws-user-options, .ws-subject-picker-results { border-color: var(--control-border); border-radius: 12px; box-shadow: var(--shadow-md, 0 12px 32px #0c1a301f); }
+.ws-user-options button, .ws-subject-picker-option > button { line-height: 1.6; }
+.ws-user-options button[aria-selected="true"], .ws-recipient-options button[data-active="true"] { box-shadow: inset 3px 0 var(--link); }
+.ws-recipient-picker legend { margin-bottom: 10px; font-size: 14px; }
+.ws-recipient-summary { padding: 4px 0; font-size: 13px; }
+.ws-recipient-selected { gap: 8px; }
+.ws-recipient-selected li { gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--page); }
+.ws-recipient-selected .icon-button { width: 36px; height: 36px; min-height: 36px; flex-basis: 36px; }
+.ws-assignment-form { gap: 22px; }
+.ws-assignment-form > .ws-editor { gap: 22px; }
+.ws-assignment-settings { gap: 18px 24px; padding: 20px; border-radius: 12px; }
+.ws-assignment-settings .ws-check { min-height: 30px; line-height: 1.65; font-size: 14px; }
+.ws-assignment-form-actions { width: 100%; padding-top: 18px; border-top: 1px solid var(--border); }
+.ws-assignments-table .ws-assignment-title { font-size: 15px; line-height: 1.65; font-weight: 750; }
+.ws-assignment-date { gap: 5px; }
+.ws-assignment-date > span { font-size: 12px; font-weight: 600; }
+.ws-assignment-date time { font-size: 14px; line-height: 1.7; }
+.ws-assignment-code output { color: var(--text); padding: 6px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--page); font-size: 15px; letter-spacing: .09em; width: auto; flex-basis: auto; }
+.ws-assignment-code-actions .icon-button { border-color: var(--control-border); border-radius: 8px; }
+.ws-assignment-recipient-count { border-color: var(--control-border); color: var(--link); font-weight: 750; border-radius: 9px; }
+.ws-assignment-context-date, .ws-assignment-access-panel, .ws-best-result { border-radius: 13px; }
+.ws-learner-tabs { max-width: 560px; }
+.ws-learner-tabs > button { flex: 1; }
+.ws-assignment-availability, .ws-attempt-status { align-items: flex-start; line-height: 1.6; }
+.ws-assignment-availability > svg, .ws-attempt-status > svg { margin-top: 3px; }
+.ws-best-result strong, .ws-best-result span { line-height: 1.6; }
+.ws-review-question { display: grid; gap: 20px; border-radius: 16px; }
+.ws-review-head { gap: 12px 18px; padding-bottom: 18px; }
+.ws-review-verdict { padding: 5px 9px; border: 1px solid currentColor; border-radius: 8px; font-size: 13px; }
+.ws-review-choice { padding: 15px 16px; border-radius: 0 10px 10px 0; }
+.ws-review-choice-text, .ws-review-criteria, .ws-review-no-answer { line-height: 1.75; }
+.ws-review-question .ws-student-text { padding: 18px; border-radius: 0 10px 10px 0; font-family: inherit; font-size: 16px; }
+.ws-review-details { padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--page); }
+.ws-review-details summary { padding: 3px 0; color: var(--text); font-weight: 600; line-height: 1.65; }
+.ws-grading-score { line-height: 1.5; }
+.result-review-summary-head h3 { line-height: 1.5; }
+.result-review-metrics { border-radius: 13px; }
+.result-review-question-head { border-radius: 17px 17px 0 0; }
+.result-review-options > ul > li { padding: 17px; border-radius: 12px; }
+.result-review-option-text { line-height: 1.8; }
+.result-review-answer, .result-review-explanation, .result-review-comment { border-radius: 12px; }
+.ws-profile-settings { gap: 24px; }
+.ws-profile-form > h3 { font-size: 18px; }
+.ws-profile-form > .ws-muted { font-size: 14px; line-height: 1.8; }
+.ws-profile-form .primary { min-height: 44px; }
+.ws-billing-plan-pro { box-shadow: 0 0 0 3px var(--success-bg); }
+.ws-billing-current-heading h3, .ws-billing-plan-title h3 { letter-spacing: -.025em; }
+.ws-billing-plan > p, .ws-billing-current-footer p, .ws-billing-credit-note { line-height: 1.8; }
+.ws-billing-status, .ws-billing-tag { border: 1px solid var(--border); border-radius: 8px; }
+.ws-billing-status-pro, .ws-billing-tag { border-color: var(--success); }
+.ws-billing-usage { gap: 24px; }
+.ws-billing-quota progress { height: 8px; border: 1px solid var(--control-border); }
+.ws-billing-quota progress::-webkit-progress-bar { background: var(--page); }
+.ws-billing-quota progress::-moz-progress-bar { background: var(--success); }
+.ws-billing-methods span { border-radius: 9px; font-size: 13px; line-height: 1.6; }
+.ws-body .admin-panel { border-radius: 18px; }
+.admin-panel > .section-toolbar { flex-wrap: wrap; gap: 16px; }
+.admin-panel .app-tabs { gap: 6px; padding: 6px; border: 1px solid var(--border); border-radius: 12px; background: var(--page); }
+.admin-panel .app-tabs > button { border: 1px solid transparent; border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+.admin-panel .app-tabs > .active { border-color: var(--link); background: var(--surface); color: var(--link); }
+.admin-panel .filter-bar { align-items: end; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--page); }
+.admin-panel .filter-bar > select { max-width: 100%; }
+.admin-panel .search-field { min-width: 0; }
+.admin-panel .search-field > svg { top: 50%; transform: translateY(-50%); }
+.admin-panel .row-actions { flex-wrap: wrap; gap: 8px; }
+.admin-panel .status-badge { border: 1px solid var(--success); border-radius: 7px; color: var(--success); padding: 4px 8px; font-size: 12px; }
+.admin-panel .status-badge.inactive { border-color: var(--danger); color: var(--danger); }
+.admin-catalog-section { padding: 24px; border-radius: 14px; }
+.admin-catalog-heading h2 { font-size: 18px; line-height: 1.5; }
+.admin-catalog-select { padding: 6px 0; }
+.admin-catalog-actions .icon-button { border-color: var(--control-border); }
+.role-change-account, .credential-line { padding: 16px; border: 1px solid var(--border); border-radius: 11px; background: var(--page); }
+.role-change-account { gap: 7px; }
+.delete-dialog .dialog-actions, .admin-dialog .dialog-actions, .ws-publication-dialog .dialog-actions { flex-wrap: wrap; gap: 10px; padding-top: 18px; border-top: 1px solid var(--border); }
+.ws-image-viewer { border-radius: 16px; }
+.ws-image-viewer header { padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.ws-ai-fields-full .ws-ai-type-option { border-color: var(--control-border); }
+.ws-ai-fields-full .ws-ai-type-option[data-selected="true"] { border-color: var(--link); box-shadow: inset 0 0 0 1px var(--link); }
+.ws-ai-fields-full .ws-ai-type-option:has(input:focus-visible), .ws-ai-mode-tabs > button:focus-visible, .ws-creation-option:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
+.ws-ai-fields-full .ws-topic-hint, .ws-ai-fields-full .ws-ai-type-option small, .ws-ai-card-head p, .ws-ai-summary-card p, .ws-ai-summary-list dt { font-size: 13px; line-height: 1.7; }
+.ws-ai-material-dropzone, .ws-ai-import-dropzone { border-color: var(--control-border); }
+.ws-ai-import-dropzone[data-dragging], .ws-ai-material-dragging { border-color: var(--link); }
+.ws-library .ws-library-mobile > span { border-color: var(--control-border); }
+.ws-library .ws-library-mobile input:checked + span, .ws-library .ws-library-mobile input:indeterminate + span { border-color: var(--success); }
+.exam-screen { padding: 28px; }
+.exam-content { max-width: 1020px; }
+.exam-header { padding: 16px 20px; border: 1px solid var(--border); border-radius: 15px; background: var(--surface); }
+.exam-header > strong { flex: 1 1 280px; line-height: 1.6; }
+.exam-timer { justify-content: center; gap: 10px; flex: 0 1 auto; min-height: 48px; padding: 7px 12px; border: 1px solid var(--control-border); border-radius: 10px; background: var(--page); font-size: 23px; line-height: 1.4; font-weight: 750; }
+.exam-timer.danger { border-color: var(--danger); background: var(--danger-bg); }
+.exam-preflight, .exam-question, .exam-finished { gap: 24px; min-width: 0; margin-top: 24px; padding: 32px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+.exam-preflight p, .exam-question p, .exam-finished p { line-height: 1.8; overflow-wrap: anywhere; }
+.exam-preflight dl { gap: 0; border: 1px solid var(--border); border-radius: 11px; background: var(--page); overflow: hidden; }
+.exam-preflight dt, .exam-preflight dd { padding: 14px 16px; border-bottom: 1px solid var(--border); line-height: 1.7; overflow-wrap: anywhere; }
+.exam-preflight dt { color: var(--muted); }
+.exam-preflight dt:last-of-type, .exam-preflight dd:last-of-type { border-bottom: 0; }
+.exam-preflight > label { width: min(100%, 420px); }
+.exam-preflight > label > input { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 20px; letter-spacing: .1em; }
+.exam-progress { justify-self: start; padding: 7px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--page); font-size: 14px; font-weight: 600; }
+.exam-question > .question-heading { font-size: 21px; line-height: 1.75; font-weight: 650; }
+.exam-options { gap: 14px; }
+.exam-option { min-height: 64px; padding: 18px 20px; border-color: var(--control-border); border-radius: 12px; font-size: 17px; line-height: 1.75; font-weight: 550; cursor: pointer; overflow-wrap: anywhere; }
+.exam-option:has(input:checked) { border-color: var(--link); background: color-mix(in srgb, var(--link) 8%, var(--surface)); box-shadow: inset 3px 0 var(--link); }
+.exam-option:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 4px; }
+.exam-option > input { flex-basis: 20px; width: 20px; height: 20px; }
+.exam-finished > svg { padding: 12px; width: 68px; height: 68px; border-radius: 18px; background: var(--success-bg); color: var(--success); }
+@media (hover: hover) {
+  .exam-option:hover { border-color: var(--link); background: var(--hover); }
+  .exam-option:has(input:checked):hover { background: color-mix(in srgb, var(--link) 10%, var(--surface)); }
+}
+@media (max-width: 1000px) {
+  .admin-panel .section-toolbar > .app-tabs { flex: 1 1 100%; }
+}
+@media (max-width: 760px) {
+  .ws-group-settings, .ws-group-members, .ws-group-access, .ws-group-join, .ws-profile-form, .ws-billing-current, .ws-billing-plan, .ws-best-results { padding: 20px 18px; border-radius: 15px; }
+  .ws-billing-plan-pro { padding: 19px 17px; }
+  .ws-group-search, .ws-assignment-filters, .ws-grading-filters { gap: 15px; padding: 16px; }
+  .ws-group-search label, .ws-assignment-filters label, .ws-grading-filters label { width: 100%; flex-basis: 100%; }
+  .ws-group-code output { max-width: 100%; font-size: 17px; letter-spacing: .07em; padding: 10px 12px; }
+  .ws-recipient-selected .icon-button, .ws-assignment-code-actions .icon-button, .ws-grading-code .icon-button, .admin-catalog-actions .icon-button { min-height: 44px; min-width: 44px; width: 44px; height: 44px; flex-basis: 44px; }
+  .ws-assignment-settings { padding: 16px; gap: 15px; }
+  .ws-assignment-settings .ws-check { min-height: 34px; }
+  .ws-assignment-form-actions > .primary { flex: 1; }
+  .ws-learner-tabs { max-width: none; }
+  .ws-review-question { padding: 18px 16px; gap: 18px; }
+  .ws-review-points { width: 100%; margin-left: 0; }
+  .ws-review-choice { gap: 10px; padding: 14px 12px; }
+  .ws-review-choice > div { grid-template-columns: minmax(0, 1fr); }
+  .ws-review-question .ws-student-text { padding: 16px; }
+  .ws-profile-form .primary { justify-self: stretch; }
+  .ws-body .admin-panel { padding: 18px 14px; }
+  .admin-panel .app-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .admin-panel .app-tabs > button { gap: 7px; padding: 11px 8px; min-width: 0; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+  .admin-panel .app-tabs > button > svg { flex: 0 0 auto; }
+  .admin-panel .filter-bar { padding: 14px; }
+  .admin-panel .filter-bar > select, .admin-panel .filter-bar > .search-field, .admin-panel .filter-bar > button { width: 100%; max-width: none; flex-basis: 100%; }
+  .admin-panel .row-actions { gap: 8px; }
+  .admin-catalog-section { padding: 18px 14px; }
+  .delete-dialog .dialog-actions > button, .admin-dialog .dialog-actions > button, .ws-publication-dialog .dialog-actions > button { min-height: 44px; flex: 1 1 100%; white-space: normal; }
+  .result-review-options > ul > li { padding: 14px; }
+  .exam-screen { padding: 16px; }
+  .exam-header { gap: 14px; padding: 16px; }
+  .exam-header > strong { flex-basis: 100%; }
+  .exam-timer { max-width: 100%; font-size: 20px; margin-right: auto; }
+  .exam-preflight, .exam-question, .exam-finished { padding: 22px 18px; border-radius: 15px; margin-top: 18px; }
+  .exam-preflight dl { grid-template-columns: 90px minmax(0, 1fr); }
+  .exam-preflight dt, .exam-preflight dd { padding: 12px; font-size: 14px; }
+  .exam-question > .question-heading { font-size: 18px; }
+  .exam-option { padding: 16px 14px; gap: 12px; font-size: 16px; align-items: flex-start; }
+  .exam-option input { margin-top: 5px; }
+  .exam-question > button, .exam-preflight > button, .exam-finished > button { justify-self: stretch; min-height: 46px; white-space: normal; }
+}
+@media (forced-colors: active) {
+  .exam-option:has(input:checked), .ws-ai-fields-full .ws-ai-type-option[data-selected="true"], .ws-library .ws-library-mobile > span { border-color: Highlight; outline: 1px solid Highlight; }
+  .ws-library-mobile > span::after { background: ButtonText; }
+}

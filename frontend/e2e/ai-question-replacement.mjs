@@ -2,6 +2,7 @@ import { mockSubjectCatalog } from './helpers/subjects.mjs'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright'
+import { chooseTestCreation } from './helpers/test-creation.mjs'
 
 const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173'
 const auth = { token: 'ai-question-replacement-fixture', user: { id: 101, name: 'AI Teacher', email: 'replacement@example.test', role: 'TEACHER', active: true, passwordChangeRequired: false } }
@@ -328,7 +329,7 @@ try {
   // The same interaction works for a newly AI-generated draft before its first save.
   const aiDefinition = { ...original, title: 'AI generated draft', questions: [shortQuestion('AI original first'), question('AI original second')] }
   scenario({ definition: aiDefinition })
-  await page.getByRole('button', { name: 'С AI', exact: true }).click()
+  await chooseTestCreation(page, 'ai')
   const creator = page.getByRole('region', { name: 'Създаване на тест с AI', exact: true })
   await creator.getByLabel('Дисциплина', { exact: true }).selectOption(aiDefinition.subject)
   await creator.getByLabel('Тема', { exact: true }).fill(aiDefinition.title)

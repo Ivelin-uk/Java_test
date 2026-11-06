@@ -1,4 +1,5 @@
 import { mockSubjectCatalog } from './helpers/subjects.mjs'
+import { chooseTestCreation } from './helpers/test-creation.mjs'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright'
@@ -75,7 +76,7 @@ try {
   await mockSubjectCatalog(page, frontend)
   await page.goto(frontend)
   await page.getByRole('button', { name: 'Тестове', exact: true }).click()
-  await page.getByRole('button', { name: 'Ръчен тест', exact: true }).click()
+  await chooseTestCreation(page, 'manual')
   const manualSettings = page.getByRole('group', { name: 'Настройки на теста', exact: true })
   await manualSettings.waitFor()
   for (const field of ['Скала', 'Праг за успех (%)']) assert.equal(await manualSettings.getByLabel(field, { exact: true }).isVisible(), true)
@@ -84,7 +85,7 @@ try {
   for (const field of ['Клас / ниво', 'Език', 'Описание']) assert.equal(await manualSettings.getByLabel(field, { exact: true }).count(), 0)
   assert.equal(await page.getByText('Настройки за изпита', { exact: true }).count(), 0)
   await page.getByRole('button', { name: 'Към библиотеката', exact: true }).click()
-  await page.getByRole('button', { name: 'С AI', exact: true }).click()
+  await chooseTestCreation(page, 'ai')
   const creator = page.getByRole('region', { name: 'Създаване на тест с AI', exact: true })
   await creator.getByLabel('Дисциплина', { exact: true }).selectOption('Java')
   const extra = creator.getByRole('textbox', { name: 'Допълнителна информация за теста', exact: true })
@@ -100,7 +101,7 @@ try {
   await extra.fill('Additional details retained')
   await creator.getByRole('button', { name: 'Към библиотеката', exact: true }).click()
   await page.getByRole('heading', { name: 'Библиотека с тестове', exact: true }).waitFor()
-  await page.getByRole('button', { name: 'С AI', exact: true }).click()
+  await chooseTestCreation(page, 'ai')
   assert.equal(await creator.getByLabel('Тема', { exact: true }).inputValue(), 'State retained')
   assert.equal(await extra.inputValue(), 'Additional details retained')
   const generate = creator.getByRole('button', { name: 'Генерирай', exact: true })

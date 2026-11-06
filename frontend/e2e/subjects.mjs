@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright'
+import { chooseTestCreation } from './helpers/test-creation.mjs'
 
 const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173'
 const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
@@ -116,7 +117,7 @@ try {
   failCatalog = false
   await page.getByRole('button', { name: 'Зареди дисциплините', exact: true }).click()
   await filter.getByRole('option', { name: 'Английски език (0)', exact: true }).waitFor({ state: 'attached' })
-  await page.getByRole('button', { name: 'С AI', exact: true }).click()
+  await chooseTestCreation(page, 'ai')
   let creator = page.getByRole('region', { name: 'Създаване на тест с AI', exact: true })
   const contextFieldWidths = await creator.locator('.ws-context-fields').evaluate(element =>
     [...element.children].map(child => child.getBoundingClientRect().width))
@@ -220,7 +221,7 @@ try {
   await dialog.waitFor({ state: 'detached' })
   assert.equal(await filter.inputValue(), 'subject:авиационни системи')
   assert.equal(creations.at(-1).name, 'Авиационни системи')
-  await page.getByRole('button', { name: 'Ръчен тест', exact: true }).click()
+  await chooseTestCreation(page, 'manual')
   let settings = page.getByRole('group', { name: 'Настройки на теста', exact: true })
   assert.equal(await settings.getByLabel('Дисциплина', { exact: true }).inputValue(), 'Авиационни системи')
   const manualQuestionCount = settings.getByLabel('Брой въпроси', { exact: true })
@@ -231,7 +232,7 @@ try {
   assert.equal(await page.locator('.ws-question').count(), 3)
   assert.deepEqual(await page.locator('.ws-question label').filter({ hasText: 'Трудност' }).locator('select').evaluateAll(elements => elements.map(element => element.value)), ['HARD', 'HARD', 'HARD'])
   await page.getByRole('button', { name: 'Към библиотеката', exact: true }).click()
-  await page.getByRole('button', { name: 'С AI', exact: true }).click()
+  await chooseTestCreation(page, 'ai')
   let ai = page.getByRole('region', { name: 'Създаване на тест с AI', exact: true })
   assert.equal(await ai.getByLabel('Дисциплина', { exact: true }).inputValue(), 'Авиационни системи')
   await ai.getByRole('button', { name: 'Добави дисциплина', exact: true }).click()
@@ -270,7 +271,7 @@ try {
       await page.screenshot({ path: new URL(`subjects-library-${theme}-${width}.png`, artifacts).pathname, fullPage: true })
     }
   }
-  await page.getByRole('button', { name: 'С AI', exact: true }).click()
+  await chooseTestCreation(page, 'ai')
   ai = page.getByRole('region', { name: 'Създаване на тест с AI', exact: true })
   await ai.getByRole('button', { name: 'Добави дисциплина', exact: true }).click()
   dialog = page.getByRole('dialog', { name: 'Нова дисциплина', exact: true })

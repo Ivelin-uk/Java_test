@@ -1,0 +1,107 @@
+.ws-manual-create-page {
+  --manual-tint: color-mix(in srgb, var(--link) 8%, var(--surface));
+  --manual-line: color-mix(in srgb, var(--link) 30%, var(--border));
+  gap: 26px;
+}
+
+.ws-manual-create-page > .ws-section-head { align-items: center; padding: 4px 0 2px; }
+.ws-manual-create-page > .ws-section-head .ws-heading { max-width: 760px; }
+.ws-manual-create-page > .ws-section-head .ws-heading p { max-width: 70ch; line-height: 1.75; }
+.ws-manual-create-page > .ws-section-head .command-button { min-height: 44px; padding: 10px 16px; border-radius: 10px; }
+.ws-manual-editor { gap: 18px; }
+.ws-manual-editor .ws-test-settings { gap: 22px; padding: 26px; border-radius: 16px; box-shadow: 0 3px 12px #10182803; }
+.ws-manual-step-head { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.ws-manual-step-head > div { display: grid; gap: 5px; flex: 1; min-width: 0; }
+.ws-manual-step-head h3 { margin: 0; font-size: 18px; line-height: 1.4; letter-spacing: -.02em; }
+.ws-manual-step-head p, .ws-manual-subhead p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
+.ws-manual-step-head > .command-button { flex: 0 0 auto; min-height: 40px; border-radius: 9px; }
+.ws-manual-editor .ws-context-fields { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1.55fr) minmax(0, 1fr) minmax(80px, .55fr) minmax(0, .9fr); gap: 14px; align-items: start; }
+.ws-manual-editor .ws-context-fields > * { min-width: 0; }
+.ws-manual-editor .ws-context-fields label, .ws-manual-editor .ws-context-fields .ws-subject-field { gap: 8px; font-size: 13px; }
+.ws-manual-editor .ws-context-fields input, .ws-manual-editor .ws-context-fields select { min-height: 46px; border-radius: 9px; font-size: 14px; }
+.ws-manual-grading { display: grid; gap: 16px; padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--page); }
+.ws-manual-subhead { display: grid; gap: 5px; }
+.ws-manual-subhead h4 { margin: 0; font-size: 14px; }
+.ws-manual-grading .ws-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.ws-manual-grading label, .ws-manual-extra-fields label { min-width: 0; gap: 8px; font-size: 13px; }
+.ws-manual-grading input, .ws-manual-grading select, .ws-manual-extra-fields textarea { border-radius: 9px; font-size: 14px; }
+.ws-manual-meta { display: grid; gap: 14px; padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--page); }
+.ws-manual-meta .ws-ai-types legend { margin-bottom: 10px; font-size: 13px; }
+.ws-manual-meta .ws-ai-types .ws-actions { gap: 10px 18px; }
+.ws-manual-meta .ws-ai-image-settings { padding-top: 14px; border-top: 1px solid var(--border); }
+.ws-manual-meta > .ws-form-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ws-manual-extra-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.ws-manual-extra-fields textarea { min-height: 110px; padding: 12px 14px; line-height: 1.7; }
+.ws-manual-questions-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; padding: 4px 2px 2px; }
+.ws-manual-questions-heading .ws-manual-step-head { flex: 1; }
+.ws-manual-question-count { display: grid; justify-items: center; gap: 2px; min-width: 96px; padding: 10px 14px; border: 1px solid var(--manual-line); border-radius: 10px; background: var(--manual-tint); }
+.ws-manual-question-count strong { color: var(--link); font-size: 21px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.ws-manual-question-count span { color: var(--muted); font-size: 11px; }
+.ws-manual-editor > .ws-manual-question { gap: 20px; padding: 24px; border-radius: 14px; box-shadow: 0 3px 12px #10182803; }
+.ws-manual-editor > .ws-manual-question:focus-within { border-color: var(--manual-line); box-shadow: 0 0 0 3px var(--manual-tint); }
+.ws-manual-editor > .ws-manual-question > .ws-question-head { align-items: center; gap: 10px; padding-bottom: 18px; }
+.ws-manual-question-title { display: flex; align-items: center; gap: 11px; flex: 1 1 190px; min-width: 0; }
+.ws-manual-question-title > span { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 36px; border: 1px solid var(--manual-line); border-radius: 10px; color: var(--link); background: var(--manual-tint); font-size: 12px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.ws-manual-question-title > div { display: grid; gap: 3px; min-width: 0; }
+.ws-manual-question-title h4 { margin: 0; font-size: 15px; }
+.ws-manual-question-title p { margin: 0; color: var(--muted); font-size: 12px; }
+.ws-manual-editor > .ws-manual-question > .ws-question-head select { min-height: 40px; margin-left: 0; border-radius: 8px; font-size: 13px; }
+.ws-manual-question .ws-question-prompt { gap: 10px; }
+.ws-manual-question .ws-form-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ws-manual-question > label { gap: 8px; font-size: 13px; }
+.ws-manual-question textarea, .ws-manual-question input:not([type="checkbox"]):not([type="radio"]), .ws-manual-question select { border-radius: 9px; }
+.ws-manual-question .ws-option-editor { gap: 12px; }
+.ws-manual-question .ws-option-editor > input:not([type="checkbox"]):not([type="radio"]) { min-height: 44px; }
+.ws-manual-editor > .ws-add-questions { padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.ws-manual-editor > .ws-add-questions .ws-inline-form { gap: 10px; padding-bottom: 16px; }
+.ws-manual-editor > .ws-add-questions .ws-inline-form label { flex: 0 1 220px; gap: 7px; font-size: 13px; }
+.ws-manual-editor > .ws-add-questions .ws-inline-form input { min-height: 42px; border-radius: 8px; }
+.ws-manual-editor > .ws-add-questions .ws-summary { margin-left: auto; font-size: 12px; }
+.ws-manual-editor .ws-append-ai { padding: 20px; border-radius: 12px; }
+.ws-manual-editor .ws-editor-footer { position: sticky; bottom: 12px; z-index: 2; padding: 12px; border: 1px solid var(--manual-line); border-radius: 12px; background: color-mix(in srgb, var(--surface) 92%, transparent); box-shadow: 0 8px 24px #10182814; backdrop-filter: blur(12px); }
+.ws-manual-editor .ws-editor-footer .primary { min-height: 46px; padding: 11px 20px; border-radius: 9px; }
+.ws-import-warnings { padding: 16px 18px; border: 1px solid color-mix(in srgb, var(--danger) 36%, var(--border)); border-radius: 12px; background: color-mix(in srgb, var(--danger) 6%, var(--surface)); }
+.ws-import-warnings strong { font-size: 13px; }
+.ws-import-warnings ul { display: grid; gap: 5px; margin: 8px 0 0; padding-left: 20px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+@media (max-width: 1250px) {
+  .ws-manual-editor .ws-context-fields { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .ws-manual-editor .ws-context-fields > :nth-child(1), .ws-manual-editor .ws-context-fields > :nth-child(2) { grid-column: span 3; }
+  .ws-manual-editor .ws-context-fields > :nth-child(n+3) { grid-column: span 2; }
+}
+
+@media (max-width: 760px) {
+  .ws-manual-create-page { gap: 20px; }
+  .ws-manual-create-page > .ws-section-head { align-items: stretch; }
+  .ws-manual-create-page > .ws-section-head > .ws-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .ws-manual-create-page > .ws-section-head .command-button { min-width: 0; padding: 10px; font-size: 13px; }
+  .ws-manual-editor { gap: 14px; }
+  .ws-manual-editor .ws-test-settings { gap: 18px; padding: 20px 16px; border-radius: 14px; }
+  .ws-manual-step-head { gap: 10px; }
+  .ws-manual-step-head h3 { font-size: 16px; }
+  .ws-manual-step-head p { font-size: 12px; }
+  .ws-manual-step-head > .command-button { padding: 8px; font-size: 12px; }
+  .ws-manual-editor .ws-context-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 12px; }
+  .ws-manual-editor .ws-context-fields > :nth-child(1), .ws-manual-editor .ws-context-fields > :nth-child(2) { grid-column: 1 / -1; }
+  .ws-manual-editor .ws-context-fields > :nth-child(n+3) { grid-column: span 1; }
+  .ws-manual-grading, .ws-manual-meta { padding: 14px; }
+  .ws-manual-grading .ws-form-grid, .ws-manual-extra-fields { grid-template-columns: minmax(0, 1fr); }
+  .ws-manual-meta > .ws-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ws-manual-questions-heading { align-items: flex-start; }
+  .ws-manual-question-count { min-width: 78px; padding: 8px; }
+  .ws-manual-editor > .ws-manual-question { gap: 16px; padding: 18px 16px; }
+  .ws-manual-editor > .ws-manual-question > .ws-question-head { align-items: center; }
+  .ws-manual-question-title { flex-basis: calc(100% - 44px); }
+  .ws-manual-editor > .ws-manual-question > .ws-question-head select { flex: 1 1 140px; max-width: none; }
+  .ws-manual-editor > .ws-manual-question > .ws-question-head .command-button { flex: 1 1 150px; }
+  .ws-manual-question .ws-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .ws-manual-editor > .ws-add-questions { padding: 14px; }
+  .ws-manual-editor > .ws-add-questions .ws-inline-form label { flex: 1 1 100%; max-width: none; }
+  .ws-manual-editor > .ws-add-questions .ws-inline-form > button { flex: 1 1 calc(50% - 8px); }
+  .ws-manual-editor > .ws-add-questions .ws-summary { flex: 1 1 100%; margin: 0; text-align: center; }
+  .ws-manual-editor .ws-editor-footer { bottom: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-manual-editor .ws-editor-footer { backdrop-filter: none; }
+}

@@ -1,0 +1,45 @@
+.ws-create-dialog {
+  width: min(680px, calc(100% - 32px));
+  max-width: 680px;
+  max-height: min(760px, calc(100dvh - 32px));
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 28px 90px #0005;
+}
+.ws-create-dialog::backdrop { background: rgb(9 15 24 / 64%); backdrop-filter: blur(5px); }
+.ws-create-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 30px 30px 24px; }
+.ws-create-dialog-head > div { display: grid; gap: 8px; min-width: 0; }
+.ws-create-dialog-head > .icon-button { flex: 0 0 auto; border-radius: 10px; }
+.ws-create-eyebrow { color: var(--link); font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.ws-create-dialog-head h2 { margin: 0; font-size: clamp(22px, 4vw, 29px); line-height: 1.25; letter-spacing: -.03em; }
+.ws-create-dialog-head p { max-width: 55ch; margin: 0; color: var(--muted); font-size: 14px; line-height: 1.7; }
+.ws-create-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 30px 24px; }
+.ws-create-option { position: relative; display: grid; grid-template-columns: 44px minmax(0, 1fr) 18px; align-items: start; gap: 12px; min-width: 0; min-height: 150px; padding: 17px; border: 1px solid var(--border); border-radius: 14px; color: var(--text); background: var(--page); text-align: left; transition: transform 150ms, border-color 150ms, background 150ms, box-shadow 150ms; }
+.ws-create-option:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--link) 48%, var(--border)); background: var(--surface); box-shadow: 0 8px 22px #1018280d; }
+.ws-create-option:focus-visible { outline: 3px solid var(--link); outline-offset: 3px; }
+.ws-create-option-featured { border-color: color-mix(in srgb, var(--link) 42%, var(--border)); background: color-mix(in srgb, var(--link) 6%, var(--surface)); }
+.ws-create-option-icon { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--border); border-radius: 12px; color: var(--link); background: var(--surface); }
+.ws-create-option-copy { display: grid; gap: 7px; min-width: 0; }
+.ws-create-option-copy strong { font-size: 15px; line-height: 1.4; }
+.ws-create-option-copy > span { color: var(--muted); font-size: 12px; line-height: 1.65; }
+.ws-create-option-copy small { justify-self: start; padding: 4px 7px; border-radius: 5px; color: var(--link); background: color-mix(in srgb, var(--link) 9%, var(--surface)); font-size: 10px; font-weight: 700; }
+.ws-create-option-arrow { align-self: center; color: var(--muted); }
+.ws-create-dialog-foot { padding: 16px 30px 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+@media (max-width: 560px) {
+  .ws-create-dialog { width: min(460px, calc(100% - 20px)); border-radius: 18px; }
+  .ws-create-dialog-head { gap: 12px; padding: 24px 20px 20px; }
+  .ws-create-dialog-head p { font-size: 13px; }
+  .ws-create-options { grid-template-columns: minmax(0, 1fr); gap: 9px; padding: 0 20px 20px; }
+  .ws-create-option { grid-template-columns: 42px minmax(0, 1fr) 18px; align-items: center; min-height: 0; padding: 13px; }
+  .ws-create-option-icon { width: 42px; height: 42px; }
+  .ws-create-option-copy { gap: 4px; }
+  .ws-create-option-copy > span { font-size: 11px; }
+  .ws-create-dialog-foot { padding: 14px 20px 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-create-option { transition: none; }
+}

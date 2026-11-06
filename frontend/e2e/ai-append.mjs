@@ -2,6 +2,7 @@ import { mockSubjectCatalog } from './helpers/subjects.mjs'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright'
+import { chooseTestCreation } from './helpers/test-creation.mjs'
 
 const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173'
 const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
@@ -185,7 +186,7 @@ try {
 
   // The initial empty question in a manual test must be filled, not left before an appended question.
   await page.getByRole('button', { name: 'Към библиотеката', exact: true }).click()
-  await page.getByRole('button', { name: 'Ръчен тест', exact: true }).click()
+  await chooseTestCreation(page, 'manual')
   await settings.getByLabel('Тема', { exact: true }).fill('Manual test filled with AI')
   await settings.getByLabel('Дисциплина', { exact: true }).selectOption('Biology')
   const firstQuestion = page.locator('.ws-question').first()

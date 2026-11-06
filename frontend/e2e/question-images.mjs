@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright'
+import { chooseTestCreation } from './helpers/test-creation.mjs'
 
 const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173'
 const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
@@ -18,7 +19,7 @@ try {
   page.on('pageerror', error => errors.push(error.message))
   await page.goto(frontend)
   await page.getByRole('button', { name: 'Тестове', exact: true }).click()
-  await page.getByRole('button', { name: 'Ръчен тест', exact: true }).click()
+  await chooseTestCreation(page, 'manual')
   const title = `Image question ${Date.now()}`
   await page.getByLabel('Тема', { exact: true }).fill(title)
   await page.getByLabel('Текст', { exact: true }).fill('Какво се вижда на снимката?')

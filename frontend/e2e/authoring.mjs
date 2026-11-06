@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright'
+import { chooseTestCreation } from './helpers/test-creation.mjs'
 
 const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
 const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173'
@@ -25,7 +26,7 @@ try {
   page.on('pageerror', error => errors.push(error.message))
   await page.goto(frontend)
   await page.getByRole('button', { name: 'Тестове', exact: true }).click()
-  await page.getByRole('button', { name: 'Ръчен тест', exact: true }).click()
+  await chooseTestCreation(page, 'manual')
   const title = `Manual authoring ${stamp}`
   await page.getByLabel('Тема', { exact: true }).fill(title)
   assert.equal(await page.getByRole('button', { name: 'Публикувай версия', exact: true }).count(), 0)
@@ -48,9 +49,10 @@ try {
   const owned = tests.filter(test => test.owner_id === auth.user.id)
   assert.equal(owned.length, 1)
   assert.equal(owned[0].status, 'published')
-  await page.getByRole('button', { name: 'С AI', exact: true }).click()
+  await chooseTestCreation(page, 'ai')
   await page.getByRole('heading', { name: 'Създаване на тест с AI', exact: true }).waitFor()
   assert.equal(await page.getByRole('table', { name: 'Тестове', exact: true }).count(), 0)
+  await page.getByLabel('Тема', { exact: true }).fill('Основи на Java')
   await page.getByLabel('Въпроси', { exact: true }).fill('5')
   await page.getByRole('button', { name: 'Генерирай', exact: true }).click()
   await Promise.race([

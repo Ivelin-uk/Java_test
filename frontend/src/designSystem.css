@@ -1,0 +1,139 @@
+/* Shared visual foundations. Field boundaries are stronger than decorative dividers. */
+html { scroll-padding: 24px; }
+body { min-width: 280px; background: var(--page); color: var(--text); }
+::selection { color: var(--text); background: var(--accent-soft); }
+:root a { color: var(--link); text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
+:root a:hover { text-decoration: underline; }
+:root :is(button, a, input, textarea, select, summary, [tabindex]):focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+:root :is(button, input, textarea, select) { transition: border-color 140ms ease, box-shadow 140ms ease; }
+:root input:not([type="checkbox"], [type="radio"], [type="file"], [type="hidden"], [type="range"]),
+:root textarea, :root select { min-height: 44px; border-color: var(--control-border); border-radius: var(--radius-control); color: var(--text); background: var(--surface); line-height: 1.5; }
+:root :is(input, textarea)::placeholder { color: var(--muted); opacity: 1; }
+:root :is(input, textarea, select):not(:disabled):hover { border-color: var(--hover-border); }
+:root :is(input, textarea, select):not(:disabled):focus { border-color: var(--focus); }
+:root :is(input, textarea, select)[aria-invalid="true"] { border-color: var(--danger); }
+:root :is(input, textarea, select):disabled { color: var(--muted); -webkit-text-fill-color: var(--muted); background: var(--subtle); cursor: not-allowed; opacity: 1; }
+:root :is(input[type="checkbox"], input[type="radio"]) { accent-color: var(--primary); }
+:root button { border-radius: var(--radius-control); }
+:root button:not(:disabled):hover { border-color: var(--hover-border); }
+:root :is(.primary, .auth-submit):not(:disabled) { color: var(--on-accent); border-color: var(--primary); background: var(--primary); box-shadow: 0 2px 3px #10244012; }
+:root :is(.primary, .auth-submit):not(:disabled):hover { color: var(--on-accent); border-color: var(--primary-hover); background: var(--primary-hover); }
+:root button:disabled { color: var(--muted); background: var(--subtle); border-color: var(--border); cursor: not-allowed; opacity: 1; box-shadow: none; }
+:root .danger { color: var(--danger); }
+:root .danger:not(:disabled):hover { color: var(--danger); background: var(--danger-bg); border-color: var(--danger); }
+:root .danger-fill:not(:disabled) { color: #fff; background: var(--danger-solid); border-color: var(--danger-solid); }
+:root .danger-fill:not(:disabled):hover { color: #fff; background: var(--danger-solid); border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-bg); }
+:root .icon-button { min-height: 40px; height: 40px; min-width: 40px; width: 40px; border-radius: 10px; }
+:root :is(.ws-text-button, .link-button) { background: transparent; box-shadow: none; }
+:root .ws-text-button { color: var(--link); }
+:root .ws-check { gap: 9px; min-height: 28px; line-height: 1.6; }
+:root .ws-muted, :root .ws-summary { color: var(--muted); }
+:root .error { color: var(--danger); line-height: 1.7; overflow-wrap: anywhere; }
+:root .ws-feedback.error { padding: 12px 16px; border: 1px solid var(--danger); border-left-width: 3px; border-radius: 10px; background: var(--danger-bg); }
+:root .success { color: var(--success); }
+
+/* Workspace navigation and content hierarchy. */
+:root .ws-shell { max-width: 1440px; padding-bottom: 56px; }
+:root .ws-topbar { min-height: 96px; gap: 14px; }
+:root .ws-brand { color: var(--text); font-size: 27px; letter-spacing: -.045em; text-decoration: none; }
+:root .ws-brand:hover { text-decoration: none; }
+:root .ws-brand-icon { width: 42px; height: 42px; border: 1px solid var(--border); border-radius: 13px; color: var(--link); background: var(--accent-soft); }
+:root .ws-account { gap: 2px; }
+:root .ws-account > strong { font-size: 14px; font-weight: 650; }
+:root .ws-account > span { font-size: 13px; }
+:root .ws-nav { padding: 7px; gap: 6px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-sm); }
+:root .ws-nav > button { min-height: 46px; padding: 11px 18px; border: 1px solid transparent; border-radius: 10px; font-weight: 600; color: var(--muted); }
+:root .ws-nav > button:hover { border-color: var(--border); color: var(--text); background: var(--hover); }
+:root .ws-nav > button.active { color: var(--link); border-color: var(--link); background: var(--accent-soft); }
+:root .ws-nav > button.active:hover { color: var(--link); background: var(--accent-soft); }
+:root .ws-body { padding-top: 36px; }
+:root .ws-section { gap: 26px; }
+:root .ws-heading { gap: 8px; }
+:root .ws-heading > h2 { font-size: clamp(25px, 2.2vw, 31px); font-weight: 750; letter-spacing: -.035em; }
+:root .ws-heading > p { color: var(--muted); font-size: 15px; line-height: 1.8; max-width: 78ch; }
+:root .ws-section-head > .ws-actions > button { min-height: 44px; }
+:root :is(.ws-card, .ws-test-settings, .ws-test-preview, .ws-group-settings, .ws-profile-form, .ws-best-results, .ws-group-join) { border-radius: var(--radius-card); border-color: var(--border); box-shadow: var(--shadow-sm); }
+:root .ws-card-head { padding: 24px 26px 20px; }
+:root .ws-card-head h3 { font-size: 19px; font-weight: 700; letter-spacing: -.015em; }
+:root .ws-card-head p { color: var(--muted); font-size: 14px; line-height: 1.8; }
+:root .ws-card-body { padding: 24px 26px; gap: 22px; }
+:root .ws-empty { padding: 32px 24px; border-color: var(--control-border); background: var(--page); color: var(--muted); font-size: 14px; }
+:root :is(.ws-metrics > button, .ws-start-step) { border-radius: 16px; border-color: var(--border); background: var(--surface); box-shadow: var(--shadow-sm); }
+:root .ws-metrics > button { padding: 24px; gap: 16px; }
+:root .ws-metrics > button:hover, :root .ws-start-step:hover { border-color: var(--link); background: var(--accent-soft); }
+:root .ws-metrics strong { font-size: 36px; letter-spacing: -.045em; color: var(--text); }
+:root .ws-metrics > button > span { color: var(--muted); font-size: 14px; }
+:root .ws-step-description { font-size: 14px; line-height: 1.8; color: var(--muted); }
+:root :is(.ws-step-link, .ws-step-number) { color: var(--link); }
+:root .ws-dashboard-create { box-shadow: var(--shadow-sm); }
+:root .ws-dashboard-create-eyebrow { font-size: 11px; letter-spacing: .08em; }
+:root .ws-dashboard-create p { font-size: 14px; }
+
+/* Tables retain their existing responsive card layout. */
+:root .ws-table-wrap { border-radius: 12px; border-color: var(--border); }
+:root .ws-table { color: var(--text); }
+:root .ws-table th { color: var(--muted); background: var(--subtle); font-size: 13px; font-weight: 650; line-height: 1.5; }
+:root .ws-table td { font-size: 14px; line-height: 1.65; }
+:root .ws-table :is(th, td) { border-bottom-color: var(--border); }
+:root .ws-table tbody > tr:last-child > td { border-bottom: 0; }
+:root .ws-table tr:hover td { background: var(--hover); }
+:root .ws-table .ws-selected-row td, :root .ws-table .ws-selected-row:hover td { background: var(--success-bg); }
+:root .ws-table .ws-selected-row td:first-child { box-shadow: inset 3px 0 var(--success); }
+:root .ws-selectable-row:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+:root .ws-library-number-input input::placeholder { color: var(--muted); opacity: 1; }
+:root .ws-library-filters > label, :root .ws-library-search-main > label { font-size: 14px; }
+:root :is(.ws-library-tab-copy small, .ws-ai-mode-tabs small) { font-size: 13px; color: var(--muted); }
+:root .ws-library .ws-test-import > small { font-size: 13px; color: var(--muted); }
+:root .ws-library-import-guide :is(li p, .ws-library-import-note p) { font-size: 14px; color: var(--muted); }
+:root .ws-library-import-card > p { font-size: 15px; }
+:root .ws-library-hint { font-size: 13px; }
+
+/* Popovers, dialogs and rich text use the same clear surfaces. */
+:root :is(.ws-user-options, .ws-subject-picker-results) { border-color: var(--control-border); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-lg); }
+:root :is(.ws-user-options button, .ws-subject-picker-results button) { min-height: 44px; line-height: 1.6; }
+:root dialog { max-height: calc(100dvh - 40px); border-color: var(--border); border-radius: 20px; background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg); }
+:root dialog::backdrop { background: #08111fb3; backdrop-filter: blur(4px); }
+:root dialog h2 { letter-spacing: -.025em; }
+:root .dialog-actions { gap: 10px; }
+:root .dialog-actions button { min-height: 44px; padding: 10px 16px; }
+:root .question-editor { border-color: var(--control-border); border-radius: 12px; }
+:root .question-editor:focus-within { border-color: var(--focus); box-shadow: 0 0 0 2px var(--focus); }
+:root .question-editor-toolbar { background: var(--subtle); gap: 5px 0; }
+:root .question-editor-toolbar button { min-height: 36px; color: var(--text); border-radius: 7px; }
+:root .question-editor-hint { font-size: 14px; line-height: 1.7; }
+:root .question-text { color: var(--text); line-height: 1.8; }
+:root .app-notification { border-radius: 12px; box-shadow: var(--shadow-lg); padding: 16px; }
+:root .app-notification > button { width: 36px; height: 36px; min-height: 36px; flex-basis: 36px; }
+:root .ws-skip-link { z-index: 3000; background: var(--primary); color: var(--on-accent); padding: 12px 18px; border-radius: 10px; }
+
+@media (max-width: 760px) {
+  :root .ws-shell { padding: 0 16px 32px; }
+  :root .ws-topbar { min-height: 88px; gap: 10px; }
+  :root .ws-brand { font-size: 25px; }
+  :root .ws-account > strong { font-size: 13px; }
+  :root .ws-nav { gap: 6px; padding: 6px; border-radius: 14px; }
+  :root .ws-nav > button { justify-content: flex-start; min-height: 46px; padding: 11px 10px; font-size: 14px; gap: 8px; }
+  :root .ws-body { padding-top: 26px; }
+  :root .ws-section { gap: 22px; }
+  :root .ws-card-head { padding: 20px 18px 18px; }
+  :root .ws-card-body { padding: 20px 18px; gap: 20px; }
+  :root .ws-card-head h3 { font-size: 18px; }
+  :root .ws-table-wrap { border: 0; }
+  :root .ws-table tbody > tr:last-child > td { border-bottom: 1px solid var(--border); }
+  :root .ws-table tbody > tr > td:last-child { border-bottom: 0; }
+  :root .ws-library-tab-copy small { font-size: 12px; }
+  :root .ws-library .ws-card-body { padding: 0 14px 18px; }
+  :root .ws-check { min-height: 36px; }
+  :root .icon-button, :root .theme-toggle { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+  :root .question-editor-toolbar button { min-width: 34px; min-height: 40px; }
+  :root dialog { border-radius: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root :is(button, input, textarea, select), :root *, :root *::before, :root *::after { transition-duration: 0s; animation-duration: .01ms; animation-iteration-count: 1; scroll-behavior: auto; }
+}
+@media (forced-colors: active) {
+  :root :is(button, input, select, textarea) { border: 1px solid ButtonText; }
+  :root :is(button, a, input, textarea, select, summary, [tabindex]):focus-visible { outline: 3px solid Highlight; }
+  :root .ws-nav > button.active { border: 2px solid Highlight; }
+}

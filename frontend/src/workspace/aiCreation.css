@@ -8,6 +8,13 @@
 .ws-ai-create-page > .ws-section-head .ws-heading { max-width: 780px; }
 .ws-ai-create-page > .ws-section-head .ws-heading p { max-width: 70ch; line-height: 1.75; }
 .ws-ai-create-page > .ws-section-head .command-button { min-height: 44px; padding: 10px 16px; border-radius: 10px; }
+.ws-ai-create-intro { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 16px 20px; border: 1px solid var(--ai-line); border-radius: 14px; background: linear-gradient(110deg, var(--ai-tint), var(--surface) 72%); }
+.ws-ai-create-intro-icon { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 42px; border: 1px solid var(--ai-line); border-radius: 12px; color: var(--link); background: var(--surface); }
+.ws-ai-create-intro > div { display: grid; gap: 4px; min-width: 0; }
+.ws-ai-create-intro > div strong { font-size: 14px; }
+.ws-ai-create-intro > div p { color: var(--muted); font-size: 12px; line-height: 1.65; }
+.ws-ai-create-intro-note { display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto; margin-left: auto; padding: 8px 11px; border: 1px solid var(--ai-line); border-radius: 999px; color: var(--link); background: var(--surface); font-size: 12px; font-weight: 650; }
+.ws-ai-create-status { padding: 8px 11px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); background: var(--page); font-size: 12px; font-weight: 650; }
 .ws-ai-mode-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; min-width: 0; }
 .ws-ai-mode-tabs > button { display: flex; align-items: center; gap: 15px; min-width: 0; padding: 20px; border-radius: 14px; background: var(--surface); text-align: left; transition: background 150ms, border-color 150ms; }
 .ws-ai-mode-tabs > button:hover { border-color: var(--ai-line); background: var(--hover); }
@@ -90,6 +97,7 @@
 .ws-ai-guide-steps { display: grid; gap: 20px; list-style: none; padding: 0; margin: 0; }
 .ws-ai-guide-steps li { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
 .ws-ai-guide-steps li > svg { flex: 0 0 18px; width: 18px; height: 18px; margin-top: 2px; color: var(--link); }
+.ws-ai-guide-steps li > .ws-ai-card-step { width: 26px; height: 26px; flex-basis: 26px; border-radius: 8px; }
 .ws-ai-guide-steps li > div { display: grid; gap: 5px; min-width: 0; }
 .ws-ai-guide-steps strong { font-size: 13px; }
 .ws-ai-guide-steps p { font-size: 12px; }
@@ -115,6 +123,8 @@
   .ws-ai-create-aside { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
+  .ws-ai-create-intro { align-items: flex-start; flex-wrap: wrap; padding: 16px; }
+  .ws-ai-create-intro-note { margin-left: 56px; }
   .ws-ai-mode-tabs { gap: 10px; }
   .ws-ai-mode-tabs > button { align-items: flex-start; flex-direction: column; gap: 12px; padding: 16px 14px; border-radius: 12px; }
   .ws-ai-mode-tabs strong { font-size: 14px; line-height: 1.5; }

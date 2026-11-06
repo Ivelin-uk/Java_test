@@ -22,6 +22,7 @@
     "test:library-filters": "node e2e/library-filters.mjs",
     "test:test-import": "node e2e/test-import.mjs",
     "test:themes": "node e2e/themes.mjs",
+    "test:ui-accessibility": "node e2e/ui-accessibility.mjs",
     "test:subjects": "node e2e/subjects.mjs",
     "test:assignments": "node e2e/assignment-picker.mjs",
     "test:codes": "node e2e/assignment-codes.mjs",

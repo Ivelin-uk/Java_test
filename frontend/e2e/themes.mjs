@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright'
+import { chooseTestCreation } from './helpers/test-creation.mjs'
 
 const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173'
 const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
@@ -28,7 +29,7 @@ try {
   await page.evaluate(auth => localStorage.setItem('quicktest.auth', JSON.stringify(auth)), auth)
   await page.reload()
   await page.getByRole('button', { name: 'Тестове', exact: true }).click()
-  await page.getByRole('button', { name: 'Ръчен тест', exact: true }).click()
+  await chooseTestCreation(page, 'manual')
   await page.getByLabel('Текст', { exact: true }).fill('Коя тема предпочитате?')
   await page.getByLabel('Опция 1', { exact: true }).fill('Светла')
   await page.getByLabel('Опция 2', { exact: true }).fill('Тъмна')
@@ -63,7 +64,7 @@ try {
   await page.getByRole('button', { name: 'Тъмна тема', exact: true }).click()
   await row.getByRole('button', { name: 'Изтрий теста', exact: true }).click()
   await dialog.waitFor()
-  assert.equal(await dialog.evaluate(e => getComputedStyle(e).backgroundColor), 'rgb(35, 39, 43)')
+  assert.equal(await dialog.evaluate(e => getComputedStyle(e).backgroundColor), await page.locator('.ws-card').first().evaluate(e => getComputedStyle(e).backgroundColor), 'Dialogs must use the current theme surface')
   await page.screenshot({ path: new URL('theme-delete-dark-mobile.png', artifacts).pathname })
   await page.keyboard.press('Escape')
   await page.reload()

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright'
+import { chooseTestCreation } from './helpers/test-creation.mjs'
 
 const frontend = process.env.E2E_FRONTEND_URL ?? 'http://127.0.0.1:5173'
 const base = process.env.E2E_API_URL ?? 'http://localhost:8080'
@@ -214,7 +215,7 @@ try {
   const teacherPage = await teacherContext.newPage()
   teacherPage.on('pageerror', error => errors.push(error.message))
   await teacherPage.goto(frontend)
-  await teacherPage.getByRole('button', { name: 'С AI', exact: true }).click()
+  await chooseTestCreation(teacherPage, 'ai')
   const creator = teacherPage.getByRole('region', { name: 'Създаване на тест с AI', exact: true })
   await creator.getByLabel('Дисциплина', { exact: true }).selectOption('Обща астрономия')
   await creator.getByLabel('Клас', { exact: true }).selectOption('9')

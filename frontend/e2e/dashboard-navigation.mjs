@@ -47,6 +47,14 @@ try {
   for (const role of ['TEACHER', 'STUDENT']) {
     const current = await fixture(role); page = current.page
     await page.goto(frontend)
+    if (role === 'TEACHER') {
+      await page.getByRole('button', { name: /Създай тест/ }).click()
+      await page.getByRole('heading', { name: 'Как искаш да създадеш теста?', exact: true }).waitFor()
+      assert.equal(await page.locator('.ws-create-option').count(), 4)
+      await page.getByRole('button', { name: 'Затвори', exact: true }).click()
+    } else {
+      assert.equal(await page.getByRole('button', { name: /Създай тест/ }).count(), 0)
+    }
     const assignmentTitle = role === 'TEACHER' ? 'Към възлаганията' : 'Към моите тестове'
     const recordTitle = role === 'TEACHER' ? 'Към проверките' : 'Към резултатите'
     await waitCount('Към групите', '2')

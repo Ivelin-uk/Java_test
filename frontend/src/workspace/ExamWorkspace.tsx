@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, ArrowUpRight, BookOpen, ClipboardList, GraduationCap, LayoutDashboard, LogOut, Shield, UserRound, Users } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowRight, ArrowUpRight, BookOpen, ClipboardList, GraduationCap, LayoutDashboard, LogOut, Plus, Shield, UserRound, Users } from 'lucide-react'
 import type { AuthResponse } from '../types/models'
 import { roleLabels } from '../api/access'
 import { AdminPanel } from '../components/AdminPanel'
@@ -8,6 +8,7 @@ import { workspaceClient, useRemote } from './api'
 import type { WorkspaceApi } from './api'
 import type { Assignment, Attempt, Group, Result } from './types'
 import { AssessmentEditor } from './AssessmentEditor'
+import type { AssessmentCreationRequest } from './AssessmentEditor'
 import { GroupsPanel } from './GroupsPanel'
 import { AssignmentsPanel } from './AssignmentsPanel'
 import { AssignmentParticipantsPage } from './AssignmentParticipantsPage'
@@ -19,6 +20,10 @@ import { NotificationEmailVerification, WorkspaceProfile } from './AccountPanels
 import { Feedback, Panel, SectionHead } from './ui'
 import './workspace.css'
 import { ThemeToggle } from '../components/ThemeToggle'
+import { TestCreationOptions } from './TestCreationOptions'
+import type { TestCreationMode } from './TestCreationOptions'
+import './testCreation.css'
+import './dashboardCreation.css'
 
 type View = 'dashboard' | 'groups' | 'tests' | 'assignments' | 'grading' | 'learner' | 'profile' | 'admin'
 
@@ -45,6 +50,8 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
   const teacher = auth.user.role === 'TEACHER', student = auth.user.role === 'STUDENT', admin = auth.user.role === 'ADMIN'
   const [screen, setScreen] = useState(() => workspaceLocation(admin ? 'admin' : 'dashboard'))
   const view = screen.view
+  const [creationRequest, setCreationRequest] = useState<AssessmentCreationRequest | null>(null)
+  const creationRequestId = useRef(0)
   const [learnerTab, setLearnerTab] = useState<'tests' | 'results'>(() => screen.result === null ? 'tests' : 'results')
   useEffect(() => {
     const changed = () => setScreen(workspaceLocation(admin ? 'admin' : 'dashboard'))
@@ -65,6 +72,13 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
     setScreen({ view: 'learner', participants: null, result: attempt, assignment: null })
     window.scrollTo({ top: 0 })
   }
+  function createTest(mode: TestCreationMode) {
+    setCreationRequest({ id: ++creationRequestId.current, mode })
+    navigate('tests')
+  }
+  const creationRequestHandled = useCallback((id: number) => {
+    setCreationRequest(current => current?.id === id ? null : current)
+  }, [])
   const [exam, setExam] = useState<{ assignment: number; attempt?: number; code?: string } | null>(null)
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null)
   const available: { key: View; name: string; icon: typeof Users }[] = [
@@ -82,9 +96,9 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
     <header className="ws-topbar"><a className="ws-brand" href="/" aria-label="ExamAI — начало"><span className="ws-brand-icon"><BookOpen size={23} aria-hidden="true" /></span>ExamAI</a><div className="ws-account"><strong>{auth.user.name}</strong><span>{roleLabels[auth.user.role]}</span></div><ThemeToggle /><button className="icon-button" title="Изход" aria-label="Изход" onClick={() => void logout()}><LogOut size={18} /></button></header>
     <nav className="ws-nav" aria-label="Основна навигация">{available.map(({ key, name, icon: Icon }) => <button key={key} className={actualView === key ? 'active' : ''} aria-current={actualView === key ? 'page' : undefined} onClick={() => navigate(key)}><Icon size={18} aria-hidden="true" />{name}</button>)}</nav>
     <div className="ws-body" id="workspace-content" tabIndex={-1}>
-      {actualView === 'dashboard' && <Dashboard api={api} teacher={teacher} navigate={navigate} openResults={() => navigate('learner', null, 'results')} />}
+      {actualView === 'dashboard' && <Dashboard api={api} teacher={teacher} navigate={navigate} openResults={() => navigate('learner', null, 'results')} onCreateTest={createTest} />}
       {actualView === 'groups' && <GroupsPanel api={api} openResult={openResult} teacher={teacher} selected={selectedGroup} setSelected={setSelectedGroup} begin={(assignment, attempt) => setExam({ assignment, attempt })} />}
-      {actualView === 'tests' && <AssessmentEditor api={api} userId={auth.user.id} />}
+      {actualView === 'tests' && <AssessmentEditor api={api} userId={auth.user.id} creationRequest={creationRequest} onCreationRequestHandled={creationRequestHandled} />}
       {actualView === 'assignments' && (screen.participants === null
         ? <AssignmentsPanel api={api} userId={auth.user.id} openParticipants={id => navigate('assignments', id)} />
         : <AssignmentParticipantsPage key={screen.participants} api={api} id={screen.participants} back={() => navigate('assignments')} />)}
@@ -100,7 +114,8 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
   </main>
 }
 
-function Dashboard({ api, teacher, navigate, openResults }: { api: WorkspaceApi; teacher: boolean; navigate: (view: View) => void; openResults: () => void }) {
+function Dashboard({ api, teacher, navigate, openResults, onCreateTest }: { api: WorkspaceApi; teacher: boolean; navigate: (view: View) => void; openResults: () => void; onCreateTest: (mode: TestCreationMode) => void }) {
+  const [showCreateOptions, setShowCreateOptions] = useState(false)
   const groups = useRemote<Group[]>(api, '/groups', [])
   const assignments = useRemote<Assignment[]>(api, '/assignments', [])
   const records = useRemote<(Attempt | Result)[]>(api, teacher ? '/grading' : '/results', [])
@@ -115,6 +130,12 @@ function Dashboard({ api, teacher, navigate, openResults }: { api: WorkspaceApi;
   ]
   return <section className="ws-section">
     <SectionHead title="Моето табло" description={teacher ? 'Твоите групи, възложени тестове и проверки — всичко започва оттук.' : 'Виж възложените тестове, следи сроковете и намери резултатите си.'} />
+    {teacher && <div className="ws-dashboard-create">
+      <span className="ws-dashboard-create-icon"><BookOpen size={24} aria-hidden="true" /></span>
+      <div><span className="ws-dashboard-create-eyebrow">ГОТОВ ЛИ СИ ЗА НОВ ТЕСТ?</span><h3>Създай тест по своя начин</h3><p>Започни с AI, създай ръчно или импортирай готов материал.</p></div>
+      <button type="button" className="primary command-button" onClick={() => setShowCreateOptions(true)}><Plus size={18} aria-hidden="true" /> Създай тест <ArrowRight size={17} aria-hidden="true" /></button>
+    </div>}
+    {showCreateOptions && <TestCreationOptions onClose={() => setShowCreateOptions(false)} onChoose={mode => { setShowCreateOptions(false); onCreateTest(mode) }} />}
     <Feedback error={groups.error || assignments.error || records.error} busy={groups.loading || assignments.loading || records.loading} />
     <div className="ws-metrics" role="group" aria-label="Статистика">
       <button type="button" title="Към групите" aria-busy={groups.loading} onClick={() => navigate('groups')}>
