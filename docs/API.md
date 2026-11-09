@@ -148,12 +148,33 @@ All subsequent student exam commands require `X-Exam-Session: <sessionToken>` an
 
 The `question` student projection has IDs, text/type/options only when open, points, allowed time, open-instance/server timestamps and draft. It never has `correct`, `acceptedAnswers`, criteria, explanation or `definition_json`. Pending questions do not expose unseen text. Exact deadline uses server UTC, never client time. Duplicate/late events return current state; old-instance events cannot penalize the next question. `blur` alone has no penalty. Deadlines also run in the persistent worker.
 
+## Chat
+
+All current routes use `/api/v1/chat` and require an authenticated active account. The platform directory includes registered teachers, students and administrators who completed role selection, excluding the current user. Platform direct chats do not require a shared learning group. Custom chat groups are separate from learning groups and grant no workspace memberships or academic access. Only conversation participants can access their history, files, read cursors and realtime events; administrators have no bypass. Existing learning-group conversations still require current participation. Explicit tenant requests remain restricted to the selected workspace and keep their existing direct-chat rules. Inactive users and students with an active exam cannot access chat. Legacy `/api/v1/conversations` and `/ws/chat` routes remain retired.
+
+The teacher's “Нова чат група” UI lists only their current learning groups from `GET /groups`. Selecting a suggestion calls `POST /groups/{groupId}`, reusing its existing conversation and current group membership. The UI does not offer manual participant selection or a separate group title. Existing independent chat histories and their API remain compatible.
+
+| Method / path (under `/api/v1/chat`) | Contract |
+|---|---|
+| GET `/groups`, `/threads` | Current authorized learning groups and threads; thread includes unread count and latest message ID |
+| GET `/peers?query=...` | Registered active contacts `{user_id,name,email,role}`, searched by name or email; optional query, current user excluded |
+| POST `/groups/{groupId}`, `/direct/{peerId}` | Open or return the existing group/direct thread |
+| POST `/custom-groups` | `{title,participantIds}` creates a chat with the caller and 2–49 distinct other registered active users; title 1–190 characters. Returns a group thread with `groupId:null` |
+| GET `/conversations/{id}/messages` | Latest 50 messages in chronological order; `{messages,hasMore,beforeId,afterId}` |
+| GET `/conversations/{id}/messages?beforeId=N` | Older messages; `beforeId` is the next older-history cursor |
+| GET `/conversations/{id}/messages?afterId=N` | Newer messages, oldest first; advance `afterId` while `hasMore` is true. Cannot combine cursors |
+| POST `/conversations/{id}/messages` | `{text,attachment?:{fileName,base64},clientMessageId?:UUID}`; same sender/thread/key and payload returns the original message; changed payload returns 409 |
+| POST `/conversations/{id}/read` | `{messageId}` acknowledges only through the displayed message. Fetching history does not mark it read. Legacy empty body acknowledges the latest message |
+| GET `/conversations/{id}/messages/{messageId}/attachment` | Authorized attachment download, private/no-store |
+| POST `/realtime-ticket` | Session-bound, single-use, short-lived `{ticket}` for the account stream |
+| GET `/events?ticket=...` | Authenticated SSE: `ready` and `changed` with `{conversationId}`; periodic keepalives. Reload persisted state after reconnect |
+
+Conversation-specific `/conversations/{id}/realtime-ticket` and `/conversations/{id}/events` remain compatible. Streams revalidate sessions and conversation access, expire, and have per-user/global limits. A single backend process distributes live invalidations; database history and cursor-based catchup preserve messages across reconnects. The bearer token stays in the Authorization header, never in the stream URL.
+
 ## Settings And Billing
 
 | Method / path | Contract |
 |---|---|
-
-The chat feature and its HTTP/WebSocket endpoints have been removed. Existing chat tables are retained for migration compatibility, but are no longer used by the application.
 
 Global-admin `/api/admin` manages accounts, roles, permissions and audit. Organization administration routes have been removed.
 

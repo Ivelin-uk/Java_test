@@ -9,6 +9,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test:e2e": "node e2e/workspace.mjs",
+    "test:chat": "node e2e/chat.mjs",
+    "test:chat-stream": "node --test e2e/event-stream.test.mjs",
     "test:authoring": "node e2e/authoring.mjs",
     "test:ai": "node e2e/ai-page.mjs",
     "test:ai-append": "node e2e/ai-append.mjs",

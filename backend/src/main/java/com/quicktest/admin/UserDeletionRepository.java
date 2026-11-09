@@ -250,7 +250,7 @@ public class UserDeletionRepository {
         List<Long> assignments = ids("SELECT id FROM exam_assignments WHERE teacher_id=? OR " + in("organization_id", personal) + " ORDER BY id", userId);
         List<Long> attempts = ids("SELECT id FROM exam_attempts WHERE student_id=? OR " + in("organization_id", personal) + " OR " + in("assignment_id", assignments) + " ORDER BY id", userId);
         List<Long> groups = ids("SELECT g.id FROM learning_groups g WHERE " + in("g.organization_id", personal) + " OR EXISTS (SELECT 1 FROM group_teachers t WHERE t.organization_id=g.organization_id AND t.group_id=g.id AND t.user_id=?) ORDER BY g.id", userId);
-        List<Long> conversations = ids("SELECT id FROM workspace_conversations WHERE " + in("organization_id", personal) + " OR " + in("group_id", groups) + " ORDER BY id");
+        List<Long> conversations = ids("SELECT c.id FROM workspace_conversations c WHERE " + in("c.organization_id", personal) + " OR " + in("c.group_id", groups) + " OR EXISTS (SELECT 1 FROM conversation_members cm WHERE cm.organization_id=c.organization_id AND cm.conversation_id=c.id AND cm.user_id=?) ORDER BY c.id", userId);
         List<Long> images = ids("SELECT id FROM private_images WHERE owner_id=? OR " + in("organization_id", personal) + " ORDER BY id", userId);
         List<Long> bank = ids("SELECT id FROM question_bank_items WHERE owner_id=? OR " + in("organization_id", personal) + " ORDER BY id", userId);
         List<Long> generation = ids("SELECT id FROM workspace_ai_jobs WHERE user_id=? OR " + in("organization_id", personal) + " ORDER BY id", userId);

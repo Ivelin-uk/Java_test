@@ -39,7 +39,7 @@ assert.equal((await request(`/api/v1/groups/${group.id}/members`, teacher, 'POST
 const assignment = (await request('/api/v1/assignments', teacher, 'POST', { versionId: version.id, groupIds: [group.id], startsAt: new Date(Date.now() - 60000).toISOString(), endsAt: new Date(Date.now() + 3600000).toISOString(), maxAttempts: 1, shuffleQuestions: false, shuffleOptions: false, answersAfterDeadline: true })).data
 assert.equal((await request('/api/v1/conversations', teacher)).status, 404)
 assert.equal((await request('/ws/chat', teacher)).status, 403)
-outcomes.push('chat endpoints removed')
+outcomes.push('retired chat endpoints remain unavailable')
 const executablePath = process.env.CHROME_PATH ?? (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined)
 const browser = await chromium.launch({ executablePath, headless: process.env.E2E_HEADED !== 'true', args: ['--disable-gpu'] })
 const errors = []
@@ -52,7 +52,7 @@ async function pageWith(auth, viewport) {
   await page.getByRole('navigation').waitFor()
   assert.equal(await page.getByRole('combobox', { name: 'Активна организация' }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Нова организация', exact: true }).count(), 0)
-  assert.equal(await page.getByRole('button', { name: 'Чат', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Чат', exact: true }).count(), 1)
   return { context, page }
 }
 try {

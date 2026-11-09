@@ -16,6 +16,11 @@ export interface ReviewQuestion { id: number; status: string; definition_json: s
 export interface Review { attempt: Attempt; student: { id: number; name: string; email: string }; questions: ReviewQuestion[]; events: { event_type: string; question_id: number; received_at: string }[]; revisions: Result[] }
 export interface AiJob { id: number; status: string; result_json: string | null; error_message: string | null }
 export interface Mail { id: number; notification_type: string; recipient_email: string; payload_json: string; status: string; created_at: string }
+export interface ChatGroup { id: number; name: string; subject: string }
+export interface ChatPeer { user_id: number; name: string; email?: string; role?: string }
+export interface ChatThread { id: number; type: 'group' | 'direct'; groupId: number | null; peerId: number | null; title: string; lastMessage: string | null; attachmentName: string | null; lastMessageAt: string | null; unreadCount: number; latestMessageId?: number | null }
+export interface ChatMessage { id: number; senderId: number; senderName: string; text: string; attachmentName: string | null; attachmentType: string | null; attachmentSize: number | null; createdAt: string; clientMessageId?: string | null }
+export interface ChatMessagePage { messages: ChatMessage[]; hasMore: boolean; beforeId: number | null; afterId?: number | null }
 
 export const statusLabels: Record<string, string> = { redacted: 'Изтрит по политика', draft: 'Чернова', published: 'Публикуван', archived: 'Архивиран', in_progress: 'В процес', pending_review: 'Чака проверка', finalized: 'Публикуван резултат', voided: 'Анулиран', queued: 'В опашката', running: 'Обработва се', completed: 'Готов', failed: 'Неуспешен', active: 'Активен', inactive: 'Неактивен', trialing: 'Пробен период', expired: 'Изтекъл', past_due: 'Просрочен', canceled: 'Прекратен', passed: 'Успешен', sent: 'Изпратен', timed_out: 'Времето изтече', invalidated: 'Напуснат изпитен екран', unanswered: 'Без отговор', answered: 'Предаден', open: 'Отворен', pending: 'Не е отворен' }
 export const label = (status: string) => statusLabels[status] ?? status

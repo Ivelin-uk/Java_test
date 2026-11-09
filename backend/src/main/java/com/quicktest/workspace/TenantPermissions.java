@@ -18,6 +18,7 @@ public class TenantPermissions implements HandlerInterceptor {
     private final EndpointCatalog catalog; private final OrgAccess access; private final TenantPermissionsRepository repository; private final WorkspaceAudit audit;
     public TenantPermissions(EndpointCatalog catalog,OrgAccess access,TenantPermissionsRepository repository,WorkspaceAudit audit) {this.catalog=catalog;this.access=access;this.repository=repository;this.audit=audit;}
     public boolean allowed(OrgAccess.Scope scope,EndpointCatalog.Endpoint endpoint,String role) {
+        if(scope.platform() && role.equals("ADMIN") && endpoint.controller().equals("ChatController")) return true;
         boolean baseline=role.equals("TEACHER")?endpoint.teacher():endpoint.student();
         if(scope.platform()) return Set.of("TEACHER","STUDENT").contains(role) && baseline;
         return baseline && repository.findGrant(scope.organizationId(), endpoint.key(), role).map(row->flag(row,"allowed")).orElse(true);

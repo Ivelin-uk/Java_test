@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowRight, ArrowUpRight, BookOpen, ClipboardList, GraduationCap, LayoutDashboard, LogOut, Plus, Shield, UserRound, Users } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, BookOpen, ClipboardList, GraduationCap, LayoutDashboard, LogOut, MessageCircle, Plus, Shield, UserRound, Users } from 'lucide-react'
 import type { AuthResponse } from '../types/models'
 import { roleLabels } from '../api/access'
 import { AdminPanel } from '../components/AdminPanel'
@@ -22,10 +22,11 @@ import './workspace.css'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { TestCreationOptions } from './TestCreationOptions'
 import type { TestCreationMode } from './TestCreationOptions'
+import { ChatPanel } from './ChatPanel'
 import './testCreation.css'
 import './dashboardCreation.css'
 
-type View = 'dashboard' | 'groups' | 'tests' | 'assignments' | 'grading' | 'learner' | 'profile' | 'admin'
+type View = 'dashboard' | 'groups' | 'chat' | 'tests' | 'assignments' | 'grading' | 'learner' | 'profile' | 'admin'
 
 type WorkspaceScreen = { view: View; participants: number | null; result: number | null; assignment: number | null }
 
@@ -42,7 +43,7 @@ function workspaceLocation(fallback: View): WorkspaceScreen {
   if (resultMatch) return { view: 'learner', participants: null, result: Number(resultMatch[1]), assignment: null }
   if (path.startsWith('/verify-email')) return { view: 'profile', participants: null, result: null, assignment: null }
   const view = history.state?.examaiView === 'billing' ? 'profile' : history.state?.examaiView
-  return { view: ['dashboard', 'groups', 'tests', 'assignments', 'grading', 'learner', 'profile', 'admin'].includes(view) ? view : fallback, participants: null, result: null, assignment: null }
+  return { view: ['dashboard', 'groups', 'chat', 'tests', 'assignments', 'grading', 'learner', 'profile', 'admin'].includes(view) ? view : fallback, participants: null, result: null, assignment: null }
 }
 
 export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: AuthResponse; logout: () => Promise<void>; onAuth: (auth: AuthResponse) => void; refreshProfile: () => Promise<void> }) {
@@ -83,6 +84,7 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null)
   const available: { key: View; name: string; icon: typeof Users }[] = [
     ...(!admin ? [{ key: 'dashboard' as View, name: 'Табло', icon: LayoutDashboard }, { key: 'groups' as View, name: 'Групи', icon: Users }] : []),
+    { key: 'chat' as View, name: 'Чат', icon: MessageCircle },
     ...(teacher ? [{ key: 'tests' as View, name: 'Тестове', icon: BookOpen }, { key: 'assignments' as View, name: 'Възлагания', icon: ClipboardList }, { key: 'grading' as View, name: 'Проверка', icon: GraduationCap }] : []),
     ...(student ? [{ key: 'learner' as View, name: 'Моите тестове', icon: ClipboardList }] : []),
     ...(admin ? [{ key: 'admin' as View, name: 'Администрация', icon: Shield }] : []),
@@ -98,6 +100,7 @@ export function ExamWorkspace({ auth, logout, onAuth, refreshProfile }: { auth: 
     <div className="ws-body" id="workspace-content" tabIndex={-1}>
       {actualView === 'dashboard' && <Dashboard api={api} teacher={teacher} navigate={navigate} openResults={() => navigate('learner', null, 'results')} onCreateTest={createTest} />}
       {actualView === 'groups' && <GroupsPanel api={api} openResult={openResult} teacher={teacher} selected={selectedGroup} setSelected={setSelectedGroup} begin={(assignment, attempt) => setExam({ assignment, attempt })} />}
+      {actualView === 'chat' && <ChatPanel api={api} userId={auth.user.id} canCreateGroup={teacher} onOpenGroups={admin ? undefined : () => navigate('groups')} />}
       {actualView === 'tests' && <AssessmentEditor api={api} userId={auth.user.id} creationRequest={creationRequest} onCreationRequestHandled={creationRequestHandled} />}
       {actualView === 'assignments' && (screen.participants === null
         ? <AssignmentsPanel api={api} userId={auth.user.id} openParticipants={id => navigate('assignments', id)} />
