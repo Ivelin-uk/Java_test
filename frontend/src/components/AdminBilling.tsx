@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Pencil, RefreshCw, Save, Search, X } from 'lucide-react'
+import { ExternalLink, Pencil, RefreshCw, Save, Search, X } from 'lucide-react'
 import { api } from '../api/client'
 import { useNotifications } from '../notifications'
 import { TableContainer } from '../workspace/ui'
@@ -77,6 +77,15 @@ export function AdminBilling({ users, plans, token, busy, loading, onBusy, onCha
   const selected = plans.find(plan => plan.userId === editing?.user.id)
 
   return <>
+    <aside className="admin-ai-usage">
+      <div>
+        <strong>AI кредити в приложението</strong>
+        <p>Показаните оставащи кредити са според вътрешния лимит на всеки учител. Те не са OpenAI токени или общият остатък по OpenAI акаунта.</p>
+      </div>
+      <a className="command-button" href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noopener noreferrer">
+        <ExternalLink size={16} aria-hidden="true" /> OpenAI Billing — добавяне на кредит
+      </a>
+    </aside>
     <p className="muted">Използвани ресурси, лимити и плащания за всеки учител. Можеш да възстановиш AI кредитите за избран период или да зададеш Free/Pro достъп.</p>
     <div className="filter-bar">
       <label className="search-field"><Search size={17} aria-hidden="true" /><input aria-label="Филтър по име" placeholder="Търси по име" value={name} onChange={event => setName(event.target.value)} /></label>
@@ -93,7 +102,7 @@ export function AdminBilling({ users, plans, token, busy, loading, onBusy, onCha
           <td><div><strong className={plan?.plan === 'pro' ? 'good' : ''}>{plan?.plan === 'pro' ? 'Pro' : 'Free'}</strong><small>{plan?.manualPlan ? 'Зададен от администратор' : 'Автоматичен'}</small></div></td>
           <td>{plan?.usage && plan.limits ? `${plan.usage.groups} / ${plan.limits.groups}` : '—'}</td>
           <td>{plan?.usage && plan.limits ? `${plan.usage.activeAssignments} / ${plan.limits.activeAssignments}` : '—'}</td>
-          <td>{plan?.usage && plan.limits ? <div><strong>{plan.usage.aiCredits} / {plan.limits.aiCredits}</strong><small>{plan.plan === 'pro' ? 'Този календарен месец' : 'Пробни, общо за профила'}</small>{!!plan.reservedAiCredits && <small>{plan.reservedAiCredits} в текущи задачи</small>}</div> : '—'}</td>
+          <td>{plan?.usage && plan.limits ? <div><strong>{plan.usage.aiCredits} / {plan.limits.aiCredits}</strong><small>{plan.plan === 'pro' ? 'Този календарен месец' : 'Пробни, общо за профила'}</small><small>Остават {Math.max(0, plan.limits.aiCredits - plan.usage.aiCredits - (plan.reservedAiCredits ?? 0))}</small>{!!plan.reservedAiCredits && <small>{plan.reservedAiCredits} в текущи задачи</small>}</div> : '—'}</td>
           <td><div><span>{period ? `${period}${price ? ` — ${price} / ${plan?.period === 'month' ? 'месец' : 'година'}` : ''}` : 'Без абонамент'}</span><small>{plan?.cancelAtPeriodEnd ? 'Прекратява се в края на периода' : plan?.status === 'free' || !plan?.status ? '—' : plan.status}</small>{plan?.paidThrough && <small>Платен до {new Date(plan.paidThrough).toLocaleDateString('bg-BG')}</small>}</div></td>
           <td><div className="admin-billing-actions"><button className="command-button" aria-label={`Смени плана на ${user.email}`} disabled={busy || !plan} onClick={() => open(user, 'plan')}><Pencil size={16} />Смени плана</button><button className="command-button" aria-label={`Нулирай AI кредитите на ${user.email}`} disabled={busy || !plan} onClick={() => open(user)}><RefreshCw size={16} />Нулирай AI</button></div></td>
         </tr>

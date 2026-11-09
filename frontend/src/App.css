@@ -570,6 +570,9 @@ progress {
 .admin-billing-actions { display: grid; gap: 8px; }
 .admin-billing-actions button { justify-content: flex-start; white-space: nowrap; }
 .admin-billing-note { margin-top: 16px; }
+.admin-ai-usage { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 16px 0; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.admin-ai-usage p { margin: 4px 0 0; color: var(--muted); line-height: 1.5; }
+.admin-ai-usage a { flex-shrink: 0; text-decoration: none; }
 .admin-subjects { display: grid; gap: 20px; min-width: 0; }
 .admin-catalog-intro { max-width: 1000px; color: var(--muted); line-height: 1.7; margin: 0; }
 .admin-catalog-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 24px; align-items: start; }
@@ -633,6 +636,7 @@ progress {
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
 
 @media (max-width: 860px) {
+  .admin-ai-usage { align-items: flex-start; flex-direction: column; }
   .account-topbar { flex-wrap: wrap; gap: 12px; }
   .account-topbar > div:first-child { flex: 1; }
   .account-summary { flex-basis: 100%; text-align: left; order: 3; margin: 0; }
