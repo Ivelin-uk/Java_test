@@ -26,6 +26,7 @@ try {
   page.on('pageerror', error => errors.push(error.message))
   await page.goto(frontend)
   await page.getByRole('button', { name: 'Тестове', exact: true }).click()
+  await page.getByRole('heading', { name: 'Създай тест по своя начин', exact: true }).waitFor()
   await chooseTestCreation(page, 'manual')
   const title = `Manual authoring ${stamp}`
   await page.getByLabel('Тема', { exact: true }).fill(title)

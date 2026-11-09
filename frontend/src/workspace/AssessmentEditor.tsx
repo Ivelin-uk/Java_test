@@ -532,11 +532,16 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
   </section>
   return <section className={`ws-section${!draft ? ' ws-library' : ' ws-manual-create-page'}`}>
     <SectionHead title={draft ? draft.title : 'Библиотека с тестове'} description={draft ? 'Попълни настройките и въпросите, след което натисни „Запази теста“.' : 'Създай тест ръчно или с AI. Тук ще намериш всички свои и добавени от други учители тестове.'}>
-      {draft ? <><button type="button" title="Към библиотеката" className="command-button" disabled={action.busy || generating || pendingImages > 0 || !!replacement} onClick={() => { setDraft(null); setCurrent(null); setJob(null); setShowAi(false); setShowAppendAi(false); setImportWarnings([]) }}><ArrowLeft size={18} /> Към библиотеката</button><button type="button" className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази теста</button></> : <button type="button" className="primary command-button" disabled={action.busy || !!job && ['queued', 'running'].includes(job.status)} onClick={() => setShowCreationOptions(true)}><Plus size={17} /> Създай тест</button>}
+      {draft && <><button type="button" title="Към библиотеката" className="command-button" disabled={action.busy || generating || pendingImages > 0 || !!replacement} onClick={() => { setDraft(null); setCurrent(null); setJob(null); setShowAi(false); setShowAppendAi(false); setImportWarnings([]) }}><ArrowLeft size={18} /> Към библиотеката</button><button type="button" className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази теста</button></>}
     </SectionHead>
     <Feedback error={action.error || list.error || pollError} busy={action.busy || list.loading} />
-    {!draft && showCreationOptions && <TestCreationOptions onClose={() => setShowCreationOptions(false)} onChoose={startCreation} />}
     {!draft ? <>
+      <div className="ws-dashboard-create">
+        <span className="ws-dashboard-create-icon"><BookOpen size={24} aria-hidden="true" /></span>
+        <div><span className="ws-dashboard-create-eyebrow">ГОТОВ ЛИ СИ ЗА НОВ ТЕСТ?</span><h3>Създай тест по своя начин</h3><p>Започни с AI, създай ръчно или импортирай готов материал.</p></div>
+        <button type="button" className="primary command-button" disabled={action.busy || !!job && ['queued', 'running'].includes(job.status)} onClick={() => setShowCreationOptions(true)}><Plus size={18} aria-hidden="true" /> Създай тест <ArrowRight size={17} aria-hidden="true" /></button>
+      </div>
+      {showCreationOptions && <TestCreationOptions onClose={() => setShowCreationOptions(false)} onChoose={startCreation} />}
       <div className="ws-library-tabs" role="tablist" aria-label="Раздели на библиотеката" onKeyDown={event => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
         const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
