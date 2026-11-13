@@ -78,7 +78,7 @@ public class TestDocumentImportService {
             var questions = source.questions().stream().map(q -> new AssessmentService.Question(q.type(), escape(q.text()),
                     q.difficulty(), q.points(), q.timeSeconds(), q.options() == null ? List.of() : q.options(),
                     q.acceptedAnswers() == null ? List.of() : q.acceptedAnswers(), q.caseInsensitive(), q.collapseWhitespace(),
-                    Objects.toString(q.criteria(), ""), Objects.toString(q.explanation(), ""))).toList();
+                    Objects.toString(q.criteria(), ""), Objects.toString(q.explanation(), ""), null, q.matchingPairs())).toList();
             var definition = new AssessmentService.Definition(source.title(), source.description(), source.subject(), source.level(),
                     source.instructions(), source.language(), source.gradingScale(), source.passThreshold(), questions, source.additionalInformation());
             assessments.validate(definition);

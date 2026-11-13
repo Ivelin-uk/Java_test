@@ -7,6 +7,7 @@ import type { Attempt, ExamAnswer, Question, Review, ReviewQuestion } from './ty
 import { date, label } from './types'
 import { Empty, Feedback, Panel, SectionHead, TableContainer } from './ui'
 import { WorkspaceImage } from './WorkspaceImage'
+import { MatchingAnswerList, type BlockMatch, type MatchingBlock } from './MatchingBlocks'
 import { DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
 import { useNotifications } from '../notifications'
 
@@ -152,7 +153,7 @@ function VoidAttemptDialog({ api, id, student, close, saved }: { api: WorkspaceA
   }}><label>Причина за анулиране<textarea required value={reason} onChange={event => setReason(event.target.value)} /></label></DeleteConfirmationDialog>
 }
 function QuestionReview({ api, attempt, number, question: row, refresh }: { api: WorkspaceApi; attempt: number; number: number; question: ReviewQuestion; refresh: () => Promise<unknown> }) {
-  const snapshot = JSON.parse(row.definition_json) as { question: Question; options: { id: string; text: string; correct: boolean }[] }
+  const snapshot = JSON.parse(row.definition_json) as { question: Question; options: { id: string; text: string; correct: boolean }[]; matchingLeft?: MatchingBlock[]; matchingRight?: MatchingBlock[]; matchingSolution?: BlockMatch[] }
   const submitted = row.answer_json ? JSON.parse(row.answer_json) as ExamAnswer : null
   const draft = row.draft_json ? JSON.parse(row.draft_json) as ExamAnswer : null
   const action = useAction()
@@ -161,9 +162,10 @@ function QuestionReview({ api, attempt, number, question: row, refresh }: { api:
   const [reason, setReason] = useState(row.override_reason ?? '')
   const maximum = Number(row.maximum_points)
   const validPoints = points.trim() !== '' && Number.isFinite(Number(points)) && Number(points) >= 0 && Number(points) <= maximum
-  const hasAnswer = !!submitted && (submitted.optionIds.length > 0 || !!submitted.text.trim())
+  const matching = snapshot.question.type === 'MATCHING'
+  const hasAnswer = !!submitted && (submitted.optionIds.length > 0 || !!submitted.text.trim() || matching && !!submitted.matches?.length)
   const choice = snapshot.options.length > 0
-  const automatic = row.automatic_points != null && (choice || snapshot.question.type === 'SHORT_ANSWER')
+  const automatic = row.automatic_points != null && (choice || matching || snapshot.question.type === 'SHORT_ANSWER')
   const awarded = automatic ? row.automatic_points : row.reviewed ? row.final_points ?? null : null
   const result = !hasAnswer ? 'unanswered' : awarded === null ? 'manual' : Number(awarded) >= maximum ? 'correct' : Number(awarded) > 0 ? 'partial' : 'wrong'
   const resultText = { unanswered: 'Без отговор', manual: 'За ръчна проверка', correct: automatic ? 'Верен отговор' : 'Пълни точки', partial: 'Частични точки', wrong: automatic ? 'Грешен отговор' : 'Без точки' }[result]
@@ -172,6 +174,7 @@ function QuestionReview({ api, attempt, number, question: row, refresh }: { api:
     <header className="ws-review-head"><strong id={`review-question-${row.id}`}>Въпрос {number}</strong><span className={`ws-review-verdict ws-review-${result}`} data-result={result}><ResultIcon size={17} aria-hidden="true" />{resultText}</span><span className="ws-review-points">{row.final_points ?? '-'} / {row.maximum_points} точки</span></header>
     <div role="heading" aria-level={3} className="question-heading"><QuestionText value={snapshot.question.text} /></div><WorkspaceImage api={api} id={snapshot.question.imageId} /><p className="ws-muted">{label(row.status)} · Автоматични точки: {row.automatic_points ?? 'ръчна проверка'}</p>
     <div className="ws-review-answer"><h4>Отговор на ученика</h4>
+      {matching && submitted && <MatchingAnswerList left={snapshot.matchingLeft ?? []} right={snapshot.matchingRight ?? []} matches={submitted.matches ?? []} solution={snapshot.matchingSolution} showVerdicts />}
       {choice && <ul className="ws-review-choices" aria-label={`Отговори към въпрос ${number}`}>{snapshot.options.map(o => {
         const selected = submitted?.optionIds.includes(o.id) ?? false
         const state = selected ? o.correct ? 'selected-correct' : 'selected-wrong' : o.correct ? hasAnswer ? 'missed' : 'correct-option' : 'neutral'
@@ -182,7 +185,8 @@ function QuestionReview({ api, attempt, number, question: row, refresh }: { api:
       {submitted?.text && <QuestionText value={submitted.text} className={`ws-student-text ws-review-text-answer ws-review-${result}`} />}
       {!hasAnswer && <p className="ws-review-no-answer">{submitted ? 'Предаден е празен отговор.' : 'Няма окончателен отговор.'}</p>}
     </div>
-    {draft && <details className="ws-review-details"><summary>Запазена чернова</summary><QuestionText value={draft.text || snapshot.options.filter(o => draft.optionIds.includes(o.id)).map(o => o.text).join('\n') || 'Празна чернова'} className="ws-student-text" /></details>}
+    {draft && <details className="ws-review-details"><summary>Запазена чернова</summary>{matching ? <MatchingAnswerList left={snapshot.matchingLeft ?? []} right={snapshot.matchingRight ?? []} matches={draft.matches ?? []} /> : <QuestionText value={draft.text || snapshot.options.filter(o => draft.optionIds.includes(o.id)).map(o => o.text).join('\n') || 'Празна чернова'} className="ws-student-text" />}</details>}
+    {matching && <div className="ws-review-answer"><h4>Верни връзки</h4><MatchingAnswerList left={snapshot.matchingLeft ?? []} right={snapshot.matchingRight ?? []} matches={snapshot.matchingSolution ?? []} /></div>}
     {(snapshot.question.criteria || snapshot.question.acceptedAnswers.length > 0) && <p className="ws-review-criteria"><strong>Критерии:</strong> {snapshot.question.criteria || snapshot.question.acceptedAnswers.join(', ')}</p>}
     <details className="ws-review-details"><summary>Време на отговора</summary><p>Отворен: {date(row.opened_at)} · Срок: {date(row.deadline_at)} · Затворен: {date(row.closed_at)}</p></details>
     <form className="ws-form-grid" onSubmit={e => { e.preventDefault(); if (!validPoints || !e.currentTarget.reportValidity()) return; void action.run(async () => { await api.call(`/attempts/${attempt}/grading`, 'PATCH', { questionId: row.id, points: Number(points), comment, reason }); await refresh() }, 'Проверката е запазена.') }}>

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { AlignLeft, BookOpen, Check, CircleDot, FileText, Image, ListChecks, LoaderCircle, MessageSquareText, Sparkles, Upload, X } from 'lucide-react'
+import { AlignLeft, BookOpen, Check, CircleDot, FileText, Image, ListChecks, LoaderCircle, MessageSquareText, Sparkles, Link2, Upload, X } from 'lucide-react'
 import { difficulties, questionTypes, requestedImages, validDistribution } from './aiSettings'
 import type { AiSettings } from './aiSettings'
 import type { WorkspaceApi } from './api'
@@ -101,8 +101,8 @@ export function AiTestFields({ api, value, onChange, disabled, maximum = 20, fix
     <section className="ws-ai-card">
       <header className="ws-ai-card-head"><span className="ws-ai-card-step" aria-hidden="true">02</span><div><h3>Формат на въпросите</h3><p>Избери един или комбинирай няколко типа.</p></div><ListChecks size={20} aria-hidden="true" /></header>
       <fieldset className="ws-ai-types"><legend>Типове въпроси</legend><div className="ws-ai-type-options ws-actions">{questionTypes.map(([key, title]) => {
-        const Icon = key === 'SINGLE_CHOICE' ? CircleDot : key === 'MULTIPLE_CHOICE' ? ListChecks : key === 'TRUE_FALSE' ? Check : key === 'SHORT_ANSWER' ? MessageSquareText : AlignLeft
-        const description = key === 'SINGLE_CHOICE' ? 'Един правилен избор' : key === 'MULTIPLE_CHOICE' ? 'Повече от един избор' : key === 'TRUE_FALSE' ? 'Две възможности' : key === 'SHORT_ANSWER' ? 'Кратък писмен отговор' : 'Разгърнат писмен отговор'
+        const Icon = key === 'SINGLE_CHOICE' ? CircleDot : key === 'MULTIPLE_CHOICE' ? ListChecks : key === 'TRUE_FALSE' ? Check : key === 'SHORT_ANSWER' ? MessageSquareText : key === 'MATCHING' ? Link2 : AlignLeft
+        const description = key === 'SINGLE_CHOICE' ? 'Един правилен избор' : key === 'MULTIPLE_CHOICE' ? 'Повече от един избор' : key === 'TRUE_FALSE' ? 'Две възможности' : key === 'SHORT_ANSWER' ? 'Кратък писмен отговор' : key === 'MATCHING' ? 'Съпоставяне на двойки' : 'Разгърнат писмен отговор'
         return <label className="ws-check ws-ai-type-option" data-selected={value.questionTypes.includes(key)} key={key}><input type="checkbox" checked={value.questionTypes.includes(key)} onChange={e => patch({ questionTypes: e.target.checked ? [...value.questionTypes, key] : value.questionTypes.filter(t => t !== key) })} /><Icon size={19} aria-hidden="true" /><span><strong>{title}</strong><small aria-hidden="true">{description}</small></span></label>
       })}</div></fieldset>
       <div className="ws-ai-image-settings"><label className="ws-check"><input type="checkbox" checked={value.includeImages} onChange={e => patch({ includeImages: e.target.checked })} /><Image size={18} aria-hidden="true" />С изображения</label>{value.includeImages ? <label>Въпроси с изображение<input type="number" min={1} max={value.questionCount} step={1} value={requestedImages(value)} onChange={e => patch({ imageCount: Number(e.target.value) })} /></label> : <p className="ws-ai-field-hint">Добави генерирани илюстрации към избрани въпроси.</p>}</div>

@@ -1,6 +1,6 @@
 import type { Definition, QuestionType } from './types'
 
-export const questionTypes: [QuestionType, string][] = [['SINGLE_CHOICE', 'Един верен отговор'], ['MULTIPLE_CHOICE', 'Няколко верни'], ['TRUE_FALSE', 'Вярно / невярно'], ['SHORT_ANSWER', 'Кратък текст'], ['OPEN_ANSWER', 'Свободен отговор']]
+export const questionTypes: [QuestionType, string][] = [['SINGLE_CHOICE', 'Един верен отговор'], ['MULTIPLE_CHOICE', 'Няколко верни'], ['TRUE_FALSE', 'Вярно / невярно'], ['SHORT_ANSWER', 'Кратък текст'], ['OPEN_ANSWER', 'Свободен отговор'], ['MATCHING', 'Свързване на блокчета']]
 export const difficulties: Record<string, string> = { EASY: 'Лесни', MEDIUM: 'Средни', HARD: 'Трудни', VERY_HARD: 'Много трудни', MIXED: 'По разпределение' }
 
 export interface AiSettings {

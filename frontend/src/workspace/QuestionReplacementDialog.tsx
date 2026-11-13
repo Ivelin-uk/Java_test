@@ -9,6 +9,7 @@ import type { WorkspaceApi } from './api'
 import { formatDuration } from './duration'
 import type { AiJob, Definition, Question } from './types'
 import { WorkspaceImage } from './WorkspaceImage'
+import { MatchingPairsPreview } from './MatchingPairsEditor'
 import './questionReplacement.css'
 
 const invalidResult = 'AI не върна един валиден въпрос. Опитайте с нова заявка.'
@@ -39,7 +40,16 @@ function readQuestion(result: string | null): Question {
     })
     const correct = options.filter(option => option.correct).length
     if (new Set(options.map(option => option.text.trim().toLowerCase())).size !== options.length || ['SINGLE_CHOICE', 'TRUE_FALSE'].includes(String(q.type)) && (options.length < 2 || correct !== 1) || q.type === 'TRUE_FALSE' && options.length !== 2 || q.type === 'MULTIPLE_CHOICE' && (options.length < 2 || correct < 1) || ['SHORT_ANSWER', 'OPEN_ANSWER'].includes(String(q.type)) && options.length !== 0 || q.type === 'OPEN_ANSWER' && (typeof q.criteria !== 'string' || !q.criteria.trim())) throw new Error(invalidResult)
-    return { type: q.type as Question['type'], text: q.text, difficulty: String(q.difficulty), points: q.points, timeSeconds: Number(q.timeSeconds), options, acceptedAnswers, caseInsensitive: q.caseInsensitive, collapseWhitespace: q.collapseWhitespace, criteria: typeof q.criteria === 'string' ? q.criteria : '', explanation: typeof q.explanation === 'string' ? q.explanation : '', imageId: q.imageId == null ? null : Number(q.imageId) }
+    const matchingPairs: NonNullable<Question['matchingPairs']> = []
+    if (q.type === 'MATCHING') {
+      if (!Array.isArray(q.matchingPairs) || q.matchingPairs.length < 2 || q.matchingPairs.length > 12 || options.length || acceptedAnswers.length) throw new Error(invalidResult)
+      for (const pair of q.matchingPairs) {
+        if (!isRecord(pair) || typeof pair.left !== 'string' || !pair.left.trim() || pair.left.length > 4000 || typeof pair.right !== 'string' || !pair.right.trim() || pair.right.length > 4000) throw new Error(invalidResult)
+        matchingPairs.push({ left: pair.left, right: pair.right })
+      }
+      if (['left', 'right'].some(side => new Set(matchingPairs.map(pair => pair[side as keyof typeof pair].trim().toLowerCase())).size !== matchingPairs.length)) throw new Error(invalidResult)
+    } else if (q.matchingPairs != null && (!Array.isArray(q.matchingPairs) || q.matchingPairs.length)) throw new Error(invalidResult)
+    return { type: q.type as Question['type'], text: q.text, difficulty: String(q.difficulty), points: q.points, timeSeconds: Number(q.timeSeconds), options, acceptedAnswers, caseInsensitive: q.caseInsensitive, collapseWhitespace: q.collapseWhitespace, criteria: typeof q.criteria === 'string' ? q.criteria : '', explanation: typeof q.explanation === 'string' ? q.explanation : '', imageId: q.imageId == null ? null : Number(q.imageId), ...(q.type === 'MATCHING' ? { matchingPairs } : {}) }
   } catch {
     throw new Error(invalidResult)
   }
@@ -227,6 +237,7 @@ export function QuestionReplacementDialog({ api, definition, questionIndex, onCl
           <p className="ws-muted">{questionTypes.find(([key]) => key === preview.type)?.[1]} · {difficultyLabels[preview.difficulty]} · {original.points} точки · {formatDuration(original.timeSeconds)}</p>
           <QuestionText value={preview.text} className="ws-replacement-prompt" />
           <WorkspaceImage api={api} id={preview.imageId} />
+          {preview.type === 'MATCHING' && <MatchingPairsPreview pairs={preview.matchingPairs} />}
           {preview.options.length > 0 && <ol className="ws-preview-options">{preview.options.map((option, index) => <li key={index} className={option.correct ? 'ws-correct-option' : undefined}>{option.correct && <Check size={15} aria-label="Верен отговор" />}{option.text}</li>)}</ol>}
           {preview.acceptedAnswers.length > 0 && <p><strong>Допустими отговори:</strong> {preview.acceptedAnswers.join(', ')}</p>}
           {preview.type === 'SHORT_ANSWER' && <p className="ws-muted">{preview.caseInsensitive ? 'Без значение на главни и малки букви.' : 'С отчитане на главни и малки букви.'} {preview.collapseWhitespace ? 'Излишните интервали се пренебрегват.' : 'Интервалите се отчитат.'}</p>}

@@ -73,7 +73,19 @@ public class AttemptService {
                 var q=questions.get(i);List<Map<String,Object>> options=new ArrayList<>();
                 for(var option:q.options()==null?List.<AssessmentService.Option>of():q.options()) options.add(Map.of("id",UUID.randomUUID().toString(),"text",option.text(),"correct",option.correct()));
                 if(flag(a,"shuffle_options")) Collections.shuffle(options,new java.security.SecureRandom());
-                repository.insertQuestion(scope.organizationId(), id, i, json.write(Map.of("question",q,"options",options)), q.points(), (int)Math.ceil(q.timeSeconds()*decimal(recipient,"time_multiplier").doubleValue()));
+                Map<String,Object> snapshot=new LinkedHashMap<>();snapshot.put("question",q);snapshot.put("options",options);
+                if(q.type().equals("MATCHING")) {
+                    List<Map<String,String>> left=new ArrayList<>(),right=new ArrayList<>(),solution=new ArrayList<>();
+                    for(var pair:q.matchingPairs()) {
+                        String leftId=UUID.randomUUID().toString(),rightId=UUID.randomUUID().toString();
+                        left.add(Map.of("id",leftId,"text",pair.left()));right.add(Map.of("id",rightId,"text",pair.right()));
+                        solution.add(Map.of("leftId",leftId,"rightId",rightId));
+                    }
+                    // Independent identifiers and order never disclose the teacher's pairs.
+                    Collections.shuffle(left,new java.security.SecureRandom());Collections.shuffle(right,new java.security.SecureRandom());
+                    snapshot.put("matchingLeft",left);snapshot.put("matchingRight",right);snapshot.put("matchingSolution",solution);
+                }
+                repository.insertQuestion(scope.organizationId(), id, i, json.write(snapshot), q.points(), (int)Math.ceil(q.timeSeconds()*decimal(recipient,"time_multiplier").doubleValue()));
             }
             var attempt=lock(scope.organizationId(),id);openInternal(attempt,request.fullscreenActive(),request.visible());
             audit.write(scope.organizationId(),scope.userId(),"attempt.started",id,Map.of("number",count+1,"mobileMode",mobileMode));
@@ -135,17 +147,31 @@ public class AttemptService {
     private void validateAnswer(Map<String,Object> q,Answer answer) {
         if(answer==null || answer.optionIds()==null || answer.optionIds().size()>30 || answer.text()==null || answer.text().length()>30000) throw WorkspaceError.validation("Невалиден отговор.");
         var snapshot=json.object(q.get("definition_json"));var definition=json.object(json.write(snapshot.get("question")));
+        if(string(definition,"type").equals("MATCHING")) {
+            if(!answer.optionIds().isEmpty() || !answer.text().isEmpty() || answer.matches().size()>12) throw WorkspaceError.validation("Невалидни връзки между блокчетата.");
+            Set<String> left=new HashSet<>(),right=new HashSet<>(),usedLeft=new HashSet<>(),usedRight=new HashSet<>();
+            blocks(snapshot,"matchingLeft").forEach(block->left.add(string(block,"id")));blocks(snapshot,"matchingRight").forEach(block->right.add(string(block,"id")));
+            for(var match:answer.matches()) if(match==null || !left.contains(match.leftId()) || !right.contains(match.rightId()) || !usedLeft.add(match.leftId()) || !usedRight.add(match.rightId())) throw WorkspaceError.validation("Всяко блокче се свързва веднъж с блокче от другата колона.");
+            return;
+        }
+        if(!answer.matches().isEmpty()) throw WorkspaceError.validation("Връзки се подават само при въпрос за свързване.");
         List<Map<String,Object>> options=options(snapshot);Set<String> allowed=new HashSet<>();options.forEach(o->allowed.add(string(o,"id")));
         if(!allowed.containsAll(answer.optionIds()) || new HashSet<>(answer.optionIds()).size()!=answer.optionIds().size()) throw WorkspaceError.validation("Невалидни избрани опции.");
         if(!string(definition,"type").equals("MULTIPLE_CHOICE") && answer.optionIds().size()>1) throw WorkspaceError.validation("Изберете най-много един отговор.");
     }
     @SuppressWarnings("unchecked")
     private List<Map<String,Object>> options(Map<String,Object> snapshot) {return (List<Map<String,Object>>)snapshot.get("options");}
+    @SuppressWarnings("unchecked")
+    private List<Map<String,Object>> blocks(Map<String,Object> snapshot,String key) {return (List<Map<String,Object>>)snapshot.getOrDefault(key,List.of());}
     private BigDecimal score(Map<String,Object> row,Answer answer) {
         var snapshot=json.object(row.get("definition_json"));var question=json.parse(json.write(snapshot.get("question")),AssessmentService.Question.class);
         if(question.type().equals("OPEN_ANSWER") || question.type().equals("SHORT_ANSWER") && (question.acceptedAnswers()==null || question.acceptedAnswers().isEmpty())) return null;
         boolean correct;
-        if(question.type().equals("SHORT_ANSWER")) correct=question.acceptedAnswers().stream().map(text->normalize(text,question)).anyMatch(text->text.equals(normalize(answer.text(),question)));
+        if(question.type().equals("MATCHING")) {
+            Set<Match> expected=new HashSet<>();blocks(snapshot,"matchingSolution").forEach(pair->expected.add(new Match(string(pair,"leftId"),string(pair,"rightId"))));
+            correct=!expected.isEmpty() && expected.equals(new HashSet<>(answer.matches()));
+        }
+        else if(question.type().equals("SHORT_ANSWER")) correct=question.acceptedAnswers().stream().map(text->normalize(text,question)).anyMatch(text->text.equals(normalize(answer.text(),question)));
         else {
             Set<String> expected=new HashSet<>();options(snapshot).stream().filter(o->flag(o,"correct")).forEach(o->expected.add(string(o,"id")));
             correct=expected.equals(new HashSet<>(answer.optionIds()));
@@ -229,6 +255,7 @@ public class AttemptService {
             for(String key:List.of("id","status","maximum_points","time_seconds","open_instance","opened_at","deadline_at")) safe.put(key,q.get(key));
             if(string(q,"status").equals("open")) {
                 if(question.imageId()!=null) safe.put("imageId",question.imageId());safe.put("type",question.type());safe.put("text",question.text());safe.put("options",options(snapshot).stream().map(o->Map.of("id",string(o,"id"),"text",string(o,"text"))).toList());
+                if(question.type().equals("MATCHING")) {safe.put("matchingLeft",blocks(snapshot,"matchingLeft"));safe.put("matchingRight",blocks(snapshot,"matchingRight"));}
             }
             safe.put("draft",q.get("draft_json")==null?null:json.object(q.get("draft_json")));result.put("question",safe);
         } else result.put("question",null);
@@ -251,7 +278,11 @@ public class AttemptService {
         }
     }
     public record Ready(boolean fullscreenActive,boolean visible) {}
-    public record Answer(List<String> optionIds,String text) {}
+    public record Answer(List<String> optionIds,String text,List<Match> matches) {
+        public Answer {matches=matches==null?List.of():matches;}
+        public Answer(List<String> optionIds,String text) {this(optionIds,text,List.of());}
+    }
+    public record Match(String leftId,String rightId) {}
     public record AnswerRequest(String idempotencyKey,String openInstance,Answer answer) {}
     public record Event(String eventKey,Long questionId,String openInstance,String type,boolean visible,boolean fullscreen) {}
 }

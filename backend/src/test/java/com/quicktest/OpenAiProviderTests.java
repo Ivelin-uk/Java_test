@@ -283,6 +283,61 @@ class OpenAiProviderTests {
     }
 
     @Test
+    void generatesMatchingPairsWithAnEmptyChoiceAnswerListAndStrictSchema() {
+        var draft = draft();
+        draft.set("questions", mapper.valueToTree(List.of(matchingQuestion())));
+        responseBody = response(draft);
+
+        var generated = provider().generateTest(new AiProvider.GenerateTestRequest("Държави и столици", "", "bg", 1,
+                "EASY", List.of("MATCHING"), Map.of("EASY", 1)));
+        var question = generated.test().questions().getFirst();
+        assertEquals(com.quicktest.tests.QuestionType.MATCHING, question.type());
+        assertTrue(question.answers().isEmpty());
+        assertEquals("София", question.matchingPairs().getFirst().right());
+        var item = received.path("text").path("format").path("schema").path("properties").path("questions").path("items");
+        assertTrue(item.path("required").toString().contains("matchingPairs"));
+        assertEquals(0, item.path("properties").path("answers").path("minItems").asInt());
+        assertEquals(12, item.path("properties").path("matchingPairs").path("maxItems").asInt());
+        assertEquals(mapper.valueToTree(List.of("MATCHING")), item.path("properties").path("type").path("enum"));
+        assertTrue(received.path("input").get(0).path("content").asString().contains("unambiguous right match"));
+    }
+
+    @Test
+    void rejectsMissingAmbiguousOrOversizedMatchingPairsAndInjectedChoiceAnswers() {
+        var invalid = new java.util.ArrayList<ObjectNode>();
+        var question = matchingQuestion(); question.remove("matchingPairs"); invalid.add(question);
+        question = matchingQuestion(); question.set("matchingPairs", mapper.valueToTree(List.of(Map.of("left", "A", "right", "B")))); invalid.add(question);
+        question = matchingQuestion(); ((ObjectNode) question.path("matchingPairs").get(1)).put("left", " България "); invalid.add(question);
+        question = matchingQuestion(); ((ObjectNode) question.path("matchingPairs").get(1)).put("right", "СОФИЯ"); invalid.add(question);
+        question = matchingQuestion(); ((ObjectNode) question.path("matchingPairs").get(0)).put("left", " "); invalid.add(question);
+        question = matchingQuestion(); ((ObjectNode) question.path("matchingPairs").get(0)).put("right", "x".repeat(4001)); invalid.add(question);
+        question = matchingQuestion(); question.set("answers", mapper.valueToTree(List.of(Map.of("answer", "Secret choice", "correct", true)))); invalid.add(question);
+        question = matchingQuestion(); question.set("matchingPairs", mapper.valueToTree(java.util.stream.IntStream.range(0, 13)
+                .mapToObj(i -> Map.of("left", "Left " + i, "right", "Right " + i)).toList())); invalid.add(question);
+        for (var item : invalid) {
+            var draft = draft(); draft.set("questions", mapper.valueToTree(List.of(item))); responseBody = response(draft);
+            var error = assertThrows(ResponseStatusException.class, () -> provider().generateTest(new AiProvider.GenerateTestRequest(
+                    "Държави", "", "bg", 1, "EASY", List.of("MATCHING"), null)));
+            assertEquals(HttpStatus.BAD_GATEWAY, error.getStatusCode());
+        }
+    }
+
+    @Test
+    void rejectsMatchingSolutionsAttachedToAnotherQuestionType() {
+        var draft = draft();
+        ((ObjectNode) draft.path("questions").get(0)).set("matchingPairs", matchingQuestion().path("matchingPairs"));
+        responseBody = response(draft);
+        assertFailure(HttpStatus.BAD_GATEWAY);
+    }
+
+    private ObjectNode matchingQuestion() {
+        return (ObjectNode) mapper.valueToTree(Map.of("type", "MATCHING", "question", "Свържете държавата със столицата.",
+                "difficulty", "EASY", "points", 2, "explanation", "Всяка държава има посочената столица.",
+                "answers", List.of(), "matchingPairs", List.of(Map.of("left", "България", "right", "София"),
+                        Map.of("left", "Италия", "right", "Рим"))));
+    }
+
+    @Test
     void missingKeyDoesNotSendARequest() {
         OpenAiProvider provider = new OpenAiProvider(mapper, validators.getValidator(),
                 "http://127.0.0.1:" + server.getAddress().getPort(), "gpt-4.1-mini", "test-image-model", "", 2);

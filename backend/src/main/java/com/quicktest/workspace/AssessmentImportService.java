@@ -49,7 +49,7 @@ public class AssessmentImportService {
             assessments.validate(definition);
             var imageIds=definition.questions().stream().map(AssessmentService.Question::imageId).filter(Objects::nonNull).distinct().toList();
             var copies=images.copyTestImages(scope,imageIds);
-            var questions=definition.questions().stream().map(q->new AssessmentService.Question(q.type(),q.text(),q.difficulty(),q.points(),q.timeSeconds(),q.options(),q.acceptedAnswers(),q.caseInsensitive(),q.collapseWhitespace(),q.criteria(),q.explanation(),q.imageId()==null?null:copies.get(q.imageId()))).toList();
+            var questions=definition.questions().stream().map(q->new AssessmentService.Question(q.type(),q.text(),q.difficulty(),q.points(),q.timeSeconds(),q.options(),q.acceptedAnswers(),q.caseInsensitive(),q.collapseWhitespace(),q.criteria(),q.explanation(),q.imageId()==null?null:copies.get(q.imageId()),q.matchingPairs())).toList();
             var copy=new AssessmentService.Definition(definition.title(),definition.description(),definition.subject(),definition.level(),definition.instructions(),definition.language(),definition.gradingScale(),definition.passThreshold(),questions,definition.additionalInformation());
             long id=number(assessments.save(scope,null,copy),"id");
             assessments.publish(scope,id);

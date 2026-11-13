@@ -1,6 +1,7 @@
 package com.quicktest.tests;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -28,11 +29,18 @@ public class QuizDtos {
             Difficulty difficulty,
             @Positive int points,
             String explanation,
-            @NotEmpty List<@Valid AnswerRequest> answers,
+            @NotNull List<@Valid AnswerRequest> answers,
             String criteria,
-            Integer timeSeconds
+            Integer timeSeconds,
+            List<com.quicktest.workspace.AssessmentService.MatchingPair> matchingPairs
     ) {
-        public QuestionRequest(QuestionType type,String question,Difficulty difficulty,int points,String explanation,List<AnswerRequest> answers) {this(type,question,difficulty,points,explanation,answers,null,null);}
+        public QuestionRequest(QuestionType type,String question,Difficulty difficulty,int points,String explanation,List<AnswerRequest> answers) {this(type,question,difficulty,points,explanation,answers,null,null,null);}
+        public QuestionRequest(QuestionType type,String question,Difficulty difficulty,int points,String explanation,List<AnswerRequest> answers,String criteria,Integer timeSeconds) {this(type,question,difficulty,points,explanation,answers,criteria,timeSeconds,null);}
+        @AssertTrue(message="Question answers must match its type")
+        @com.fasterxml.jackson.annotation.JsonIgnore
+        public boolean isAnswersValidForType() {
+            return answers != null && (type == QuestionType.MATCHING ? answers.isEmpty() : !answers.isEmpty());
+        }
     }
 
     public record AnswerRequest(@NotBlank String answer, boolean correct) {}

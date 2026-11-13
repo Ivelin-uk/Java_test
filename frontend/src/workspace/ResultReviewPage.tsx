@@ -6,10 +6,11 @@ import type { ExamAnswer, Question, Result, ReviewQuestion } from './types'
 import { date, label } from './types'
 import { Feedback, SectionHead } from './ui'
 import { WorkspaceImage } from './WorkspaceImage'
+import { MatchingAnswerList, type BlockMatch, type MatchingBlock } from './MatchingBlocks'
 import './ResultReviewPage.css'
 
 type ResultDetail = Result & { details?: { questions: ReviewQuestion[]; gradeOverridden: boolean; outcomeOverridden: boolean; correctAnswersVisible?: boolean } }
-type QuestionSnapshot = { question: Partial<Question>; options: { id: string; text: string; correct?: boolean }[] }
+type QuestionSnapshot = { question: Partial<Question>; options: { id: string; text: string; correct?: boolean }[]; matchingLeft: MatchingBlock[]; matchingRight: MatchingBlock[]; matchingSolution: BlockMatch[] }
 type ResultReviewPageProps = { api: WorkspaceApi; attempt: number; back: () => void }
 
 const questionTypes: Record<string, string> = {
@@ -18,6 +19,7 @@ const questionTypes: Record<string, string> = {
   TRUE_FALSE: 'Вярно / невярно',
   SHORT_ANSWER: 'Кратък отговор',
   OPEN_ANSWER: 'Свободен отговор',
+  MATCHING: 'Свързване на блокчета',
 }
 
 function number(value: unknown) {
@@ -28,7 +30,8 @@ function snapshotOf(value: string): QuestionSnapshot | null {
   try {
     const snapshot = JSON.parse(value) as QuestionSnapshot
     if (!snapshot || typeof snapshot.question !== 'object' || snapshot.question === null || typeof snapshot.question.text !== 'string') return null
-    return { question: snapshot.question, options: Array.isArray(snapshot.options) ? snapshot.options.filter(option => option && typeof option.id === 'string' && typeof option.text === 'string') : [] }
+    const blocks = (value: unknown): MatchingBlock[] => Array.isArray(value) ? value.filter((block): block is MatchingBlock => block && typeof block.id === 'string' && typeof block.text === 'string') : []
+    return { question: snapshot.question, options: Array.isArray(snapshot.options) ? snapshot.options.filter(option => option && typeof option.id === 'string' && typeof option.text === 'string') : [], matchingLeft: blocks(snapshot.matchingLeft), matchingRight: blocks(snapshot.matchingRight), matchingSolution: matchesOf(snapshot.matchingSolution) }
   } catch { return null }
 }
 
@@ -37,8 +40,12 @@ function answerOf(value: string | null): ExamAnswer | null {
   try {
     const answer = JSON.parse(value) as Partial<ExamAnswer> | null
     if (!answer || typeof answer !== 'object') return null
-    return { optionIds: Array.isArray(answer.optionIds) ? answer.optionIds.filter(id => typeof id === 'string') : [], text: typeof answer.text === 'string' ? answer.text : '' }
+    return { optionIds: Array.isArray(answer.optionIds) ? answer.optionIds.filter(id => typeof id === 'string') : [], text: typeof answer.text === 'string' ? answer.text : '', matches: matchesOf(answer.matches) }
   } catch { return null }
+}
+
+function matchesOf(value: unknown): BlockMatch[] {
+  return Array.isArray(value) ? value.filter((match): match is BlockMatch => match && typeof match.leftId === 'string' && typeof match.rightId === 'string') : []
 }
 
 export function ResultReviewPage(props: ResultReviewPageProps) {
@@ -111,7 +118,8 @@ function ReviewedQuestion({ api, attempt, row, index, released }: { api: Workspa
   const answer = answerOf(row.answer_json)
   const selected = new Set(answer?.optionIds ?? [])
   const answers = snapshot?.options.filter(option => selected.has(option.id)) ?? []
-  const hasAnswer = answers.length > 0 || Boolean(answer?.text.trim())
+  const matching = snapshot?.question.type === 'MATCHING'
+  const hasAnswer = answers.length > 0 || Boolean(answer?.text.trim()) || matching && Boolean(answer?.matches?.length)
   const awarded = row.final_points === null || row.final_points === undefined ? null : Number(row.final_points)
   const maximum = Number(row.maximum_points)
   const scored = released && awarded !== null && Number.isFinite(awarded) && Number.isFinite(maximum)
@@ -152,12 +160,12 @@ function ReviewedQuestion({ api, attempt, row, index, released }: { api: Workspa
         <div className={`result-review-answer-grid ${!released || !hasAnswer ? 'is-single-answer' : ''}`}>
           {(!released || hasAnswer) && <section className={`result-review-answer result-review-student-answer ${studentAnswerClass}`} aria-label={`Твоят отговор на въпрос ${index + 1}`}>
             <h4><FileCheck2 size={18} aria-hidden="true" />Твоят отговор</h4>
-            {!answer ? <p className="result-review-empty-answer">Няма предаден отговор</p> : answers.length ? <ul className="result-review-selected-answers">{answers.map(option => <li key={option.id} className={released ? option.correct === true ? 'is-correct' : option.correct === false ? 'is-incorrect' : '' : ''}>{released && option.correct === true ? <CheckCircle2 size={16} aria-label="Верен избор" /> : released && option.correct === false ? <X size={16} aria-label="Неверен избор" /> : null}<span>{option.text}</span></li>)}</ul> : <p className={answer.text.trim() ? '' : 'result-review-empty-answer'}>{answer.text.trim() ? answer.text : 'Празен отговор'}</p>}
+            {!answer ? <p className="result-review-empty-answer">Няма предаден отговор</p> : matching ? <MatchingAnswerList left={snapshot.matchingLeft} right={snapshot.matchingRight} matches={answer.matches ?? []} solution={released ? snapshot.matchingSolution : undefined} showVerdicts={released} /> : answers.length ? <ul className="result-review-selected-answers">{answers.map(option => <li key={option.id} className={released ? option.correct === true ? 'is-correct' : option.correct === false ? 'is-incorrect' : '' : ''}>{released && option.correct === true ? <CheckCircle2 size={16} aria-label="Верен избор" /> : released && option.correct === false ? <X size={16} aria-label="Неверен избор" /> : null}<span>{option.text}</span></li>)}</ul> : <p className={answer.text.trim() ? '' : 'result-review-empty-answer'}>{answer.text.trim() ? answer.text : 'Празен отговор'}</p>}
             {row.status !== 'answered' && <small>Статус: {label(row.status)}</small>}
           </section>}
           {released && <section className="result-review-answer result-review-solution" aria-label={`Верен отговор за въпрос ${index + 1}`}>
             <h4><CheckCircle2 size={18} aria-hidden="true" />Верен отговор / критерии</h4>
-            {correct.length ? <ul>{correct.map(option => <li key={option.id}>{option.text}</li>)}</ul> : accepted.length ? <ul>{accepted.map((value, acceptedIndex) => <li key={acceptedIndex}>{value}</li>)}</ul> : criteria ? <p>{criteria}</p> : <p className="result-review-empty-answer">Няма добавен верен отговор или критерии.</p>}
+            {matching && snapshot.matchingSolution.length ? <MatchingAnswerList left={snapshot.matchingLeft} right={snapshot.matchingRight} matches={snapshot.matchingSolution} /> : correct.length ? <ul>{correct.map(option => <li key={option.id}>{option.text}</li>)}</ul> : accepted.length ? <ul>{accepted.map((value, acceptedIndex) => <li key={acceptedIndex}>{value}</li>)}</ul> : criteria ? <p>{criteria}</p> : <p className="result-review-empty-answer">Няма добавен верен отговор или критерии.</p>}
             {criteria && (correct.length > 0 || accepted.length > 0) && <p>{criteria}</p>}
           </section>}
         </div>

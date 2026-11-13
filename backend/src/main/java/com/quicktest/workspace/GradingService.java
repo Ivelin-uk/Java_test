@@ -172,6 +172,7 @@ public class GradingService {
             var definition=json.object(row.get("definition_json"));
             var question=(Map<String,Object>)definition.get("question");
             question.put("acceptedAnswers",List.of());question.put("criteria","");question.put("explanation","");
+            question.put("matchingPairs",List.of());definition.remove("matchingSolution");
             hideCorrectOptions(question.get("options"));hideCorrectOptions(definition.get("options"));
             row.put("definition_json",json.write(definition));row.put("teacher_comment",null);
         }

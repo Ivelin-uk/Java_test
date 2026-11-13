@@ -33,6 +33,7 @@ public class MockAiProvider implements AiProvider {
             if(request.difficultyCounts()!=null) request.difficultyCounts().forEach((key,value)->{for(int n=0;n<value;n++) difficulties.add(key);});
             String difficulty=difficulties.size()==count?difficulties.get(i-1):request.difficulty().equals("MIXED")?List.of("EASY","MEDIUM","HARD").get((i-1)%3):request.difficulty();
             List<QuizDtos.AnswerRequest> answers = switch (type) {
+                case MATCHING -> List.of();
                 case TRUE_FALSE -> List.of(
                         new QuizDtos.AnswerRequest("Вярно", true),
                         new QuizDtos.AnswerRequest("Грешно", false)
@@ -56,7 +57,14 @@ public class MockAiProvider implements AiProvider {
                     Difficulty.valueOf(difficulty.toUpperCase()),
                     1,
                     "Кратко обяснение за правилния отговор по темата " + request.topic() + ".",
-                    answers
+                    answers,
+                    null,
+                    null,
+                    type == QuestionType.MATCHING ? List.of(
+                            new com.quicktest.workspace.AssessmentService.MatchingPair("Клас", "Описание на обекти със състояние и поведение"),
+                            new com.quicktest.workspace.AssessmentService.MatchingPair("Обект", "Конкретен екземпляр на клас"),
+                            new com.quicktest.workspace.AssessmentService.MatchingPair("Метод", "Действие, определено в клас")
+                    ) : List.of()
             ));
         }
         QuizDtos.TestRequest test = new QuizDtos.TestRequest(

@@ -202,6 +202,7 @@ public class QuizService {
         test.getQuestions().clear();
         int questionPosition = 0;
         for (QuizDtos.QuestionRequest questionRequest : request.questions()) {
+            if (questionRequest.type() == QuestionType.MATCHING) throw new ApiException(BAD_REQUEST, "Въпросите за свързване се поддържат в учебните тестове през /api/v1.");
             Question question = new Question();
             question.setTest(test);
             question.setType(questionRequest.type());

@@ -107,7 +107,7 @@ public class AssessmentService {
         for(Question question:definition.questions()) validateQuestion(question);
     }
     public void validateQuestion(Question q) {
-        if(q==null || q.text()==null || q.text().isBlank() || q.text().length()>12000 || !Set.of("SINGLE_CHOICE","MULTIPLE_CHOICE","TRUE_FALSE","SHORT_ANSWER","OPEN_ANSWER").contains(Objects.toString(q.type(),"")) || !Set.of("EASY","MEDIUM","HARD","VERY_HARD").contains(Objects.toString(q.difficulty(),"")) || q.points()==null || q.points().compareTo(BigDecimal.ZERO)<=0 || q.points().compareTo(new BigDecimal("10000"))>0 || q.points().scale()>4 || q.timeSeconds()<10 || q.timeSeconds()>3600) throw WorkspaceError.validation("Невалиден въпрос: текст, тип, трудност, точки или време (10–3600 s).");
+        if(q==null || q.text()==null || q.text().isBlank() || q.text().length()>12000 || !Set.of("SINGLE_CHOICE","MULTIPLE_CHOICE","TRUE_FALSE","SHORT_ANSWER","OPEN_ANSWER","MATCHING").contains(Objects.toString(q.type(),"")) || !Set.of("EASY","MEDIUM","HARD","VERY_HARD").contains(Objects.toString(q.difficulty(),"")) || q.points()==null || q.points().compareTo(BigDecimal.ZERO)<=0 || q.points().compareTo(new BigDecimal("10000"))>0 || q.points().scale()>4 || q.timeSeconds()<10 || q.timeSeconds()>3600) throw WorkspaceError.validation("Невалиден въпрос: текст, тип, трудност, точки или време (10–3600 s).");
         List<Option> options=q.options()==null?List.of():q.options();
         if(options.size()>30 || options.stream().anyMatch(o->o==null || o.text()==null || o.text().isBlank() || o.text().length()>4000) || options.stream().map(o->o.text().strip().toLowerCase(Locale.ROOT)).distinct().count()!=options.size()) throw WorkspaceError.validation("Празни или повтарящи се опции.");
         long correct=options.stream().filter(Option::correct).count();
@@ -115,7 +115,17 @@ public class AssessmentService {
         if(Set.of("SHORT_ANSWER","OPEN_ANSWER").contains(q.type()) && !options.isEmpty()) throw WorkspaceError.validation("Текстов въпрос не съдържа опции.");
         if(q.acceptedAnswers()!=null && (q.acceptedAnswers().size()>30 || q.acceptedAnswers().stream().anyMatch(a->a==null || a.isBlank() || a.length()>4000))) throw WorkspaceError.validation("Невалидни допустими отговори.");
         if(q.type().equals("OPEN_ANSWER") && (q.criteria()==null || q.criteria().isBlank())) throw WorkspaceError.validation("Свободният отговор изисква критерии за проверка.");
+        if(q.type().equals("MATCHING")) {
+            var pairs=q.matchingPairs();
+            if(!options.isEmpty() || q.acceptedAnswers()!=null && !q.acceptedAnswers().isEmpty() || pairs.size()<2 || pairs.size()>12
+                    || pairs.stream().anyMatch(pair->pair==null || invalidBlock(pair.left()) || invalidBlock(pair.right()))
+                    || pairs.stream().map(pair->pair.left().strip().toLowerCase(Locale.ROOT)).distinct().count()!=pairs.size()
+                    || pairs.stream().map(pair->pair.right().strip().toLowerCase(Locale.ROOT)).distinct().count()!=pairs.size()) {
+                throw WorkspaceError.validation("Свързването изисква 2–12 двойки с различни непразни блокчета във всяка колона, без други отговори.");
+            }
+        } else if(!q.matchingPairs().isEmpty()) throw WorkspaceError.validation("Двойки блокчета се задават само при въпрос за свързване.");
     }
+    private boolean invalidBlock(String text) {return text==null || text.isBlank() || text.length()>4000;}
     private void validateAdditionalInformation(Definition definition) {
         if(definition.additionalInformation()!=null && definition.additionalInformation().length()>20000) throw WorkspaceError.validation("Допълнителната информация трябва да е до 20 000 символа.");
     }
@@ -123,8 +133,11 @@ public class AssessmentService {
         public Definition(String title,String description,String subject,String level,String instructions,String language,String gradingScale,BigDecimal passThreshold,List<Question> questions) {this(title,description,subject,level,instructions,language,gradingScale,passThreshold,questions,null);}
     }
     public record MobileModeRequest(@jakarta.validation.constraints.NotNull Boolean mobileAllowed) {}
-    public record Question(String type,String text,String difficulty,BigDecimal points,int timeSeconds,List<Option> options,List<String> acceptedAnswers,boolean caseInsensitive,boolean collapseWhitespace,String criteria,String explanation,Long imageId) {
+    public record Question(String type,String text,String difficulty,BigDecimal points,int timeSeconds,List<Option> options,List<String> acceptedAnswers,boolean caseInsensitive,boolean collapseWhitespace,String criteria,String explanation,Long imageId,List<MatchingPair> matchingPairs) {
+        public Question {matchingPairs=matchingPairs==null?List.of():matchingPairs;}
+        public Question(String type,String text,String difficulty,BigDecimal points,int timeSeconds,List<Option> options,List<String> acceptedAnswers,boolean caseInsensitive,boolean collapseWhitespace,String criteria,String explanation,Long imageId) {this(type,text,difficulty,points,timeSeconds,options,acceptedAnswers,caseInsensitive,collapseWhitespace,criteria,explanation,imageId,List.of());}
         public Question(String type,String text,String difficulty,BigDecimal points,int timeSeconds,List<Option> options,List<String> acceptedAnswers,boolean caseInsensitive,boolean collapseWhitespace,String criteria,String explanation) {this(type,text,difficulty,points,timeSeconds,options,acceptedAnswers,caseInsensitive,collapseWhitespace,criteria,explanation,null);}
     }
+    public record MatchingPair(String left,String right) {}
     public record Option(String text,boolean correct) {}
 }

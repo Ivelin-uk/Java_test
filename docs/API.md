@@ -73,7 +73,9 @@ Groups receive a unique eight-character `join_code` at creation; migration V21 a
 | POST `/files` | `{purpose:question|logo,base64}`; PNG/JPEG <=2 MiB, normalized image <=2048 px / 4 MP; logo requires org admin |
 | GET `/files/{id}?attempt={id}` | Private binary, Bearer+tenant check; student exam additionally requires exam binding; no-store, nosniff |
 
-Assessment definition: `{title,description,subject,level,instructions,language,gradingScale,passThreshold,questions}`. Scales: `bulgarian`, `percentage`, `pass_fail`. Each question: `{type,text,difficulty,points,timeSeconds,options:[{text,correct}],acceptedAnswers,caseInsensitive,collapseWhitespace,criteria,explanation,imageId?}`. Types: `SINGLE_CHOICE`, `MULTIPLE_CHOICE`, `TRUE_FALSE`, `SHORT_ANSWER`, `OPEN_ANSWER`. Difficulties: `EASY`, `MEDIUM`, `HARD`, `VERY_HARD`. Publish requires 1-100 valid questions, positive points and 10-3600 seconds each. Manual criteria are required where answers cannot be checked automatically. Student text/code is never executed.
+Assessment definition: `{title,description,subject,level,instructions,language,gradingScale,passThreshold,questions}`. Scales: `bulgarian`, `percentage`, `pass_fail`. Each question: `{type,text,difficulty,points,timeSeconds,options:[{text,correct}],acceptedAnswers,caseInsensitive,collapseWhitespace,criteria,explanation,imageId?,matchingPairs?}`. Types: `SINGLE_CHOICE`, `MULTIPLE_CHOICE`, `TRUE_FALSE`, `SHORT_ANSWER`, `OPEN_ANSWER`, `MATCHING`. Difficulties: `EASY`, `MEDIUM`, `HARD`, `VERY_HARD`. Publish requires 1-100 valid questions, positive points and 10-3600 seconds each. Manual criteria are required where answers cannot be checked automatically. Student text/code is never executed.
+
+`MATCHING` requires `matchingPairs:[{left,right}]` with 2-12 pairs, nonblank strings up to 4,000 characters and distinct texts within each side (trimmed and case-insensitive), plus empty `options` and `acceptedAnswers`. Other types require empty/omitted `matchingPairs`. AI generation supports `MATCHING` through the existing `questionTypes` field. Imports, copies, versions and images preserve the pairs.
 
 Question `text` remains a string (maximum 12,000 characters, including markup). Plain strings remain literal text. The editor prefixes formatted HTML with `<!--examai-rich-text:v1-->`; inline equations use `<span data-type="inline-math" data-latex="…"></span>`. Consumers must sanitize formatted content before rendering and render equations with untrusted KaTeX commands disabled. The frontend uses an explicit tag/attribute allowlist and restricts styles to paragraph alignment. Existing version/attempt snapshots preserve this string without changing the API shape.
 
@@ -133,7 +135,7 @@ All subsequent student exam commands require `X-Exam-Session: <sessionToken>` an
 | GET `/attempts` | Own history, no private question definitions |
 | GET `/attempts/{id}/state` | Server time, status, position, current safe question or pending placeholder |
 | POST `/attempts/{id}/questions/open` | `{fullscreenActive,visible}`; server opens only next pending question |
-| PUT `/attempts/{id}/questions/{question}/draft` | `{idempotencyKey,openInstance,answer:{optionIds,text}}`; not a submission |
+| PUT `/attempts/{id}/questions/{question}/draft` | `{idempotencyKey,openInstance,answer:{optionIds,text,matches?}}`; not a submission |
 | POST `/attempts/{id}/questions/{question}/answer` | Same body; at/after deadline zero, terminal answer cannot be overwritten |
 | POST `/attempts/{id}/events` | `{eventKey,questionId,openInstance,type,visible,fullscreen}`; instance-bound deduplication |
 | POST `/attempts/{id}/submit` | Remaining unanswered questions zero, closes attempt, pending review |
@@ -147,6 +149,8 @@ All subsequent student exam commands require `X-Exam-Session: <sessionToken>` an
 | GET `/assignment-results` | Last finalized, nonvoid attempt by attempt number for each assignment |
 
 The `question` student projection has IDs, text/type/options only when open, points, allowed time, open-instance/server timestamps and draft. It never has `correct`, `acceptedAnswers`, criteria, explanation or `definition_json`. Pending questions do not expose unseen text. Exact deadline uses server UTC, never client time. Duplicate/late events return current state; old-instance events cannot penalize the next question. `blur` alone has no penalty. Deadlines also run in the persistent worker.
+
+An open `MATCHING` question additionally exposes `matchingLeft` and `matchingRight` arrays of `{id,text}`. IDs are independent random values, and each side is shuffled independently for each attempt. Answer with `{optionIds:[],text:"",matches:[{leftId,rightId}]}`. Blocks must belong to this question and appear in at most one link per side. Partial drafts and submissions are accepted; only the exact complete set earns all question points, otherwise zero. Nonmatching questions reject nonempty `matches`. Teacher review snapshots contain private `matchingSolution:[{leftId,rightId}]`; student review removes this mapping and the original `matchingPairs` until solutions are released under the assignment policy.
 
 ## Chat
 

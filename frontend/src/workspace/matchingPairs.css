@@ -1,0 +1,20 @@
+.ws-matching-editor { min-width: 0; margin: 0; padding: 18px; border: 1px solid var(--border); border-radius: 12px; display: grid; gap: 14px; background: var(--page); }
+.ws-matching-editor legend { padding: 0 6px; font-weight: 700; }
+.ws-matching-editor > p { margin: 0; font-size: 13px; line-height: 1.65; }
+.ws-matching-pair-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+.ws-matching-pair-row > label { min-width: 0; display: grid; gap: 7px; font-size: 13px; }
+.ws-matching-pair-row > label > input { width: 100%; min-width: 0; }
+.ws-matching-pair-row > svg { align-self: end; margin-bottom: 13px; color: var(--link); }
+.ws-matching-pair-row > button { min-height: 44px; }
+.ws-matching-editor > .command-button { justify-self: start; }
+.ws-matching-pairs-preview { display: grid; gap: 8px; padding: 0; list-style: none; }
+.ws-matching-pairs-preview li { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; }
+.ws-matching-pairs-preview li > span { min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); overflow-wrap: anywhere; white-space: pre-wrap; }
+.ws-matching-pairs-preview li > svg { color: var(--link); }
+@media (max-width: 540px) {
+  .ws-matching-editor { padding: 12px; }
+  .ws-matching-pair-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+  .ws-matching-pair-row > svg { display: none; }
+  .ws-matching-pair-row > label { grid-column: 1; }
+  .ws-matching-pair-row > button { grid-column: 2; grid-row: 1 / 3; align-self: center; }
+}
