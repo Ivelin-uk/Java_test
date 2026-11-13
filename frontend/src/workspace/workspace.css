@@ -5,7 +5,7 @@
 .ws-org-selector select { max-width: 320px; min-width: 180px; }
 .ws-account { display: grid; gap: 4px; margin-left: auto; text-align: right; }
 .ws-account span { color: var(--muted); font-size: 14px; max-width: 350px; }
-.ws-nav { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: 0 3px 12px #10182804; }
+.ws-nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: 0 6px 18px #10182812; }
 .ws-nav button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 44px; padding: 11px 18px; border-color: transparent; border-radius: 9px; background: transparent; color: var(--muted); font-size: 15px; font-weight: 600; }
 .ws-nav button.active { color: var(--success); background: var(--success-bg); border-color: var(--success); font-weight: 750; }
 .ws-nav button:hover { color: var(--text); background: var(--hover); }

@@ -56,6 +56,23 @@ async function createPage(role, theme) {
   return { context, page: next }
 }
 
+async function verifyStickyNavigation() {
+  const result = await page.locator('.ws-nav').evaluate(async nav => {
+    const body = document.querySelector('.ws-body')
+    const previousMinHeight = body.style.minHeight
+    body.style.minHeight = '200vh'
+    window.scrollTo({ top: window.innerHeight, behavior: 'instant' })
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    const sticky = getComputedStyle(nav)
+    const measured = { position: sticky.position, top: nav.getBoundingClientRect().top, offset: parseFloat(sticky.top) }
+    window.scrollTo({ top: 0, behavior: 'instant' })
+    body.style.minHeight = previousMinHeight
+    return measured
+  })
+  assert.equal(result.position, 'sticky')
+  assert.ok(Math.abs(result.top - result.offset) <= 1, `Navigation bar should stay at its top offset while scrolling (top=${result.top}, offset=${result.offset}).`)
+}
+
 async function audit(name, theme, { screenshot = true, focus = true } = {}) {
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 })
@@ -143,6 +160,7 @@ try {
     for (const [tab, heading, label] of [['Групи', 'Групи', 'groups'], ['Възлагания', 'Възлагания', 'assignments'], ['Проверка', 'Проверка на опити', 'grading'], ['Профил', 'Моят профил', 'profile']]) {
       await nav.getByRole('button', { name: tab, exact: true }).click()
       await page.getByRole('heading', { name: heading, exact: true }).waitFor()
+      if (tab === 'Възлагания') await verifyStickyNavigation()
       if (tab === 'Профил') await page.locator('.ws-billing-usage').waitFor()
       await audit(label, theme)
     }
