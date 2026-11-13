@@ -1,0 +1,81 @@
+.ws-assignment-form > .ws-assignment-creator { gap: 0; }
+.ws-assignment-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 8px; border: 1px solid var(--border); border-radius: 16px; background: var(--page); }
+.ws-assignment-tab { position: relative; display: grid; grid-template-columns: 38px minmax(0, 1fr); grid-template-rows: auto auto; align-items: center; gap: 3px 12px; min-width: 0; min-height: 76px; padding: 12px 14px; color: var(--muted); text-align: left; font: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; cursor: pointer; transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease, transform 160ms ease; }
+.ws-assignment-tab:hover { color: var(--text); border-color: var(--link); background: var(--surface); }
+.ws-assignment-tab[aria-selected="true"] { color: var(--text); border-color: var(--link); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--link), 0 4px 14px #18212b12; }
+.ws-assignment-tab:focus-visible { outline: 3px solid var(--link); outline-offset: 3px; z-index: 1; }
+.ws-assignment-tab-number { display: grid; place-items: center; grid-row: 1 / span 2; width: 36px; height: 36px; color: var(--link); background: var(--accent-soft); border: 1px solid var(--border); border-radius: 11px; font-size: 13px; font-weight: 800; }
+.ws-assignment-tab[aria-selected="true"] .ws-assignment-tab-number { color: var(--surface); background: var(--link); border-color: var(--link); }
+.ws-assignment-tab-label { min-width: 0; color: var(--text); font-size: 14px; font-weight: 750; line-height: 1.35; overflow-wrap: anywhere; }
+.ws-assignment-tab-state { min-width: 0; color: var(--muted); font-size: 11px; line-height: 1.25; }
+.ws-assignment-tab[aria-selected="true"] .ws-assignment-tab-state { color: var(--link); font-weight: 700; }
+.ws-assignment-step { min-width: 0; display: grid; gap: 20px; padding: 22px 0 6px; }
+.ws-assignment-step[hidden] { display: none; }
+.ws-assignment-step-head { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.ws-assignment-step-head > span { display: grid; place-items: center; flex: 0 0 36px; height: 36px; color: var(--link); background: var(--accent-soft); border: 1px solid var(--border); border-radius: 10px; font-size: 13px; font-weight: 750; }
+.ws-assignment-step-head > div { display: grid; gap: 5px; min-width: 0; }
+.ws-assignment-step-head h4, .ws-assignment-existing h4 { margin: 0; font-size: 16px; line-height: 1.4; }
+.ws-assignment-step-head p, .ws-assignment-existing-heading p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.ws-assignment-audience-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
+.ws-assignment-audience-fields > *, .ws-assignment-group-field { min-width: 0; }
+.ws-assignment-audience-fields .ws-recipient-picker { max-width: none; }
+.ws-assignment-group-field { display: grid; gap: 10px; }
+.ws-assignment-group-hint { display: flex; align-items: flex-start; gap: 7px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
+.ws-assignment-group-hint > svg { flex-shrink: 0; margin-top: 2px; }
+.ws-assignment-existing { min-width: 0; padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--page); }
+.ws-assignment-existing-heading { display: flex; gap: 10px; align-items: flex-start; }
+.ws-assignment-existing-heading > svg { flex-shrink: 0; color: var(--link); margin-top: 1px; }
+.ws-assignment-existing-heading > div { display: grid; gap: 5px; min-width: 0; }
+.ws-assignment-existing ul { display: grid; gap: 12px; list-style: none; margin: 16px 0 0; padding: 0; }
+.ws-assignment-existing li { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding-top: 12px; border-top: 1px solid var(--border); min-width: 0; }
+.ws-assignment-existing-detail { display: grid; gap: 5px; min-width: 0; flex: 1 1 220px; overflow-wrap: anywhere; }
+.ws-assignment-existing-detail > span { font-size: 13px; line-height: 1.6; color: var(--muted); }
+.ws-assignment-existing .ws-actions { flex: 0 1 auto; min-width: 0; }
+.ws-assignment-existing .command-button { min-height: 38px; font-size: 13px; padding: 8px 10px; }
+.ws-assignment-notice { margin: 0; padding: 12px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--accent-soft); color: var(--text); line-height: 1.65; }
+.ws-assignment-period-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(90px, .45fr); gap: 18px; }
+.ws-assignment-period-fields > label { min-width: 0; }
+.ws-assignment-period-fields input { width: 100%; min-width: 0; }
+.ws-assignment-confirm { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px; padding-top: 22px; }
+.ws-assignment-confirm-summary { display: grid; gap: 6px; flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
+.ws-assignment-confirm-summary > span { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.ws-assignment-confirm .ws-assignment-form-actions { flex-shrink: 0; width: auto; padding: 0; border: 0; }
+.ws-assignment-navigation { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; padding-top: 18px; border-top: 1px solid var(--border); }
+.ws-assignment-navigation > :first-child { justify-self: start; }
+.ws-assignment-navigation > :last-child { justify-self: end; }
+.ws-assignment-navigation-end { grid-template-columns: minmax(0, 1fr) auto; }
+.ws-assignment-navigation-hint { color: var(--muted); font-size: 12px; font-weight: 650; }
+.ws-assignment-navigation .command-button, .ws-assignment-form-actions .command-button { min-height: 44px; }
+@media (max-width: 720px) {
+  .ws-assignment-tabs { gap: 6px; padding: 6px; border-radius: 14px; }
+  .ws-assignment-tab { grid-template-columns: 30px minmax(0, 1fr); min-height: 72px; gap: 3px 8px; padding: 9px 8px; border-radius: 10px; }
+  .ws-assignment-tab-number { width: 30px; height: 30px; border-radius: 9px; font-size: 12px; }
+  .ws-assignment-tab-label { font-size: 12px; }
+  .ws-assignment-tab-state { font-size: 10px; }
+  .ws-assignment-audience-fields, .ws-assignment-period-fields { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .ws-assignment-step { gap: 18px; padding: 22px 0; }
+  .ws-assignment-existing { padding: 14px; }
+  .ws-assignment-existing .ws-actions { width: 100%; }
+  .ws-assignment-existing .command-button { flex: 1 1 auto; justify-content: center; white-space: normal; }
+  .ws-assignment-confirm .ws-assignment-form-actions { width: 100%; }
+  .ws-assignment-confirm .ws-assignment-form-actions > button { flex: 1; justify-content: center; }
+  .ws-assignment-navigation { gap: 8px; }
+  .ws-assignment-navigation > .ws-assignment-navigation-hint { justify-self: center; text-align: center; font-size: 11px; }
+}
+@media (max-width: 380px) {
+  .ws-assignment-tabs { gap: 4px; padding: 4px; }
+  .ws-assignment-tab { grid-template-columns: 1fr; grid-template-rows: auto auto auto; justify-items: center; gap: 4px; min-height: 88px; padding: 8px 4px; text-align: center; }
+  .ws-assignment-tab-number { grid-row: auto; width: 27px; height: 27px; }
+  .ws-assignment-tab-label { font-size: 11px; }
+  .ws-assignment-tab-state { font-size: 9px; }
+  .ws-assignment-navigation { grid-template-columns: 1fr 1fr; }
+  .ws-assignment-navigation > .ws-assignment-navigation-hint { grid-column: 1 / -1; grid-row: 1; }
+  .ws-assignment-navigation > :first-child { grid-column: 1; grid-row: 2; }
+  .ws-assignment-navigation > :last-child { grid-column: 2; grid-row: 2; }
+  .ws-assignment-navigation-end { grid-template-columns: 1fr; }
+  .ws-assignment-navigation-end > .ws-assignment-navigation-hint { grid-column: 1; grid-row: 1; }
+  .ws-assignment-navigation-end > :last-child { grid-column: 1; grid-row: 2; justify-self: stretch; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-assignment-tab { transition: none; }
+}

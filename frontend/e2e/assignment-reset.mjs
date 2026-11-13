@@ -6,7 +6,7 @@ const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173', base =
 const auth = { token: 'assignment-reset-fixture', user: { id: 101, name: 'Teacher', email: 'teacher@example.test', role: 'TEACHER', active: true, passwordChangeRequired: false } }
 const tests = [201, 202].map((id, i) => ({ id, title: i ? 'Обектно-ориентирано програмиране' : 'Основи на Java', status: 'published', owner_id: 101, shared: false, question_count: 1, total_time_seconds: 60 }))
 const groups = [{ id: 301, name: '12А', subject: 'Java' }, { id: 302, name: '12Б', subject: 'Програмиране' }]
-const existing = { id: 601, teacher_id: 101, title: 'Запазено възлагане', starts_at: new Date().toISOString(), ends_at: new Date(Date.now() + 3600000).toISOString(), recipients: 2, max_attempts: 1, access_code: 'ABCD2345', recipient_groups: groups }
+const existing = { id: 601, assessment_id: 203, teacher_id: 101, title: 'Запазено възлагане', starts_at: new Date().toISOString(), ends_at: new Date(Date.now() + 3600000).toISOString(), recipients: 2, max_attempts: 1, access_code: 'ABCD2345', recipient_groups: groups }
 const assignments = [existing], mutations = [], errors = []
 let failVersion = false, failPost = false, versionGate = Promise.resolve(), postGate = Promise.resolve(), releaseVersion, releasePost
 const artifacts = new URL('../../.artifacts/', import.meta.url)
@@ -36,7 +36,7 @@ try {
       if (failPost) { failPost = false; return respond({ detail: 'Неуспешно възлагане.' }, 503) }
       await postGate
       const id = 601 + assignments.length
-      assignments.push({ ...existing, id, title: tests.find(test => test.id + 100 === body.versionId).title, starts_at: body.startsAt, ends_at: body.endsAt })
+      assignments.push({ ...existing, id, assessment_id: body.versionId - 100, title: tests.find(test => test.id + 100 === body.versionId).title, starts_at: body.startsAt, ends_at: body.endsAt, max_attempts: body.maxAttempts, recipient_groups: groups.filter(group => body.groupIds.includes(group.id)) })
       return respond({ id })
     }
     errors.push(`Unexpected API: ${method} ${path}`)
@@ -47,11 +47,16 @@ try {
   await page.goto(`${frontend}/assignments`)
   const form = page.getByRole('form', { name: 'Възлагане на тест', exact: true })
   const testPicker = form.getByRole('combobox', { name: 'Тест', exact: true })
+  const testInput = form.locator('.ws-test-picker input')
   const groupPicker = form.getByRole('combobox', { name: 'Търси групи', exact: true })
   const start = form.getByLabel('Начало', { exact: true }), end = form.getByLabel('Краен срок', { exact: true }), attempts = form.getByLabel('Опити', { exact: true })
   const shuffleQ = form.getByLabel('Разбъркай въпросите', { exact: true }), shuffleA = form.getByLabel('Разбъркай опциите', { exact: true }), answers = form.getByLabel('Верни отговори след срока', { exact: true })
-  const reset = form.getByRole('button', { name: 'Нулирай формата', exact: true }), assign = form.getByRole('button', { name: 'Възложи', exact: true })
+  const reset = form.getByRole('button', { name: 'Нулирай формата', exact: true }), assign = form.locator('button[type="submit"]')
+  const audienceStep = form.getByRole('tab', { name: 'Тест и групи', exact: true })
+  const periodStep = form.getByRole('tab', { name: 'Период и опити', exact: true })
+  const settingsStep = form.getByRole('tab', { name: 'Начин на решаване', exact: true })
   const table = page.getByRole('table', { name: 'Възлагания', exact: true })
+  async function clearForm() { await settingsStep.click(); await reset.click() }
   async function selectTest(index = 0) {
     await testPicker.fill(tests[index].title)
     await page.getByRole('listbox', { name: 'Тестове за възлагане' }).getByRole('option').click()
@@ -82,26 +87,32 @@ try {
   }
   await table.getByText(existing.title, { exact: true }).waitFor()
   await selectTest(); await selectGroup(); await selectGroup(1)
+  await periodStep.click()
   await start.fill('2098-10-14T10:00'); await end.fill('2098-10-14T09:59'); await attempts.fill('7')
+  await settingsStep.click()
   await shuffleQ.uncheck(); await shuffleA.check(); await answers.uncheck()
+  await audienceStep.click()
   await testPicker.fill('непознат тест'); await groupPicker.fill('непозната група')
-  await reset.click(); await assertDefaults()
-  assert.equal(await reset.evaluate(element => element === document.activeElement), true)
+  await clearForm(); await assertDefaults()
+  assert.equal(await audienceStep.evaluate(element => element === document.activeElement), true)
   assert.equal(mutations.length, 0)
+  await settingsStep.click()
   await assign.click()
   await page.getByRole('alert').getByText('Изберете тест за възлагане.', { exact: true }).waitFor()
-  await reset.focus(); await page.keyboard.press('Enter'); await assertDefaults()
+  await settingsStep.click(); await reset.focus(); await page.keyboard.press('Enter'); await assertDefaults()
   failVersion = true
   await selectTest()
   await page.getByRole('alert').getByText('Версията временно е недостъпна.', { exact: true }).waitFor()
-  await reset.click(); await assertDefaults()
+  await clearForm(); await assertDefaults()
   versionGate = new Promise(resolve => { releaseVersion = resolve })
   const versionRequest = page.waitForRequest(`${base}/api/v1/tests/201/versions`)
   await selectTest(); await versionRequest
+  await settingsStep.click()
   assert.equal(await assign.isDisabled(), true)
   assert.equal(await reset.isDisabled(), false)
-  await reset.click(); await assertDefaults()
+  await clearForm(); await assertDefaults()
   await selectTest(1); await selectGroup()
+  await settingsStep.click()
   await page.waitForFunction(() => !document.querySelector('button[type="submit"]')?.disabled)
   const versionResponse = page.waitForResponse(`${base}/api/v1/tests/201/versions`)
   releaseVersion(); await versionResponse
@@ -110,19 +121,25 @@ try {
   await page.getByRole('alert').getByText('Неуспешно възлагане.', { exact: true }).waitFor()
   assert.equal(mutations[0].body.versionId, 302)
   assert.equal(mutations[0].body.shuffleQuestions, true)
-  await reset.click(); await assertDefaults()
+  await clearForm(); await assertDefaults()
   await selectTest(); await selectGroup()
   postGate = new Promise(resolve => { releasePost = resolve })
   const createRequest = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/v1/assignments')
+  await settingsStep.click()
   await assign.click(); await createRequest
   assert.equal(await reset.isDisabled(), true)
   await form.evaluate(element => element.reset())
-  assert.equal(await testPicker.inputValue(), tests[0].title)
-  await form.getByText('Избрани: 1', { exact: true }).waitFor()
+  assert.equal(await testInput.inputValue(), tests[0].title)
+  assert.equal(await form.getByText('Избрани: 1', { exact: true }).count(), 1)
   releasePost()
   await page.getByText('Възлагането е създадено.', { exact: true }).waitFor()
+  await audienceStep.click()
+  await form.getByText('Избрани: 0', { exact: true }).waitFor()
+  assert.equal(await testPicker.inputValue(), tests[0].title)
+  assert.equal(await groupPicker.inputValue(), '')
+  assert.equal(await form.getByRole('list', { name: 'Избрани: Групи', exact: true }).count(), 0)
   assert.equal(await table.locator('tbody tr').count(), 2)
-  await reset.click(); await assertDefaults()
+  await clearForm(); await assertDefaults()
   assert.equal(await table.locator('tbody tr').count(), 2)
   assert.deepEqual(assignments[0], existing)
   assert.equal(mutations.length, 2)
@@ -130,8 +147,11 @@ try {
   for (const { theme, width, height } of [{ theme: 'dark', width: 1440, height: 1000 }, { theme: 'light', width: 1440, height: 1000 }, { theme: 'dark', width: 390, height: 844 }, { theme: 'light', width: 320, height: 844 }]) {
     await page.setViewportSize({ width, height })
     if (await page.locator('html').getAttribute('data-theme') !== theme) await page.getByRole('button', { name: theme === 'dark' ? 'Тъмна тема' : 'Светла тема', exact: true }).click()
-    await attempts.fill('5'); await shuffleQ.uncheck(); await groupPicker.fill('търсене')
-    await reset.click(); await reset.click(); await assertDefaults()
+    await periodStep.click(); await attempts.fill('5')
+    await settingsStep.click(); await shuffleQ.uncheck()
+    await audienceStep.click(); await groupPicker.fill('търсене')
+    await clearForm(); await clearForm(); await assertDefaults()
+    await settingsStep.click()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     assert.equal(await reset.evaluate(element => { const bounds = element.getBoundingClientRect(); return bounds.width >= 32 && bounds.height >= 32 && bounds.left >= 0 && bounds.right <= innerWidth }), true)
     await page.screenshot({ path: new URL(`assignment-reset-${theme}-${width}.png`, artifacts).pathname, fullPage: true })

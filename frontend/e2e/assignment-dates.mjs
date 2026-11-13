@@ -5,7 +5,7 @@ import { chromium } from 'playwright'
 const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173', base = process.env.E2E_API_URL ?? 'http://localhost:8080'
 const auth = { token: 'assignment-dates-fixture', user: { id: 101, name: 'Teacher', email: 'teacher@example.test', role: 'TEACHER', active: true, passwordChangeRequired: false } }
 const test = { id: 201, title: 'Основи на Java', status: 'published', owner_id: 101, shared: false }
-const group = { id: 301, name: '12А', subject: 'Java', description: '' }
+const groups = ['12А', '12Б', '12В'].map((name, index) => ({ id: 301 + index, name, subject: 'Java', description: '' }))
 const errors = [], submissions = [], assignments = []
 const artifacts = new URL('../../.artifacts/', import.meta.url)
 await mkdir(artifacts, { recursive: true })
@@ -19,13 +19,13 @@ try {
     const respond = data => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) })
     if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'Access-Control-Allow-Origin': new URL(frontend).origin, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' } })
     if (method === 'GET') {
-      const data = { '/api/auth/me': auth.user, '/api/v1/groups': [group], '/api/v1/assignments': assignments, '/api/v1/grading': [], '/api/v1/tests': [test], '/api/v1/tests/201/versions': [{ id: 202, version_number: 1 }] }
+      const data = { '/api/auth/me': auth.user, '/api/v1/groups': groups, '/api/v1/assignments': assignments, '/api/v1/grading': [], '/api/v1/tests': [test], '/api/v1/tests/201/versions': [{ id: 202, version_number: 1 }] }
       if (Object.hasOwn(data, path)) return respond(data[path])
     }
     if (method === 'POST' && path === '/api/v1/assignments') {
       const body = request.postDataJSON(), id = 601 + submissions.length
       submissions.push(body)
-      assignments.push({ id, teacher_id: 101, title: test.title, starts_at: body.startsAt, ends_at: body.endsAt, max_attempts: 1, recipients: 1, recipient_groups: [group] })
+      assignments.push({ id, assessment_id: test.id, teacher_id: 101, title: test.title, starts_at: body.startsAt, ends_at: body.endsAt, max_attempts: body.maxAttempts, recipients: 1, recipient_groups: groups.filter(group => body.groupIds.includes(group.id)) })
       return respond({ id, recipients: 1 })
     }
     errors.push(`Unexpected API: ${method} ${path}`)
@@ -38,10 +38,16 @@ try {
   const start = form.getByLabel('Начало', { exact: true }), end = form.getByLabel('Краен срок', { exact: true })
   const alert = form.getByRole('alert')
   const assign = form.getByRole('button', { name: 'Възложи', exact: true })
+  const step = title => form.getByRole('tab', { name: title, exact: true })
+  const audienceStep = step('Тест и групи'), periodStep = step('Период и опити'), settingsStep = step('Начин на решаване')
   await form.getByRole('combobox', { name: 'Тест', exact: true }).fill(test.title)
   await page.getByRole('listbox', { name: 'Тестове за възлагане' }).getByRole('option').click()
-  await form.getByRole('combobox', { name: 'Търси групи', exact: true }).click()
-  await page.getByRole('listbox', { name: 'Групи', exact: true }).getByRole('option', { name: group.name, exact: true }).click()
+  async function selectGroup(index) {
+    await form.getByRole('combobox', { name: 'Търси групи', exact: true }).click()
+    await page.getByRole('listbox', { name: 'Групи', exact: true }).getByRole('option', { name: groups[index].name, exact: true }).click()
+  }
+  await selectGroup(0)
+  await periodStep.click()
   for (const [from, until] of [
     ['2098-10-14T10:00', '2098-10-14T10:00'],
     ['2098-10-14T10:01', '2098-10-14T10:00'],
@@ -56,7 +62,9 @@ try {
     }
     assert.equal(await start.inputValue(), from)
     assert.equal(await end.inputValue(), until)
+    await settingsStep.click()
     await assign.click()
+    await periodStep.waitFor({ state: 'visible' })
     assert.equal(await end.evaluate(element => element === document.activeElement), true)
     await form.evaluate(element => element.requestSubmit())
     assert.equal(submissions.length, 0)
@@ -70,32 +78,43 @@ try {
     assert.equal(await input.getAttribute('aria-describedby'), null)
     assert.equal(await input.evaluate(element => element.validity.valid), true)
   }
-  await start.fill(''); await assign.click()
+  await start.fill(''); await settingsStep.click(); await assign.click()
+  await periodStep.waitFor({ state: 'visible' })
   await page.getByRole('alert').getByText('Попълнете началната дата и час.', { exact: true }).waitFor()
   assert.equal(await end.getAttribute('min'), null)
-  await start.fill('2098-10-14T10:00'); await end.fill(''); await assign.click()
+  await start.fill('2098-10-14T10:00'); await end.fill(''); await settingsStep.click(); await assign.click()
+  await periodStep.waitFor({ state: 'visible' })
   await page.getByRole('alert').getByText('Попълнете крайната дата и час.', { exact: true }).waitFor()
   assert.equal(await start.getAttribute('max'), null)
   assert.equal(submissions.length, 0)
-  for (const [from, until] of [
+  for (const [index, [from, until]] of [
     ['2098-10-14T10:00', '2098-10-14T10:01'],
     ['2098-01-31T23:59', '2098-02-01T00:00'],
     ['2098-12-31T23:59', '2099-01-01T00:00'],
-  ]) {
+  ].entries()) {
+    if (index > 0) { await audienceStep.click(); await selectGroup(index) }
+    await periodStep.click()
     await start.fill(from); await end.fill(until)
     assert.equal(await alert.count(), 0)
     assert.equal(await start.getAttribute('max'), from)
     assert.equal(await end.getAttribute('min'), until)
     const expected = await page.evaluate(([from, until]) => ({ startsAt: new Date(from).toISOString(), endsAt: new Date(until).toISOString() }), [from, until])
     const pending = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/v1/assignments')
+    await settingsStep.click()
     await assign.click()
     const submitted = (await pending).postDataJSON()
+    assert.deepEqual(submitted.groupIds, [groups[index].id])
     assert.equal(submitted.startsAt, expected.startsAt)
     assert.equal(submitted.endsAt, expected.endsAt)
     assert(new Date(submitted.startsAt) < new Date(submitted.endsAt))
     await page.getByText('Възлагането е създадено.', { exact: true }).waitFor()
+    await audienceStep.click()
+    await form.getByText('Избрани: 0', { exact: true }).waitFor()
+    assert.equal(await form.getByRole('list', { name: 'Избрани: Групи', exact: true }).count(), 0)
+    assert.equal(await form.getByRole('combobox', { name: 'Тест', exact: true }).inputValue(), test.title)
   }
   assert.equal(submissions.length, 3)
+  await periodStep.click()
   await start.fill('2098-10-14T10:00'); await end.fill('2098-10-14T09:59')
   for (const { theme, width, height } of [{ theme: 'dark', width: 1440, height: 1000 }, { theme: 'light', width: 1440, height: 1000 }, { theme: 'dark', width: 390, height: 844 }, { theme: 'light', width: 320, height: 844 }]) {
     await page.setViewportSize({ width, height })

@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Plus, RotateCw, RotateCcw, Ban, Copy, Mail, KeyRound, Trash2, Users, UserRound, Search, CalendarDays, Smartphone, SlidersHorizontal, X } from 'lucide-react'
+import type { KeyboardEvent } from 'react'
+import { Plus, RotateCw, RotateCcw, Ban, Copy, Mail, KeyRound, Trash2, Users, UserRound, Search, CalendarDays, Smartphone, SlidersHorizontal, X, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { WorkspaceApi } from './api'
-import { useAction, useRemote } from './api'
+import { ApiError, useAction, useRemote } from './api'
 import type { Assessment, Assignment, Group, Version } from './types'
 import { label } from './types'
 import { Empty, Feedback, Panel, SectionHead, TableContainer } from './ui'
@@ -15,6 +16,7 @@ import { AssignmentAccommodationDialog } from './AssignmentAccommodationDialog'
 import { AssignmentGroupMembersDialog } from './AssignmentGroupMembersDialog'
 import { localTime, minuteBound } from './assignmentDates'
 import { useNotifications } from '../notifications'
+import './assignmentCreation.css'
 
 type AssignmentErrorField = 'test' | 'period' | 'startsAt' | 'endsAt' | 'attempts' | 'groups'
 const assignmentFieldSelectors: Record<AssignmentErrorField, string> = {
@@ -32,8 +34,15 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
   const action = useAction()
   const notify = useNotifications()
   const section = useRef<HTMLElement>(null)
+  const assigning = useRef(false)
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const [audienceNotice, setAudienceNotice] = useState('')
+  const [activeStep, setActiveStep] = useState(0)
+  const [stepCheckedAt, setStepCheckedAt] = useState(() => Date.now())
   const [formError, setFormError] = useState<{ message: string; field?: AssignmentErrorField } | null>(null)
   const periodErrorId = useId()
+  const stepsId = useId()
+  const assignmentSteps = ['Тест и групи', 'Период и опити', 'Начин на решаване']
   useEffect(() => {
     if (action.error || formError) section.current?.querySelector('[role="alert"]')?.scrollIntoView({ block: 'nearest' })
     if (formError?.field) section.current?.querySelector<HTMLInputElement>(assignmentFieldSelectors[formError.field])?.focus()
@@ -55,9 +64,12 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
     return () => { active = false }
   }, [api, test])
   const [groupIds, setGroupIds] = useState<number[]>([])
-  const assignedGroupIds = new Set(assignments.data.filter(assignment => test && assignment.assessment_id === test.id).flatMap(assignment => assignment.recipient_groups?.map(group => group.id) ?? []))
-  const duplicateGroups = groups.data.filter(group => groupIds.includes(group.id) && assignedGroupIds.has(group.id))
-  const duplicateMessage = duplicateGroups.length ? `Тестът вече е възложен на: ${duplicateGroups.map(group => group.name).join(', ')}. Променете съществуващото възлагане.` : ''
+  const existingAssignments = assignments.data.filter(assignment => test && assignment.assessment_id === test.id && assignment.recipient_groups?.length)
+  const assignedGroupIds = new Set(existingAssignments.flatMap(assignment => assignment.recipient_groups?.map(group => group.id) ?? []))
+  const selectedGroups = groups.data.filter(group => groupIds.includes(group.id) && !assignedGroupIds.has(group.id))
+  const eligibleGroupIds = groupIds.filter(id => selectedGroups.some(group => group.id === id))
+  const availableGroups = groups.data.filter(group => !assignedGroupIds.has(group.id))
+  const onlyExistingGroups = existingAssignments.length > 0 && !eligibleGroupIds.length
   const [start, setStart] = useState(() => localTime(new Date()))
   const [end, setEnd] = useState(() => localTime(new Date(Date.now() + 3600000)))
   const periodError = start && end && new Date(start).getTime() >= new Date(end).getTime() ? 'Крайният срок трябва да е след началото.' : ''
@@ -88,6 +100,17 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
     return (!from || startDay >= from) && (!to || startDay <= to)
   })
   const toggle = (ids: number[], value: number) => ids.includes(value) ? ids.filter(id => id !== value) : [...ids, value]
+  function selectTest(value: Assessment | null) {
+    setTest(value ? { ...value } : null)
+    setResolved(null)
+    setFormError(null)
+    setAudienceNotice('')
+    action.clearFeedback()
+    if (value) {
+      const assigned = new Set(assignments.data.filter(assignment => assignment.assessment_id === value.id).flatMap(assignment => assignment.recipient_groups?.map(group => group.id) ?? []))
+      setGroupIds(ids => ids.filter(id => !assigned.has(id)))
+    }
+  }
   function resetForm() {
     if (action.busy) return
     const now = Date.now()
@@ -101,13 +124,21 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
     setShuffleA(false)
     setAfterDeadline(true)
     setAutoAiGrading(false)
+    setActiveStep(0)
+    setStepCheckedAt(Date.now())
     setFormError(null)
+    setAudienceNotice('')
     action.clearFeedback()
     setPickerKey(key => key + 1)
+    tabRefs.current[0]?.focus()
   }
   async function assign() {
-    if (action.busy || loadingVersion || tests.loading || groups.loading || assignments.loading) return
-    const invalid = (message: string, field?: AssignmentErrorField) => { setFormError({ message, field }); notify(message, 'danger') }
+    if (assigning.current || action.busy || loadingVersion || tests.loading || groups.loading || assignments.loading) return
+    const invalid = (message: string, field?: AssignmentErrorField) => {
+      if (field) setActiveStep(field === 'test' || field === 'groups' ? 0 : 1)
+      setFormError({ message, field })
+      notify(message, 'danger')
+    }
     if (!test) return invalid('Изберете тест за възлагане.', 'test')
     if (!version) return invalid(resolved?.error || 'Тестът няма запазена версия.', 'test')
     const startsAt = new Date(start), endsAt = new Date(end)
@@ -117,25 +148,107 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
     if (endsAt.getTime() <= Date.now()) return invalid('Крайният срок трябва да е в бъдещето.', 'endsAt')
     if (attempts === '') return invalid('Попълнете броя опити.', 'attempts')
     if (!Number.isInteger(attempts) || attempts < 1 || attempts > 20) return invalid('Броят опити трябва да е цяло число от 1 до 20.', 'attempts')
-    if (!groupIds.length) return invalid('Изберете поне една група.', 'groups')
-    if (duplicateMessage) return invalid(duplicateMessage)
+    if (!eligibleGroupIds.length) {
+      if (existingAssignments.length) { setAudienceNotice('Избери друга група или промени съществуващото възлагане.'); return }
+      return invalid('Изберете поне една група.', 'groups')
+    }
     setFormError(null)
-    await action.run(async () => {
-      await api.post('/assignments', { versionId: version, groupIds, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(), maxAttempts: attempts, shuffleQuestions: shuffleQ, shuffleOptions: shuffleA, answersAfterDeadline: afterDeadline, mobileAllowed: test.mobile_allowed === true, autoAiGrading })
-      await assignments.reload()
-    }, 'Възлагането е създадено.')
+    setAudienceNotice('')
+    assigning.current = true
+    try {
+      await action.run(async () => {
+        try {
+          await api.post('/assignments', { versionId: version, groupIds: eligibleGroupIds, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(), maxAttempts: attempts, shuffleQuestions: shuffleQ, shuffleOptions: shuffleA, answersAfterDeadline: afterDeadline, mobileAllowed: test.mobile_allowed === true, autoAiGrading })
+        } catch (cause) {
+          if (!(cause instanceof ApiError) || cause.status !== 409 || !cause.message.startsWith('Тестът вече е възложен на група')) throw cause
+          const latest = await assignments.reload()
+          const assigned = new Set(latest.filter(assignment => assignment.assessment_id === test.id).flatMap(assignment => assignment.recipient_groups?.map(group => group.id) ?? []))
+          setGroupIds(ids => ids.filter(id => !assigned.has(id)))
+          setAudienceNotice('Списъкът е обновен. Избери друга група или промени съществуващото възлагане.')
+          return
+        }
+        setGroupIds([])
+        setPickerKey(key => key + 1)
+        notify('Възлагането е създадено.')
+        await assignments.reload()
+      })
+    } finally { assigning.current = false }
+  }
+  function moveStep(step: number, focus = false) {
+    const next = Math.max(0, Math.min(assignmentSteps.length - 1, step))
+    setActiveStep(next)
+    if (focus) tabRefs.current[next]?.focus()
+  }
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    let next: number | null = null
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % assignmentSteps.length
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index - 1 + assignmentSteps.length) % assignmentSteps.length
+    if (event.key === 'Home') next = 0
+    if (event.key === 'End') next = assignmentSteps.length - 1
+    if (next !== null) {
+      event.preventDefault()
+      moveStep(next, true)
+    }
   }
   return <section ref={section} className="ws-section"><SectionHead title="Възлагания" description="Избери кой тест да решава всяка група и до кога. Управлявай сроковете и достъпа от списъка по-долу." /><Feedback error={(formError?.field === 'period' ? '' : formError?.message) || assignments.error || tests.error || groups.error || action.error || (test && resolved?.testId === test.id ? resolved.error : '')} busy={action.busy || loadingVersion} />
-    <Panel title="Ново възлагане" description="1. Избери тест · 2. Задай срок и брой опити · 3. Добави групите и натисни „Възложи“.">
-    <form className="ws-assignment-form" aria-label="Възлагане на тест" noValidate onChange={() => setFormError(null)} onSubmit={e => { e.preventDefault(); void assign() }} onReset={e => { e.preventDefault(); resetForm() }}>
-      <fieldset className="ws-editor" disabled={action.busy}>
-      <div className="ws-form-grid"><TestPicker key={pickerKey} tests={tests.data.filter(t => t.status !== 'archived')} selected={test} select={value => { setTest(value ? { ...value } : null); setResolved(null); setFormError(null) }} disabled={action.busy || tests.loading} invalid={formError?.field === 'test'} /><label>Начало<input type="datetime-local" name="startsAt" required max={minuteBound(end, -1)} step={60} aria-invalid={!!periodError || formError?.field === 'startsAt'} aria-describedby={periodError ? periodErrorId : undefined} value={start} onChange={e => setStart(e.target.value)} /></label><label>Краен срок<input type="datetime-local" name="endsAt" required min={minuteBound(start, 1)} step={60} aria-invalid={!!periodError || formError?.field === 'endsAt'} aria-describedby={periodError ? periodErrorId : undefined} value={end} onChange={e => setEnd(e.target.value)} /></label><label>Опити<input type="number" name="maxAttempts" required min={1} max={20} step={1} aria-invalid={formError?.field === 'attempts' || undefined} value={attempts} onChange={e => setAttempts(e.target.value === '' ? '' : Number(e.target.value))} /></label></div>
-      {periodError && <p id={periodErrorId} className="error" role="alert">{periodError}</p>}
-        <RecipientPicker key={pickerKey} title="Групи" searchLabel="Търси групи" placeholder="Име или дисциплина" emptyMessage="Няма налични групи." options={groups.data.map(group => ({ id: group.id, name: group.name, detail: assignedGroupIds.has(group.id) ? 'Вече е възложен' : group.subject, disabled: assignedGroupIds.has(group.id) }))} selected={groupIds} toggle={id => { setGroupIds(ids => toggle(ids, id)); setFormError(null) }} disabled={action.busy} loading={groups.loading || assignments.loading} invalid={formError?.field === 'groups'} />
-      {duplicateMessage && <p className="error" role="alert">{duplicateMessage}</p>}
-      <AssignmentSettingsFields value={{ shuffleQuestions: shuffleQ, shuffleOptions: shuffleA, answersAfterDeadline: afterDeadline, autoAiGrading }} onChange={value => { setShuffleQ(value.shuffleQuestions); setShuffleA(value.shuffleOptions); setAfterDeadline(value.answersAfterDeadline); setAutoAiGrading(value.autoAiGrading) }} />
-      {test && <p className="ws-muted">Решаване от телефон: {test.mobile_allowed === true ? 'разрешено' : 'не е разрешено'}. Променя се от отметката „Телефон“ в списъка с тестове.</p>}
-      <div className="ws-actions ws-assignment-form-actions"><button type="submit" className="primary command-button" disabled={action.busy || loadingVersion || tests.loading || groups.loading || assignments.loading || !!duplicateMessage}><Plus size={17} /> Възложи</button><button type="reset" className="icon-button" title="Нулирай формата" aria-label="Нулирай формата" disabled={action.busy}><RotateCcw size={17} /></button></div>
+    <Panel title="Ново възлагане" description="Избери тест и групи, задай периода и потвърди. Вече създадените възлагания можеш да управляваш на същото място.">
+    <form className="ws-assignment-form" aria-label="Възлагане на тест" noValidate onChange={() => { setFormError(null); setStepCheckedAt(Date.now()) }} onSubmit={e => { e.preventDefault(); void assign() }} onReset={e => { e.preventDefault(); resetForm() }}>
+      <fieldset className="ws-editor ws-assignment-creator" disabled={action.busy}>
+        <div className="ws-assignment-tabs" role="tablist" aria-label="Стъпки на възлагането">
+          {assignmentSteps.map((step, index) => {
+            const completed = index === 0 ? !!test && eligibleGroupIds.length > 0 : index === 1 ? !!start && !!end && !periodError && new Date(end).getTime() > stepCheckedAt && attempts !== '' && Number.isInteger(attempts) && attempts >= 1 && attempts <= 20 : false
+            return <button key={step} ref={element => { tabRefs.current[index] = element }} id={`${stepsId}-tab-${index}`} className="ws-assignment-tab" type="button" role="tab" aria-label={step} aria-selected={activeStep === index} aria-controls={`${stepsId}-panel-${index}`} tabIndex={activeStep === index ? 0 : -1} onClick={() => moveStep(index)} onKeyDown={event => handleTabKeyDown(event, index)}>
+              <span className="ws-assignment-tab-number" aria-hidden="true">{completed ? <CheckCircle2 size={17} /> : `0${index + 1}`}</span>
+              <span className="ws-assignment-tab-label">{step}</span>
+              <span className="ws-assignment-tab-state" aria-hidden="true">{activeStep === index ? 'Текуща стъпка' : completed ? 'Готово' : `Стъпка ${index + 1}`}</span>
+            </button>
+          })}
+        </div>
+        <section className="ws-assignment-step" id={`${stepsId}-panel-0`} role="tabpanel" aria-labelledby={`${stepsId}-tab-0`} aria-label={assignmentSteps[0]} hidden={activeStep !== 0}>
+          <div className="ws-assignment-step-head"><span aria-hidden="true">01</span><div><h4>Тест и групи</h4><p>На кои групи искаш да възложиш теста?</p></div></div>
+          <div className="ws-assignment-audience-fields">
+            <TestPicker key={`test-${pickerKey}`} tests={tests.data.filter(t => t.status !== 'archived')} selected={test} select={selectTest} disabled={action.busy || tests.loading} invalid={formError?.field === 'test'} />
+            <div className="ws-assignment-group-field">
+              <RecipientPicker key={`groups-${pickerKey}`} title="Групи" searchLabel="Търси групи" placeholder="Име или дисциплина" emptyMessage="Няма налични групи." options={groups.data.map(group => ({ id: group.id, name: group.name, detail: assignedGroupIds.has(group.id) ? 'Вече е възложен' : group.subject, disabled: assignedGroupIds.has(group.id) }))} selected={eligibleGroupIds} toggle={id => { if (assignedGroupIds.has(id)) return; setGroupIds(ids => toggle(ids, id)); setFormError(null); setAudienceNotice(''); action.clearFeedback() }} disabled={action.busy} loading={groups.loading || assignments.loading} invalid={formError?.field === 'groups'} keepOpenOnSelect />
+              {test && !groups.loading && <p className="ws-assignment-group-hint">{availableGroups.length ? `${availableGroups.length} ${availableGroups.length === 1 ? 'група е достъпна' : 'групи са достъпни'} за ново възлагане.` : groups.data.length ? 'Всички твои групи вече имат този тест.' : 'Създай група и добави ученици, за да възложиш тест.'}</p>}
+            </div>
+          </div>
+          {!!existingAssignments.length && <section className="ws-assignment-existing" aria-label="Съществуващи възлагания на избрания тест">
+            <div className="ws-assignment-existing-heading"><CheckCircle2 size={20} aria-hidden="true" /><div><h4>Този тест вече е възложен</h4><p>За тези групи можеш да промениш периода или да отвориш участниците.</p></div></div>
+            <ul>{existingAssignments.map(assignment => {
+              const names = assignment.recipient_groups?.map(group => group.name).join(', ') ?? ''
+              return <li key={assignment.id}><div className="ws-assignment-existing-detail"><strong>{names}</strong><span>{assignmentDate.format(new Date(assignment.starts_at))} · {assignmentTime.format(new Date(assignment.starts_at))} – {assignmentDate.format(new Date(assignment.ends_at))} · {assignmentTime.format(new Date(assignment.ends_at))}</span></div><div className="ws-actions"><button type="button" className="command-button" aria-label={`Промени периода за групи: ${names}`} onClick={() => setEditingSchedule(assignment)}><CalendarDays size={16} aria-hidden="true" /> Промени периода</button><button type="button" className="command-button" aria-label={`Участници в групи: ${names}`} onClick={() => openParticipants(assignment.id)}><Users size={16} aria-hidden="true" /> Участници</button></div></li>
+            })}</ul>
+          </section>}
+          {audienceNotice && <p className="ws-assignment-notice" role="status">{audienceNotice}</p>}
+          <div className="ws-assignment-navigation ws-assignment-navigation-end">
+            <span className="ws-assignment-navigation-hint">Стъпка 1 от 3</span>
+            <button type="button" className="primary command-button" onClick={() => moveStep(1)}>Напред <ChevronRight size={17} aria-hidden="true" /></button>
+          </div>
+        </section>
+        <section className="ws-assignment-step" id={`${stepsId}-panel-1`} role="tabpanel" aria-labelledby={`${stepsId}-tab-1`} aria-label={assignmentSteps[1]} hidden={activeStep !== 1}>
+          <div className="ws-assignment-step-head"><span aria-hidden="true">02</span><div><h4>Период и опити</h4><p>Кога учениците могат да започнат и колко опита имат?</p></div></div>
+          <div className="ws-assignment-period-fields">
+            <label>Начало<input type="datetime-local" name="startsAt" required max={minuteBound(end, -1)} step={60} aria-invalid={!!periodError || formError?.field === 'startsAt'} aria-describedby={periodError ? periodErrorId : undefined} value={start} onChange={e => setStart(e.target.value)} /></label>
+            <label>Краен срок<input type="datetime-local" name="endsAt" required min={minuteBound(start, 1)} step={60} aria-invalid={!!periodError || formError?.field === 'endsAt'} aria-describedby={periodError ? periodErrorId : undefined} value={end} onChange={e => setEnd(e.target.value)} /></label>
+            <label>Опити<input type="number" name="maxAttempts" required min={1} max={20} step={1} aria-invalid={formError?.field === 'attempts' || undefined} value={attempts} onChange={e => setAttempts(e.target.value === '' ? '' : Number(e.target.value))} /></label>
+          </div>
+          {periodError && <p id={periodErrorId} className="error" role="alert">{periodError}</p>}
+          <div className="ws-assignment-navigation">
+            <button type="button" className="command-button" onClick={() => moveStep(0)}><ChevronLeft size={17} aria-hidden="true" /> Назад</button>
+            <span className="ws-assignment-navigation-hint">Стъпка 2 от 3</span>
+            <button type="button" className="primary command-button" onClick={() => moveStep(2)}>Напред <ChevronRight size={17} aria-hidden="true" /></button>
+          </div>
+        </section>
+        <section className="ws-assignment-step" id={`${stepsId}-panel-2`} role="tabpanel" aria-labelledby={`${stepsId}-tab-2`} aria-label={assignmentSteps[2]} hidden={activeStep !== 2}>
+          <div className="ws-assignment-step-head"><span aria-hidden="true">03</span><div><h4>Начин на решаване</h4><p>Избери настройките за новото възлагане.</p></div></div>
+          <AssignmentSettingsFields value={{ shuffleQuestions: shuffleQ, shuffleOptions: shuffleA, answersAfterDeadline: afterDeadline, autoAiGrading }} onChange={value => { setShuffleQ(value.shuffleQuestions); setShuffleA(value.shuffleOptions); setAfterDeadline(value.answersAfterDeadline); setAutoAiGrading(value.autoAiGrading) }} />
+          {test && <p className="ws-assignment-group-hint"><Smartphone size={16} aria-hidden="true" />Решаване от телефон: {test.mobile_allowed === true ? 'разрешено' : 'не е разрешено'}. Променя се от „Телефон“ в списъка с тестове.</p>}
+          <div className="ws-assignment-confirm">
+            <div className="ws-assignment-confirm-summary" role="status"><strong>{test?.title ?? 'Избери тест за възлагане'}</strong><span>{selectedGroups.length ? `Ново възлагане за: ${selectedGroups.map(group => group.name).join(', ')}` : onlyExistingGroups ? availableGroups.length ? 'Избери друга група за ново възлагане.' : 'Управлявай съществуващото възлагане от бутоните по-горе.' : 'Избери поне една група.'}</span></div>
+            <div className="ws-actions ws-assignment-form-actions"><button type="button" className="command-button" onClick={() => moveStep(1)}><ChevronLeft size={17} aria-hidden="true" /> Назад</button><button type="submit" className="primary command-button" disabled={action.busy || loadingVersion || tests.loading || groups.loading || assignments.loading || onlyExistingGroups}><Plus size={17} /> Възложи</button><button type="reset" className="command-button" title="Нулирай формата" aria-label="Нулирай формата" disabled={action.busy}><RotateCcw size={17} /> Нулирай</button></div>
+          </div>
+        </section>
       </fieldset>
     </form>
     </Panel>
