@@ -208,6 +208,8 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
   }
   function startCreation(mode: TestCreationMode) {
     action.clearFeedback()
+    setGeneratedDraft(false)
+    setDiscardPending(false)
     setShowCreationOptions(false)
     setLibraryTab('library')
     setCurrent(null)
@@ -233,6 +235,7 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
     }
   }
   function importedTest(result: ImportedTestDraft) {
+    setGeneratedDraft(false)
     setCurrent(null)
     setDefaultDraftDifficulty(result.definition.questions.at(-1)?.difficulty ?? 'MEDIUM')
     setDraft(result.definition)
@@ -261,6 +264,8 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
   const [printCount, setPrintCount] = useState(3)
   const previewRef = useRef<HTMLElement>(null)
   const [draft, setDraft] = useState<Definition | null>(null)
+  const [generatedDraft, setGeneratedDraft] = useState(false)
+  const [discardPending, setDiscardPending] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<Assessment | null>(null)
   const [pendingRemoval, setPendingRemoval] = useState<{ questionIndex: number; optionIndex?: number } | null>(null)
   const [replacement, setReplacement] = useState<{ index: number; question: Question } | null>(null)
@@ -274,6 +279,7 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
   const generation = useAiGenerationProgress(waitingForAi)
   const generating = generation.active
   const saveDisabled = action.busy || !editable || generating || pendingImages > 0 || !!replacement
+  const canDiscardGeneratedDraft = !!draft && !current && generatedDraft
   const addLimit = Math.min(20, 100 - (draft?.questions.length ?? 0))
   const emptyQuestions = draft?.questions.filter(isEmptyQuestion) ?? []
   const aiLimit = Math.min(20, 100 - (draft?.questions.length ?? 0) + emptyQuestions.length)
@@ -286,6 +292,8 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
   useEffect(() => { if (showAi) window.scrollTo({ top: 0 }) }, [showAi])
   useEffect(() => {
     if (!creationRequest) return
+    setGeneratedDraft(false)
+    setDiscardPending(false)
     setLibraryTab('library')
     setCurrent(null)
     setPreview(null)
@@ -327,6 +335,7 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
       setShowAppendAi(false)
     } else {
       showQuestions(definition.questions.map((_, index) => index))
+      setGeneratedDraft(true)
       setCurrent(null)
       setDefaultDraftDifficulty(definition.questions.at(-1)?.difficulty ?? 'MEDIUM')
       setDraft({ ...definition, subject: aiSettings.subject || definition.subject, level: aiSettings.level, gradingScale: aiSettings.gradingScale, passThreshold: aiSettings.passThreshold })
@@ -468,9 +477,23 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
     void action.run(async () => {
       const row = await api.get<Assessment>(`/tests/${test.id}`)
       const definition = JSON.parse(row.definition_json) as Definition
-      setCurrent(row); setDefaultDraftDifficulty(definition.questions.at(-1)?.difficulty ?? 'MEDIUM'); setDraft(definition); setShowAi(false); setShowAppendAi(false)
+      setGeneratedDraft(false); setCurrent(row); setDefaultDraftDifficulty(definition.questions.at(-1)?.difficulty ?? 'MEDIUM'); setDraft(definition); setShowAi(false); setShowAppendAi(false)
       window.scrollTo({ top: 0 })
     })
+  }
+  function discardGeneratedDraft() {
+    if (!canDiscardGeneratedDraft || saveDisabled) return
+    setDraft(null)
+    setGeneratedDraft(false)
+    setDiscardPending(false)
+    setCurrent(null)
+    setPreview(null)
+    setJob(null)
+    setShowAppendAi(false)
+    setImportWarnings([])
+    setPollError('')
+    action.clearFeedback()
+    setShowAi(true)
   }
   async function save() {
     if (!draft || saveDisabled) return
@@ -483,7 +506,7 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
       setCurrent(saved)
       await api.post(`/tests/${saved.id}/publish`)
       await list.reload()
-      setDraft(null); setCurrent(null); setPreview(null); setShowAi(false); setShowAppendAi(false); setJob(null)
+      setDraft(null); setGeneratedDraft(false); setCurrent(null); setPreview(null); setShowAi(false); setShowAppendAi(false); setJob(null)
       setImportWarnings([])
       resetLibraryFilters()
       if (librarySubject) setLibrarySubject(subjectKey(draft.subject || '') ? `subject:${subjectKey(draft.subject)}` : 'unassigned')
@@ -553,7 +576,11 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
   </section>
   return <section className={`ws-section${!draft ? ' ws-library' : ' ws-manual-create-page'}`}>
     <SectionHead title={draft ? draft.title : 'Библиотека с тестове'} description={draft ? 'Попълни настройките и въпросите, след което натисни „Запази теста“.' : 'Създай тест ръчно или с AI. Тук ще намериш всички свои и добавени от други учители тестове.'}>
-      {draft && <><button type="button" title="Към библиотеката" className="command-button" disabled={action.busy || generating || pendingImages > 0 || !!replacement} onClick={() => { setDraft(null); setCurrent(null); setJob(null); setShowAi(false); setShowAppendAi(false); setImportWarnings([]) }}><ArrowLeft size={18} /> Към библиотеката</button><button type="button" className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази теста</button></>}
+      {draft && <>
+        <button type="button" title="Към библиотеката" className="command-button" disabled={action.busy || generating || pendingImages > 0 || !!replacement} onClick={() => { setDraft(null); setGeneratedDraft(false); setCurrent(null); setJob(null); setShowAi(false); setShowAppendAi(false); setImportWarnings([]) }}><ArrowLeft size={18} /> Към библиотеката</button>
+        {canDiscardGeneratedDraft && <button type="button" className="command-button" disabled={saveDisabled} onClick={() => setDiscardPending(true)}><X size={17} aria-hidden="true" /> Откажи</button>}
+        <button type="button" className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази теста</button>
+      </>}
     </SectionHead>
     <Feedback error={action.error || list.error || pollError} busy={action.busy || list.loading} />
     {draft && generating && <AiGenerationProgress progressRef={generation.progressRef} submitting={submittingAi} status={job?.status} total={generation.reveal?.indices.length} shown={generation.reveal?.shown} following={generation.following} onResume={generation.resume} />}
@@ -602,7 +629,7 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
           <div className="ws-print-controls">
             <label>Брой варианти<input type="number" min={1} max={20} step={1} value={printCount} onChange={event => setPrintCount(Math.min(20, Math.max(1, Number(event.target.value) || 1)))} /></label>
             <button className="command-button" disabled={action.busy || generating || !preview.definition.questions.length} onClick={() => openPrintableTest(preview.definition, printCount)}><Download size={17} /> Печатни варианти</button>
-            {preview.assessment.owner_id === userId && <button className="command-button" disabled={action.busy || generating} onClick={() => { setCurrent(preview.assessment); setDraft(preview.definition); setShowAppendAi(false) }}><Pencil size={17} /> Редактирай теста</button>}
+            {preview.assessment.owner_id === userId && <button className="command-button" disabled={action.busy || generating} onClick={() => { setGeneratedDraft(false); setCurrent(preview.assessment); setDraft(preview.definition); setShowAppendAi(false) }}><Pencil size={17} /> Редактирай теста</button>}
           </div>
         </SectionHead>
         {preview.definition.description && <p>{preview.definition.description}</p>}
@@ -672,8 +699,21 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
           </div>
         </form>}
       </section>
-      <div className="ws-actions ws-editor-footer"><button type="button" className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази</button></div>
+      <div className="ws-actions ws-editor-footer">
+        {canDiscardGeneratedDraft && <button type="button" className="command-button" disabled={saveDisabled} onClick={() => setDiscardPending(true)}><X size={17} aria-hidden="true" /> Откажи</button>}
+        <button type="button" className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази</button>
+      </div>
     </fieldset>}
+    {discardPending && canDiscardGeneratedDraft && <DeleteConfirmationDialog
+      title="Отказ от генерирания тест"
+      description={<>Генерираният тест „{draft.title}“ и промените по черновата ще бъдат изхвърлени. Ще се върнеш към AI настройките, за да можеш да генерираш отново.</>}
+      confirmLabel="Изхвърли черновата"
+      cancelLabel="Продължи редакцията"
+      confirmDisabled={saveDisabled}
+      successMessage="Генерираната чернова е изхвърлена."
+      onCancel={() => setDiscardPending(false)}
+      onConfirm={discardGeneratedDraft}
+    />}
     {replacement && draft && <QuestionReplacementDialog api={api} definition={draft} questionIndex={replacement.index} onClose={closeReplacement} onReplace={replaceQuestion} />}
     {pendingDelete && <TestDeleteDialog api={api} test={pendingDelete} owned={pendingDelete.owner_id === userId} close={() => setPendingDelete(null)} deleted={async () => { if (preview?.assessment.id === pendingDelete.id) setPreview(null); await list.reload(); setPendingDelete(null) }} />}
     {pendingRemoval && draft && <DeleteConfirmationDialog

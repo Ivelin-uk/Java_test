@@ -59,6 +59,7 @@
 .ws-manual-editor > .ws-add-questions .ws-summary { margin-left: auto; font-size: 12px; }
 .ws-manual-editor .ws-append-ai { padding: 20px; border-radius: 12px; }
 .ws-manual-editor .ws-editor-footer { position: sticky; bottom: 12px; z-index: 2; padding: 12px; border: 1px solid var(--manual-line); border-radius: 12px; background: color-mix(in srgb, var(--surface) 92%, transparent); box-shadow: 0 8px 24px #10182814; backdrop-filter: blur(12px); }
+.ws-manual-editor .ws-editor-footer > .command-button { min-height: 46px; border-radius: 9px; }
 .ws-manual-editor .ws-editor-footer .primary { min-height: 46px; padding: 11px 20px; border-radius: 9px; }
 .ws-import-warnings { padding: 16px 18px; border: 1px solid color-mix(in srgb, var(--danger) 36%, var(--border)); border-radius: 12px; background: color-mix(in srgb, var(--danger) 6%, var(--surface)); }
 .ws-import-warnings strong { font-size: 13px; }
@@ -74,6 +75,7 @@
   .ws-manual-create-page { gap: 20px; }
   .ws-manual-create-page > .ws-section-head { align-items: stretch; }
   .ws-manual-create-page > .ws-section-head > .ws-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .ws-manual-create-page > .ws-section-head > .ws-actions > :last-child:nth-child(3) { grid-column: 1 / -1; }
   .ws-manual-create-page > .ws-section-head .command-button { min-width: 0; padding: 10px; font-size: 13px; }
   .ws-manual-editor { gap: 14px; }
   .ws-manual-editor .ws-test-settings { gap: 18px; padding: 20px 16px; border-radius: 14px; }

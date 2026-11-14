@@ -9,6 +9,7 @@ type Props = {
   title: string
   description: ReactNode
   confirmLabel?: string
+  cancelLabel?: string
   confirmIcon?: LucideIcon
   confirmDisabled?: boolean
   successMessage?: string
@@ -26,7 +27,7 @@ export function DeleteConfirmationButton({ label, icon: Icon = Trash2, disabled 
   </>
 }
 
-export function DeleteConfirmationDialog({ title, description, confirmLabel = 'Изтрий', confirmIcon: ConfirmIcon = Trash2, confirmDisabled = false, successMessage, successTone = 'danger', children, onCancel, onConfirm }: Props) {
+export function DeleteConfirmationDialog({ title, description, confirmLabel = 'Изтрий', cancelLabel = 'Отказ', confirmIcon: ConfirmIcon = Trash2, confirmDisabled = false, successMessage, successTone = 'danger', children, onCancel, onConfirm }: Props) {
   const notify = useNotifications()
   const dialog = useRef<HTMLDialogElement>(null)
   const cancelButton = useRef<HTMLButtonElement>(null)
@@ -70,7 +71,7 @@ export function DeleteConfirmationDialog({ title, description, confirmLabel = '�
     {children && <fieldset className="delete-dialog-fields" disabled={busy}>{children}</fieldset>}
     {error && <p className="error" role="alert">{error}</p>}
     <div className="dialog-actions">
-      <button ref={cancelButton} type="button" className="command-button" disabled={busy} onClick={cancel}><X size={16} aria-hidden="true" /> Отказ</button>
+      <button ref={cancelButton} type="button" className="command-button" disabled={busy} onClick={cancel}><X size={16} aria-hidden="true" /> {cancelLabel}</button>
       <button type="button" className="command-button danger-fill" disabled={busy || confirmDisabled} onClick={() => void confirm()}>
         {busy ? <LoaderCircle size={16} className="spin" aria-hidden="true" /> : <ConfirmIcon size={16} aria-hidden="true" />}
         {busy ? 'Изчакване...' : confirmLabel}
