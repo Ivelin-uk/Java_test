@@ -15,6 +15,7 @@
     "test:matching-authoring": "node e2e/matching-authoring.mjs",
     "test:matching-exam": "node e2e/matching-exam.mjs",
     "test:ai": "node e2e/ai-page.mjs",
+    "test:ai-progress": "node e2e/ai-generation-progress.mjs",
     "test:ai-append": "node e2e/ai-append.mjs",
     "test:ai-question-replacement": "node e2e/ai-question-replacement.mjs",
     "test:ai-source-material": "node e2e/ai-source-material.mjs",

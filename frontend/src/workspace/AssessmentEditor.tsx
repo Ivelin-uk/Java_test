@@ -1,9 +1,9 @@
-import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Plus, Save, Trash2, Sparkles, ArrowLeft, ArrowRight, X, Check, Pencil, ImagePlus, Copy, Download, Search, BookOpen, Hash, Smartphone, FolderOpen } from 'lucide-react'
 import { useAction, useRemote } from './api'
 import type { WorkspaceApi } from './api'
 import type { AiJob, Assessment, Definition, Question, QuestionType } from './types'
-import { date, label } from './types'
+import { date } from './types'
 import { Empty, Feedback, Panel, SectionHead, TableContainer } from './ui'
 import { WorkspaceImage } from './WorkspaceImage'
 import { imageBase64 } from './imageUpload'
@@ -13,6 +13,8 @@ import { QuestionText } from '../components/QuestionText'
 import { plainQuestionText, questionTextLimit } from '../components/richText'
 import { DeleteConfirmationButton, DeleteConfirmationDialog } from '../components/DeleteConfirmationDialog'
 import { AiTestFields } from './AiTestFields'
+import { AiGenerationProgress } from './AiGenerationProgress'
+import { useAiGenerationProgress } from './useAiGenerationProgress'
 import { TestGradingFields } from './TestGradingFields'
 import { QuestionReplacementDialog } from './QuestionReplacementDialog'
 import { MatchingPairsEditor, MatchingPairsPreview } from './MatchingPairsEditor'
@@ -149,7 +151,7 @@ function QuestionPrompt({ api, question: q, textChanged, imageChanged, uploadCha
   const fileInput = useRef<HTMLInputElement>(null)
   const upload = useAction()
   return <div className="ws-question-prompt">
-    <Suspense fallback={<p role="status">Зареждане на редактора…</p>}><QuestionTextEditor value={q.text} onChange={textChanged} disabled={disabled} /></Suspense>
+    <Suspense fallback={<div><QuestionText value={q.text} /><p role="status">Зареждане на редактора…</p></div>}><QuestionTextEditor value={q.text} onChange={textChanged} disabled={disabled} /></Suspense>
     <div className="ws-actions"><button type="button" className="command-button" disabled={upload.busy} onClick={() => fileInput.current?.click()}><ImagePlus size={17} />{q.imageId ? 'Смени снимката' : 'Добави снимка'}</button>
       <input ref={fileInput} hidden aria-label="Снимка към условието" type="file" accept="image/png,image/jpeg" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void upload.run(async () => { uploadChanged(true); try { const saved = await api.post<{ id: number }>('/files', { purpose: 'question', base64: await imageBase64(file) }); imageChanged(saved.id) } finally { uploadChanged(false) } }, 'Изображението е добавено.') }} />
       {q.imageId && <DeleteConfirmationButton label="Премахни снимката" icon={X} disabled={upload.busy} title="Премахване на снимка" confirmLabel="Премахни" successMessage="Изображението е премахнато от въпроса." description="Да премахнем ли снимката от условието на въпроса?" onConfirm={() => imageChanged(null)} />}
@@ -254,13 +256,6 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
   const appendForm = useRef<HTMLFormElement>(null)
   const appendTrigger = useRef<HTMLElement | null>(null)
   const appendQuestionCount = useRef(0)
-  function reviewJob() {
-    if (!job?.result_json) return
-    const definition = (JSON.parse(job.result_json) as { definition: Definition }).definition
-    if (jobMode === 'append') { setDraft(previous => previous ? fillAiQuestions(previous, definition.questions) : previous); setShowAppendAi(false) }
-    else { setCurrent(null); setDefaultDraftDifficulty(definition.questions.at(-1)?.difficulty ?? 'MEDIUM'); setDraft({ ...definition, subject: aiSettings.subject || definition.subject, level: aiSettings.level, gradingScale: aiSettings.gradingScale, passThreshold: aiSettings.passThreshold }); setShowAi(false) }
-    setJob(null)
-  }
   const [current, setCurrent] = useState<Assessment | null>(null)
   const [preview, setPreview] = useState<{ assessment: Assessment; definition: Definition } | null>(null)
   const [printCount, setPrintCount] = useState(3)
@@ -271,10 +266,13 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
   const [replacement, setReplacement] = useState<{ index: number; question: Question } | null>(null)
   const replacementTrigger = useRef<HTMLElement | null>(null)
   const [job, setJob] = useState<AiJob | null>(null)
+  const [submittingAi, setSubmittingAi] = useState(false)
   const [showAi, setShowAi] = useState(false)
   const [pollError, setPollError] = useState('')
   const editable = !current || current.owner_id === userId
-  const generating = !!job && ['queued', 'running'].includes(job.status)
+  const waitingForAi = submittingAi || !!job && ['queued', 'running'].includes(job.status)
+  const generation = useAiGenerationProgress(waitingForAi)
+  const generating = generation.active
   const saveDisabled = action.busy || !editable || generating || pendingImages > 0 || !!replacement
   const addLimit = Math.min(20, 100 - (draft?.questions.length ?? 0))
   const emptyQuestions = draft?.questions.filter(isEmptyQuestion) ?? []
@@ -285,7 +283,7 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
   const draftImageCount = draft?.questions.filter(q => q.imageId).length ?? 0
 
   useEffect(() => { setQuestionCountInput(String(draft?.questions.length ?? 0)) }, [draft?.questions.length])
-  useEffect(() => { window.scrollTo({ top: 0 }) }, [showAi])
+  useEffect(() => { if (showAi) window.scrollTo({ top: 0 }) }, [showAi])
   useEffect(() => {
     if (!creationRequest) return
     setLibraryTab('library')
@@ -318,6 +316,25 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
     previewRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' })
   }, [preview])
 
+  const { showQuestions } = generation
+  const receiveAiJob = useCallback((next: AiJob, mode = jobMode) => {
+    if (next.status !== 'completed' || !next.result_json) { setJob(next); return }
+    const definition = (JSON.parse(next.result_json) as { definition: Definition }).definition
+    if (mode === 'append' && draft) {
+      const updated = fillAiQuestions(draft, definition.questions)
+      showQuestions(updated.questions.flatMap((question, index) => question !== draft.questions[index] ? [index] : []))
+      setDraft(updated)
+      setShowAppendAi(false)
+    } else {
+      showQuestions(definition.questions.map((_, index) => index))
+      setCurrent(null)
+      setDefaultDraftDifficulty(definition.questions.at(-1)?.difficulty ?? 'MEDIUM')
+      setDraft({ ...definition, subject: aiSettings.subject || definition.subject, level: aiSettings.level, gradingScale: aiSettings.gradingScale, passThreshold: aiSettings.passThreshold })
+      setShowAi(false)
+    }
+    setJob(null)
+  }, [jobMode, draft, showQuestions, aiSettings.subject, aiSettings.level, aiSettings.gradingScale, aiSettings.passThreshold])
+
   useEffect(() => {
     if (!job || !['queued', 'running'].includes(job.status)) return
     let active = true
@@ -328,16 +345,17 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
       api.get<AiJob>(`/ai/test-generations/${job.id}`).then(next => {
         if (!active) return
         setPollError('')
-        if (next.status === 'completed' && next.result_json) {
-          const definition = (JSON.parse(next.result_json) as { definition: Definition }).definition
-          if (jobMode === 'append') { setDraft(previous => previous ? fillAiQuestions(previous, definition.questions) : previous); setShowAppendAi(false) }
-          else { setCurrent(null); setDefaultDraftDifficulty(definition.questions.at(-1)?.difficulty ?? 'MEDIUM'); setDraft({ ...definition, subject: aiSettings.subject || definition.subject, level: aiSettings.level, gradingScale: aiSettings.gradingScale, passThreshold: aiSettings.passThreshold }); setShowAi(false) }
-          setJob(null)
-        } else setJob(next)
+        receiveAiJob(next)
       }).catch(() => { if (active) setPollError('Не може да се провери AI заявката. Изчаква се връзка със сървъра.') }).finally(() => { inFlight = false })
     }, 2000)
     return () => { active = false; window.clearInterval(timer) }
-  }, [api, job, jobMode, aiSettings.subject, aiSettings.level, aiSettings.gradingScale, aiSettings.passThreshold])
+  }, [api, job, receiveAiJob])
+  async function submitAiJob(path: string, payload?: unknown, mode = jobMode) {
+    generation.begin()
+    setSubmittingAi(true)
+    try { receiveAiJob(await api.post<AiJob>(path, payload), mode) }
+    finally { setSubmittingAi(false) }
+  }
   function openAppendAi() {
     if (!draft || saveDisabled || aiLimit < 1) return
     if (document.activeElement instanceof HTMLElement) appendTrigger.current = document.activeElement
@@ -355,21 +373,21 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
     await action.run(async () => {
       appendQuestionCount.current = appendSettings.questionCount
       setJobMode('append'); setPollError('')
-      setJob(await api.post<AiJob>('/ai/test-generations', {
+      await submitAiJob('/ai/test-generations', {
         ...generationPayload(appendSettings), language: draft.language,
         ...(appendSettings.useSourceMaterial && appendSettings.sourceMaterial ? {
           additionalInformation: `${appendSettings.additionalInformation.trim()}\nВече включени въпроси (създай различни нови въпроси само по качения материал):\n${draft.questions.map(q => plainQuestionText(q.text)).join('\n')}`.slice(0, 20000),
         } : {
           sourceText: `${draft.description ?? ''}\n${draft.instructions ?? ''}\nВече включени въпроси (създай различни нови въпроси):\n${draft.questions.map(q => plainQuestionText(q.text)).join('\n')}`.slice(0, 20000),
         }),
-      }))
+      }, 'append')
     })
   }
   async function retryAppendAi() {
     if (!job || job.status !== 'failed' || saveDisabled) return
     await action.run(async () => {
       if (appendQuestionCount.current > aiLimit) throw new Error('Няма достатъчно място за тази AI заявка. Освободете място или генерирайте по-малко въпроси с нова заявка.')
-      setPollError(''); setJob(await api.post<AiJob>(`/ai/test-generations/${job.id}/retry`))
+      setPollError(''); await submitAiJob(`/ai/test-generations/${job.id}/retry`)
     })
   }
   function patchQuestion(index: number, patch: Partial<Question>) { if (draft) setDraft({ ...draft, questions: draft.questions.map((q, i) => i === index ? { ...q, ...patch } : q) }) }
@@ -474,19 +492,20 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
     }, 'Тестът е запазен.')
   }
   if (showAi && !draft) return <section className="ws-section ws-ai-create-page" aria-label="Създаване на тест с AI">
-    <SectionHead title="Създаване на тест с AI" description="Опиши темата и избери настройките. Ще можеш да прегледаш и редактираш въпросите, преди да запазиш теста."><button type="button" title="Към библиотеката" className="command-button" disabled={action.busy || generating} onClick={() => setShowAi(false)}><ArrowLeft size={18} /> Към библиотеката</button></SectionHead>
+    <SectionHead title="Създаване на тест с AI" description="Опиши темата и избери настройките. Ще можеш да прегледаш и редактираш въпросите, преди да запазиш теста."><button type="button" title="Към библиотеката" className="command-button" disabled={action.busy || generating} onClick={() => { setShowAi(false); window.scrollTo({ top: 0 }) }}><ArrowLeft size={18} /> Към библиотеката</button></SectionHead>
     <div className="ws-ai-create-intro">
       <span className="ws-ai-create-intro-icon"><Sparkles size={21} aria-hidden="true" /></span>
       <div><strong>Чернова, съобразена с твоя урок</strong><p>Задай контекст и формат — AI ще подготви въпросите, а ти ще решиш какво да запазиш.</p></div>
       <span className="ws-ai-create-intro-note"><Check size={16} aria-hidden="true" /> Всеки въпрос е за преглед</span>
     </div>
-    <Feedback error={action.error || pollError || (job?.status === 'failed' ? job.error_message ?? 'AI заявката не успя.' : '')} busy={action.busy || generating} />
+    <Feedback error={action.error || pollError || (job?.status === 'failed' ? job.error_message ?? 'AI заявката не успя.' : '')} />
+    {generating && <AiGenerationProgress progressRef={generation.progressRef} submitting={submittingAi} status={job?.status} following={generation.following} onResume={generation.resume} />}
     <form className="ws-ai-form ws-ai-create-form" onSubmit={e => {
       e.preventDefault()
       if (!validGeneration || action.busy || generating) return
       void action.run(async () => {
         setJobMode('new'); setPollError('')
-        setJob(await api.post<AiJob>('/ai/test-generations', { ...generationPayload(aiSettings), language: 'bg' }))
+        await submitAiJob('/ai/test-generations', { ...generationPayload(aiSettings), language: 'bg' }, 'new')
       })
     }}>
       <div className="ws-ai-create-layout">
@@ -496,9 +515,7 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
             <p className="ws-ai-generate-hint"><Check size={17} aria-hidden="true" /> Въпросите ще се появят като чернова. Прегледай отговорите и редактирай съдържанието преди да запазиш теста.</p>
             <div className="ws-actions">
               <button type="submit" className="primary command-button" disabled={action.busy || generating || !validGeneration}><Sparkles size={17} />{generating ? 'Генериране...' : 'Генерирай'}</button>
-              {job && <span className="ws-ai-create-status" role="status">{label(job.status)}</span>}
-              {job?.status === 'completed' && <button type="button" className="command-button" onClick={reviewJob}><Check size={17} /> Прегледай черновата</button>}
-              {job?.status === 'failed' && <button type="button" className="command-button" disabled={action.busy} onClick={() => void action.run(async () => { setPollError(''); setJob(await api.post<AiJob>(`/ai/test-generations/${job.id}/retry`)) })}><Sparkles size={17} /> Повтори</button>}
+              {job?.status === 'failed' && <button type="button" className="command-button" disabled={action.busy} onClick={() => void action.run(async () => { setPollError(''); await submitAiJob(`/ai/test-generations/${job.id}/retry`) })}><Sparkles size={17} /> Повтори</button>}
             </div>
           </div>
         </div>
@@ -539,6 +556,7 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
       {draft && <><button type="button" title="Към библиотеката" className="command-button" disabled={action.busy || generating || pendingImages > 0 || !!replacement} onClick={() => { setDraft(null); setCurrent(null); setJob(null); setShowAi(false); setShowAppendAi(false); setImportWarnings([]) }}><ArrowLeft size={18} /> Към библиотеката</button><button type="button" className="primary command-button" disabled={saveDisabled} onClick={() => void save()}><Save size={17} /> Запази теста</button></>}
     </SectionHead>
     <Feedback error={action.error || list.error || pollError} busy={action.busy || list.loading} />
+    {draft && generating && <AiGenerationProgress progressRef={generation.progressRef} submitting={submittingAi} status={job?.status} total={generation.reveal?.indices.length} shown={generation.reveal?.shown} following={generation.following} onResume={generation.resume} />}
     {!draft ? <>
       <div className="ws-dashboard-create">
         <span className="ws-dashboard-create-icon"><BookOpen size={24} aria-hidden="true" /></span>
@@ -635,7 +653,7 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
       </div>
       </div>
       <div className="ws-manual-questions-heading"><div className="ws-manual-step-head"><span className="ws-ai-card-step" aria-hidden="true">02</span><div><h3>Въпроси и отговори</h3><p>Добави условие, избери формат и отбележи верните отговори.</p></div></div><div className="ws-manual-question-count"><strong>{draft.questions.length}</strong><span>от 100 въпроса</span></div></div>
-      {draft.questions.map((q, index) => <article className="ws-question ws-manual-question" key={index}><div className="ws-question-head"><div className="ws-manual-question-title"><span>{String(index + 1).padStart(2, '0')}</span><div><h4>Въпрос {index + 1}</h4><p>{types.find(([type]) => type === q.type)?.[1] ?? 'Добави условие и отговори'}</p></div></div><select aria-label={`Тип на въпрос ${index + 1}`} value={q.type} onChange={e => typeChange(index, e.target.value as QuestionType)}>{types.map(([type, text]) => <option key={type} value={type}>{text}</option>)}</select><button type="button" className="command-button" aria-label={`Подмени въпрос ${index + 1} с AI`} disabled={saveDisabled} onClick={() => openReplacement(index)}><Sparkles size={17} /> Подмени с AI</button><button className="icon-button danger" title="Изтрий въпрос" onClick={() => setPendingRemoval({ questionIndex: index })}><Trash2 size={17} /></button></div><QuestionPrompt disabled={saveDisabled} api={api} question={q} textChanged={text => patchQuestion(index, { text })} imageChanged={imageId => patchQuestion(index, { imageId })} uploadChanged={busy => setPendingImages(previous => previous + (busy ? 1 : -1))} /><div className="ws-form-grid"><label>Трудност<select value={q.difficulty} onChange={e => patchQuestion(index, { difficulty: e.target.value, timeSeconds: ({ EASY: 30, MEDIUM: 60, HARD: 120, VERY_HARD: 180 })[e.target.value as 'EASY'] })}><option value="EASY">Лесен</option><option value="MEDIUM">Среден</option><option value="HARD">Труден</option><option value="VERY_HARD">Много труден</option></select></label><label>Точки<input type="number" min={0.0001} step="0.1" value={q.points} onChange={e => patchQuestion(index, { points: Number(e.target.value) })} /></label><DurationInput seconds={q.timeSeconds} question={index + 1} onChange={timeSeconds => patchQuestion(index, { timeSeconds })} /></div>
+      {draft.questions.map((q, index) => generation.visible(index) && <article ref={index === generation.latestIndex ? generation.questionRef : undefined} className={`ws-question ws-manual-question${generation.reveal?.indices.includes(index) ? ' ws-ai-revealed-question' : ''}`} key={index}><div className="ws-question-head"><div className="ws-manual-question-title"><span>{String(index + 1).padStart(2, '0')}</span><div><h4>Въпрос {index + 1}</h4><p>{types.find(([type]) => type === q.type)?.[1] ?? 'Добави условие и отговори'}</p></div></div><select aria-label={`Тип на въпрос ${index + 1}`} value={q.type} onChange={e => typeChange(index, e.target.value as QuestionType)}>{types.map(([type, text]) => <option key={type} value={type}>{text}</option>)}</select><button type="button" className="command-button" aria-label={`Подмени въпрос ${index + 1} с AI`} disabled={saveDisabled} onClick={() => openReplacement(index)}><Sparkles size={17} /> Подмени с AI</button><button className="icon-button danger" title="Изтрий въпрос" onClick={() => setPendingRemoval({ questionIndex: index })}><Trash2 size={17} /></button></div><QuestionPrompt disabled={saveDisabled} api={api} question={q} textChanged={text => patchQuestion(index, { text })} imageChanged={imageId => patchQuestion(index, { imageId })} uploadChanged={busy => setPendingImages(previous => previous + (busy ? 1 : -1))} /><div className="ws-form-grid"><label>Трудност<select value={q.difficulty} onChange={e => patchQuestion(index, { difficulty: e.target.value, timeSeconds: ({ EASY: 30, MEDIUM: 60, HARD: 120, VERY_HARD: 180 })[e.target.value as 'EASY'] })}><option value="EASY">Лесен</option><option value="MEDIUM">Среден</option><option value="HARD">Труден</option><option value="VERY_HARD">Много труден</option></select></label><label>Точки<input type="number" min={0.0001} step="0.1" value={q.points} onChange={e => patchQuestion(index, { points: Number(e.target.value) })} /></label><DurationInput seconds={q.timeSeconds} question={index + 1} onChange={timeSeconds => patchQuestion(index, { timeSeconds })} /></div>
         {q.type === 'MATCHING' && <MatchingPairsEditor pairs={q.matchingPairs ?? []} questionNumber={index + 1} disabled={saveDisabled} onChange={matchingPairs => patchQuestion(index, { matchingPairs })} />}
         {q.options.map((option, i) => <div className="ws-option-editor" key={i}><input aria-label={`Верен отговор ${i + 1}`} type={q.type === 'MULTIPLE_CHOICE' ? 'checkbox' : 'radio'} name={`correct-${index}`} checked={option.correct} onChange={e => patchQuestion(index, { options: q.options.map((o, j) => j === i ? { ...o, correct: e.target.checked } : q.type === 'MULTIPLE_CHOICE' ? o : { ...o, correct: false }) })} /><input aria-label={`Опция ${i + 1}`} value={option.text} onChange={e => patchQuestion(index, { options: q.options.map((o, j) => j === i ? { ...o, text: e.target.value } : o) })} /><button className="icon-button danger" title="Премахни опция" onClick={() => setPendingRemoval({ questionIndex: index, optionIndex: i })}><X size={16} /></button></div>)}
         {['SINGLE_CHOICE', 'MULTIPLE_CHOICE'].includes(q.type) && <button className="command-button" onClick={() => patchQuestion(index, { options: [...q.options, { text: '', correct: false }] })}><Plus size={16} /> Опция</button>}
@@ -644,13 +662,12 @@ function AssessmentEditorContent({ api, userId, creationRequest, onCreationReque
       </article>)}
       <section className="ws-add-questions" aria-label="Добавяне на въпроси">
         <div className="ws-inline-form"><label>Брой нови въпроси<input type="number" min={1} max={Math.max(1, addLimit)} step={1} value={addCount} disabled={!addLimit} onChange={e => setAddCount(Number(e.target.value))} /></label><button className="command-button" disabled={!validAddCount || generating} onClick={() => setDraft(previous => previous ? { ...previous, questions: [...previous.questions, ...Array.from({ length: addCount }, question)] } : previous)}><Plus size={17} /> Ръчно</button><button type="button" className="command-button" disabled={saveDisabled || aiLimit < 1} onClick={openAppendAi}><Sparkles size={17} /> С AI</button><span className="ws-summary">{draft.questions.length} / 100</span></div>
-        <Feedback error={action.error || (job?.status === 'failed' ? job.error_message ?? 'AI заявката не успя.' : pollError)} busy={generating} />
+        <Feedback error={action.error || (job?.status === 'failed' ? job.error_message ?? 'AI заявката не успя.' : pollError)} />
         {showAppendAi && <form ref={appendForm} className="ws-ai-form ws-append-ai" aria-label="Добавяне на въпроси с AI" onSubmit={e => { e.preventDefault(); void appendAiQuestions() }}>
           <div className="ws-section-head"><h3>{emptyQuestions.length ? 'Попълване на празни въпроси с AI' : 'Нови въпроси с AI'}</h3><button type="button" className="icon-button" title="Затвори AI настройките" disabled={saveDisabled} onClick={closeAppendAi}><X size={18} /></button></div>
           {emptyQuestions.length > 0 && <p className="ws-muted">AI ще попълни първо празните въпроси ({emptyQuestions.length}) по ред. Въпросите с въведено съдържание, точките и времето се запазват. Ако заявите повече въпроси, останалите ще се добавят в края.</p>}
           <AiTestFields api={api} value={appendSettings} onChange={setAppendSettings} disabled={saveDisabled} maximum={aiLimit} />
           <div className="ws-actions"><button type="submit" className="primary command-button" disabled={saveDisabled || !validAiSettings(appendSettings, aiLimit)}><Sparkles size={17} />{generating ? 'Генериране...' : 'Генерирай'}</button>
-            {job && <span role="status">{label(job.status)}</span>}
             {job?.status === 'failed' && <button type="button" className="command-button" disabled={saveDisabled} onClick={() => void retryAppendAi()}><Sparkles size={17} /> Повтори</button>}
           </div>
         </form>}
