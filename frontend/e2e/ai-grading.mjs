@@ -14,7 +14,7 @@ try {
     await context.addInitScript(auth => localStorage.setItem('quicktest.auth', JSON.stringify(auth)), auth)
     const page = await context.newPage()
     page.on('pageerror', error => errors.push(error.message))
-    const attempts = ['pending_review', 'pending_review', 'finalized', 'voided'].map((status, i) => ({ id: 501 + i, assignment_id: 301, title: 'Тест по програмиране с дълго заглавие', student_name: `Student ${i + 1}`, attempt_number: i + 1, status, result_outcome: status === 'finalized' ? 'passed' : null, submitted_at: new Date().toISOString(), ai_status: null, ai_attempts: 0, ai_error: null }))
+    const attempts = ['pending_review', 'pending_review', 'finalized', 'voided'].map((status, i) => ({ id: 501 + i, assignment_id: 301, title: 'Тест по програмиране с дълго заглавие', student_name: `Student ${i + 1}`, attempt_number: i + 1, status, result_outcome: status === 'finalized' ? 'passed' : null, result_correct_answers: status === 'finalized' ? 1 : null, result_question_count: status === 'finalized' ? 1 : null, result_percentage: status === 'finalized' ? 100 : null, result_grade: status === 'finalized' ? '6' : null, submitted_at: new Date().toISOString(), ai_status: null, ai_attempts: 0, ai_error: null }))
     const jobs = new Map(), requests = [], reviews = []
     let failFirstStart = true, loseRetryResponse = true, queueError = false, holdProcessing = false
     const student = { id: 102, name: 'Student 2', email: 'student@example.test' }
@@ -33,7 +33,7 @@ try {
           if (job.status === 'queued') { job.status = 'running'; attempt.ai_status = 'running' }
           else if (job.status === 'running') {
             if (id === 502 && job.attempts === 1) { job.status = 'failed'; attempt.ai_status = 'failed'; attempt.ai_error = 'Няма наличен OpenAI API кредит.' }
-            else { job.status = 'completed'; attempt.ai_status = 'completed'; attempt.status = 'finalized'; attempt.result_outcome = 'passed'; attempt.ai_error = null }
+            else { job.status = 'completed'; attempt.ai_status = 'completed'; attempt.status = 'finalized'; attempt.result_outcome = 'passed'; attempt.result_correct_answers = 1; attempt.result_question_count = 1; attempt.result_percentage = 100; attempt.result_grade = '6'; attempt.ai_error = null }
           }
         }
         return respond(attempts)
@@ -67,6 +67,7 @@ try {
       await row(1).getByRole('button', { name: 'AI проверка', exact: true }).waitFor()
       assert.equal(await table.getByRole('button', { name: 'AI проверка', exact: true }).count(), 2)
       assert.equal(await row(3).getByTitle('Преглед и корекция', { exact: true }).count(), 1)
+      await row(3).getByText('Оценка: 6', { exact: true }).waitFor()
       assert.equal(await row(4).getByRole('button', { name: 'AI проверка', exact: true }).count(), 0)
       await row(2).getByTitle('Ръчна проверка', { exact: true }).click()
       await page.getByLabel('Финални точки', { exact: true }).waitFor()
@@ -89,6 +90,7 @@ try {
       await page.screenshot({ path: new URL(`ai-grading-processing-${viewport.width}.png`, artifacts).pathname, fullPage: true })
       await row(1).getByText('AI проверено', { exact: true }).waitFor()
       await row(1).getByText('Публикуван резултат', { exact: true }).waitFor()
+      await row(1).getByText('Оценка: 6', { exact: true }).waitFor()
       assert.equal(await row(1).getByRole('button', { name: 'AI проверка', exact: true }).count(), 0)
       assert.equal(requests.filter(r => r.id === 501).length, 2)
       await row(2).getByRole('button', { name: 'AI проверка', exact: true }).click()

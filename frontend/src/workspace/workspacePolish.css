@@ -1,6 +1,7 @@
 /* Feature surfaces share the application palette; meaningful states also retain their labels and icons. */
 .ws-shell .ws-table .ws-attempt-pending:hover td, .ws-shell .ws-table .ws-assignment-upcoming:hover td { background: var(--warning-bg); }
 .ws-shell .ws-table .ws-attempt-finalized:hover td, .ws-shell .ws-table .ws-assignment-active:hover td, .ws-shell .ws-table .ws-selected-row:hover td, .ws-shell .admin-catalog-table tr[aria-selected="true"]:hover td { background: var(--success-bg); }
+.ws-shell .ws-table .ws-assignment-completed:hover td { background: var(--accent-soft); }
 .ws-shell .ws-table .ws-attempt-failed:hover td, .ws-shell .ws-table .ws-assignment-expired:hover td { background: var(--danger-bg); }
 .ws-shell .ws-table .ws-assignment-canceled:hover td { background: var(--subtle); }
 .ws-group-settings, .ws-group-members, .ws-group-access, .ws-group-join, .ws-assignment-context, .ws-profile-form, .ws-best-results, .ws-billing-current, .ws-billing-plan, .result-review-summary, .result-review-question { border-radius: 18px; box-shadow: var(--shadow-sm, 0 3px 14px #0c1a3008); }
@@ -113,6 +114,7 @@
 .exam-preflight > label { width: min(100%, 420px); }
 .exam-preflight > label > input { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 20px; letter-spacing: .1em; }
 .exam-progress { justify-self: start; padding: 7px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--page); font-size: 14px; font-weight: 600; }
+.exam-answer-count { justify-self: start; margin: 0; padding: 12px 16px; border: 2px solid var(--link); border-radius: 10px; background: color-mix(in srgb, var(--link) 9%, var(--surface)); font-size: 16px; font-weight: 750; }
 .exam-question > .question-heading { font-size: 21px; line-height: 1.75; font-weight: 650; }
 .exam-options { gap: 14px; }
 .exam-option { min-height: 64px; padding: 18px 20px; border-color: var(--control-border); border-radius: 12px; font-size: 17px; line-height: 1.75; font-weight: 550; cursor: pointer; overflow-wrap: anywhere; }
@@ -169,4 +171,37 @@
 @media (forced-colors: active) {
   .exam-option:has(input:checked), .ws-ai-fields-full .ws-ai-type-option[data-selected="true"], .ws-library .ws-library-mobile > span { border-color: Highlight; outline: 1px solid Highlight; }
   .ws-library-mobile > span::after { background: ButtonText; }
+}
+.ws-shell .ws-grading-filters {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  align-items: end;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 14px;
+}
+.ws-shell .ws-grading-filters-heading { grid-column: 1 / -1; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.ws-shell .ws-grading-filters-heading > strong { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
+.ws-shell .ws-grading-filters-heading svg { color: var(--link); }
+.ws-shell .ws-grading-filters > label { display: grid; gap: 7px; width: auto; min-width: 0; color: var(--text); font-size: 13px; font-weight: 650; }
+.ws-shell .ws-grading-filters > label > input, .ws-shell .ws-grading-filters > label > select { width: 100%; min-width: 0; }
+.ws-shell .ws-grading-filters > button { grid-column: 1 / 3; justify-self: start; min-height: 42px; white-space: nowrap; }
+.ws-shell .ws-grading-filters > .ws-summary { grid-column: 5 / -1; justify-self: end; align-self: center; padding: 7px 11px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+@media (max-width: 1050px) {
+  .ws-shell .ws-grading-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ws-shell .ws-grading-filters > button { grid-column: 1 / 2; }
+  .ws-shell .ws-grading-filters > .ws-summary { grid-column: 3 / 4; justify-self: end; }
+}
+@media (max-width: 760px) {
+  .ws-shell .ws-grading-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 16px; }
+  .ws-shell .ws-grading-filters > label { width: auto; flex-basis: auto; }
+  .ws-shell .ws-grading-filters > button { grid-column: 1 / 2; width: auto; }
+  .ws-shell .ws-grading-filters > .ws-summary { grid-column: 2 / 3; justify-self: end; width: auto; text-align: right; }
+}
+@media (max-width: 460px) {
+  .ws-shell .ws-grading-filters { grid-template-columns: minmax(0, 1fr); }
+  .ws-shell .ws-grading-filters > label { grid-column: 1; }
+  .ws-shell .ws-grading-filters > button, .ws-shell .ws-grading-filters > .ws-summary { grid-column: 1; width: 100%; justify-self: stretch; }
+  .ws-shell .ws-grading-filters > button { justify-content: center; }
+  .ws-shell .ws-grading-filters > .ws-summary { text-align: center; }
 }

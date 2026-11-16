@@ -62,7 +62,10 @@ try {
       assert.equal(await tab(other).getAttribute('aria-selected'), 'false')
       assert.equal(await tab(other).getAttribute('tabindex'), '-1')
     }
-    if (focused) assert.equal(await tab(index).evaluate(element => element === document.activeElement), true)
+    if (focused) {
+      await page.waitForFunction(title => document.activeElement?.getAttribute('aria-label') === title, titles[index])
+      assert.equal(await tab(index).evaluate(element => element === document.activeElement), true)
+    }
   }
   await active(0)
   assert.equal(await assign.count(), 0)
@@ -130,9 +133,9 @@ try {
   await attempts.fill('3')
   await tab(2).click(); await assign.click()
   await page.getByText('Възлагането е създадено.', { exact: true }).waitFor()
+  await active(0, true)
   assert.equal(submissions.length, 1)
   assert.deepEqual(submissions[0], { versionId: 401, groupIds: [302], startsAt: '2098-10-14T07:00:00.000Z', endsAt: '2098-10-14T09:30:00.000Z', maxAttempts: 3, shuffleQuestions: false, shuffleOptions: true, answersAfterDeadline: false, mobileAllowed: false, autoAiGrading: false })
-  await tab(0).click()
   assert.equal(await testPicker.inputValue(), test.title)
   await form.getByText('Избрани: 0', { exact: true }).waitFor()
   await tab(2).click(); await reset.click(); await active(0)

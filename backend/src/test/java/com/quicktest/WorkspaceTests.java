@@ -1411,6 +1411,34 @@ class WorkspaceTests {
         assertEquals(0,decimal(db.one("SELECT final_points FROM attempt_questions WHERE id=?",number(q,"id")),"final_points").compareTo(BigDecimal.ONE));
         assertTrue(grading.results(learning).isEmpty());
     }
+    @Test void multipleChoiceStateShowsCorrectOptionCountWithoutRevealingOptions() {
+        var questions=List.of(
+                new AssessmentService.Question("MULTIPLE_CHOICE","Choose two","MEDIUM",BigDecimal.ONE,60,List.of(new AssessmentService.Option("First",true),new AssessmentService.Option("Second",true),new AssessmentService.Option("Wrong",false)),List.of(),true,true,"",""),
+                new AssessmentService.Question("MULTIPLE_CHOICE","Choose one","MEDIUM",BigDecimal.ONE,60,List.of(new AssessmentService.Option("Correct",true),new AssessmentService.Option("Wrong",false)),List.of(),true,true,"",""),
+                new AssessmentService.Question("SINGLE_CHOICE","Single choice","MEDIUM",BigDecimal.ONE,60,List.of(new AssessmentService.Option("Correct",true),new AssessmentService.Option("Wrong",false)),List.of(),true,true,"","Private explanation"),
+                new AssessmentService.Question("TRUE_FALSE","True or false","MEDIUM",BigDecimal.ONE,60,List.of(new AssessmentService.Option("True",true),new AssessmentService.Option("False",false)),List.of(),true,true,"","Private explanation")
+        );
+        var definition=new AssessmentService.Definition("Multi-select","","Java","12","Instructions","bg","bulgarian",new BigDecimal("50"),questions);
+        long test=number(assessments.save(teaching,null,definition),"id");version=number(assessments.publish(teaching,test),"id");
+        var assigned=assignments.create(teaching,new AssignmentService.AssignmentRequest(version,List.of(defaultGroup),List.of(),now.minusSeconds(1),now.plusSeconds(3600),1,false,false,true));
+        assignment=number(assigned,"id");code=string(assigned,"code");
+        var request=startRequest();var state=start(request);long id=number(state,"id");
+        for(int i=0;i<questions.size();i++) {
+            var current=question(state);
+            if(i<2) assertEquals(2-i,number(current,"correct_option_count"));
+            else assertFalse(current.containsKey("correct_option_count"));
+            for(String privateKey:List.of("correct","acceptedAnswers","criteria","explanation","definition_json","session_hash")) assertFalse(db.json(state).contains("\""+privateKey+"\""),privateKey);
+            @SuppressWarnings("unchecked") var options=(List<Map<String,Object>>)current.get("options");
+            assertTrue(options.stream().allMatch(option->option.keySet().equals(Set.of("id","text"))));
+            var selected=options.stream().limit(i==0?2:1).map(option->string(option,"id")).toList();
+            state=attempts.answer(learning,id,number(current,"id"),session(request),new AttemptService.AnswerRequest("multi-answer-"+i,string(current,"open_instance"),new AttemptService.Answer(selected,"")));
+            if(i+1<questions.size()) {
+                var pending=question(state);assertEquals("pending",string(pending,"status"));
+                for(String hiddenKey:List.of("correct_option_count","type","text","options","correct","acceptedAnswers","criteria","explanation","definition_json")) assertFalse(pending.containsKey(hiddenKey),hiddenKey);
+                state=attempts.open(learning,id,session(request),new AttemptService.Ready(true,true));
+            }
+        }
+    }
     @Test void violationsAreInstanceBoundAndBlurAloneDoesNotSanction() {
         long test=number(assessments.save(teaching,null,definition(true)),"id");long v=number(assessments.publish(teaching,test),"id");
         var a=assignments.create(teaching,new AssignmentService.AssignmentRequest(v,List.of(defaultGroup),List.of(),now,now.plusSeconds(1000),1,false,false,true));assignment=number(a,"id");code=string(a,"code");
@@ -2513,14 +2541,14 @@ class WorkspaceTests {
         var request=startRequest();long id=number(start(request),"id");attempts.submit(learning,id,session(request));
         assertNull(grading.queue(teaching).getFirst().get("result_outcome"));
         grading.finalizeResult(teaching,id,new GradingService.Finalize("queue-failed-key","",null,null),false);
-        var score=grading.queue(teaching).getFirst();assertEquals(0,number(score,"result_correct_answers"));assertEquals(1,number(score,"result_question_count"));assertEquals(0,decimal(score,"result_percentage").compareTo(BigDecimal.ZERO));
+        var score=grading.queue(teaching).getFirst();assertEquals(0,number(score,"result_correct_answers"));assertEquals(1,number(score,"result_question_count"));assertEquals(0,decimal(score,"result_percentage").compareTo(BigDecimal.ZERO));assertEquals("2",score.get("result_grade"));
         assertEquals("failed",grading.queue(teaching).getFirst().get("result_outcome"));
         grading.finalizeResult(teaching,id,new GradingService.Finalize("queue-passed-correction","Teacher corrected the outcome",null,"passed"),true);
         assertEquals(1,grading.queue(teaching).size());assertEquals("passed",grading.queue(teaching).getFirst().get("result_outcome"));
         grading.finalizeResult(teaching,id,new GradingService.Finalize("queue-failed-correction","Teacher corrected the outcome again",null,"failed"),true);
         assertEquals("failed",grading.queue(teaching).getFirst().get("result_outcome"));
         String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
-        mvc.perform(get("/api/v1/grading").header("Authorization",bearer).header("X-Organization-Id",org)).andExpect(status().isOk()).andExpect(jsonPath("$[0].result_outcome").value("failed"));
+        mvc.perform(get("/api/v1/grading").header("Authorization",bearer).header("X-Organization-Id",org)).andExpect(status().isOk()).andExpect(jsonPath("$[0].result_outcome").value("failed")).andExpect(jsonPath("$[0].result_grade").value("2"));
         var outsider=new OrgAccess.Scope(org,user(Role.TEACHER).getId(),Set.of("TEACHER"));assertTrue(grading.queue(outsider).isEmpty());
         mvc.perform(get("/api/v1/grading").header("Authorization",authorization)).andExpect(status().isForbidden());
     }

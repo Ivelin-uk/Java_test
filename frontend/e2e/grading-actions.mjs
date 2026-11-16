@@ -6,10 +6,10 @@ const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173', base =
 const teacher = { token: 'grading-actions-teacher', user: { id: 101, name: 'Teacher', email: 'teacher@example.test', role: 'TEACHER', active: true } }
 const student = { token: 'grading-actions-student', user: { id: 102, name: 'Student', email: 'student@example.test', role: 'STUDENT', active: true } }
 const activeUntil = new Date(Date.now() + 3600000).toISOString()
-const attempt = (id, date, patch = {}) => ({ id, assignment_id: 201, student_id: 1000 + id, student_name: `Ученик ${id}`, title: 'Биология', attempt_number: 1, status: 'finalized', groups: [{ id: id % 2 ? 501 : 502, name: id % 2 ? '12А' : '12Б' }], result_correct_answers: 3, result_question_count: 10, result_percentage: 30, submitted_at: date, access_code: 'ABCD1234', max_attempts: 1, attempts_used: 1, active_attempts: 0, recipient_canceled: false, group_assignment: true, assignment_ends_at: activeUntil, result_email_status: 'queued', ...patch })
+const attempt = (id, date, patch = {}) => ({ id, assignment_id: 201, student_id: 1000 + id, student_name: `Ученик ${id}`, title: 'Биология', attempt_number: 1, status: 'finalized', groups: [{ id: id % 2 ? 501 : 502, name: id % 2 ? '12А' : '12Б' }], result_correct_answers: 3, result_question_count: 10, result_percentage: 30, result_grade: '3', submitted_at: date, access_code: 'ABCD1234', max_attempts: 1, attempts_used: 1, active_attempts: 0, recipient_canceled: false, group_assignment: true, assignment_ends_at: activeUntil, result_email_status: 'queued', ...patch })
 const attempts = [
-  attempt(401, '2026-10-14T21:00:00Z', { result_outcome: 'failed', ai_status: 'completed', groups: [{ id: 501, name: '12А' }, { id: 502, name: '12Б' }] }), // Sofia: Oct 15 00:00
-  attempt(402, '2026-10-15T20:59:59Z', { max_attempts: 2, result_outcome: 'passed' }), // Sofia: Oct 15 23:59
+  attempt(401, '2026-10-14T21:00:00Z', { result_grade: '2', result_outcome: 'failed', ai_status: 'completed', groups: [{ id: 501, name: '12А' }, { id: 502, name: '12Б' }] }), // Sofia: Oct 15 00:00
+  attempt(402, '2026-10-15T20:59:59Z', { result_grade: '5', result_percentage: 80, max_attempts: 2, result_outcome: 'passed' }), // Sofia: Oct 15 23:59
   attempt(403, '2026-10-15T21:00:00Z', { active_attempts: 1 }), // Sofia: Oct 16 00:00
   attempt(404, '2026-10-16T10:00:00Z', { assignment_ends_at: '2026-10-17T00:00:00Z' }),
   attempt(405, '2026-10-16T11:00:00Z', { recipient_canceled: true, access_code: null }),
@@ -54,10 +54,29 @@ try {
   const table = page.getByRole('table', { name: 'Проверка на опити', exact: true })
   const rows = table.locator('tbody tr'), row = id => rows.filter({ has: page.getByRole('button', { name: `Ученик ${id}`, exact: true }) })
   await row(401).waitFor()
+  const gradeFilter = page.getByLabel('Оценка', { exact: true }), percentageFilter = page.getByLabel('Процент', { exact: true })
   const nameSearch = page.getByLabel('Име на ученик', { exact: true }), groupSearch = page.getByLabel('Група', { exact: true })
+  assert.equal(await gradeFilter.locator('option[value="4"]').count(), 1)
+  assert.equal(await percentageFilter.locator('option[value="50.00"]').count(), 1)
   assert.equal(await row(401).getByText('3 от 10 верни', { exact: true }).count(), 1)
   assert.equal(await row(401).getByText('30.00%', { exact: true }).count(), 1)
   assert.equal(await row(406).locator('.ws-grading-score').count(), 0)
+  await gradeFilter.selectOption('2')
+  await page.getByText('1 от 7 опита', { exact: true }).waitFor()
+  assert.equal(await row(401).count(), 1);assert.equal(await row(402).count(), 0)
+  await percentageFilter.selectOption('80.00')
+  await page.getByText('0 от 7 опита', { exact: true }).waitFor()
+  await gradeFilter.selectOption('')
+  await page.getByText('1 от 7 опита', { exact: true }).waitFor()
+  assert.equal(await row(402).count(), 1)
+  await percentageFilter.selectOption('30.00')
+  await page.getByText('4 от 7 опита', { exact: true }).waitFor()
+  assert.equal(await row(401).count(), 1);assert.equal(await row(406).count(), 0);assert.equal(await row(407).count(), 0)
+  await gradeFilter.selectOption('2')
+  await page.getByText('1 от 7 опита', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Изчисти филтрите', exact: true }).click()
+  assert.equal(await gradeFilter.inputValue(), '');assert.equal(await percentageFilter.inputValue(), '')
+  await page.getByText('7 от 7 опита', { exact: true }).waitFor()
   await nameSearch.fill('  УЧЕНИК   401 ')
   await page.getByText('1 от 7 опита', { exact: true }).waitFor()
   await groupSearch.fill('12б')
@@ -70,7 +89,7 @@ try {
   await nameSearch.fill('401')
   await page.getByLabel('Предадени от').fill('2026-10-16');await page.getByLabel('Предадени до').fill('2026-10-16')
   await page.getByText('0 от 7 опита', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Изчисти филтъра', exact: true }).click()
+  await page.getByRole('button', { name: 'Изчисти филтрите', exact: true }).click()
   assert.equal(await nameSearch.inputValue(), '');assert.equal(await groupSearch.inputValue(), '')
   await page.getByText('7 от 7 опита', { exact: true }).waitFor()
   await nameSearch.fill('401');attempts[0].result_correct_answers = 4;attempts[0].result_percentage = 40
@@ -78,7 +97,7 @@ try {
   await row(401).getByText('4 от 10 верни', { exact: true }).waitFor()
   assert.equal(await nameSearch.inputValue(), '401')
   assert.equal(await row(401).getByText('40.00%', { exact: true }).count(), 1)
-  await page.getByRole('button', { name: 'Изчисти филтъра', exact: true }).click()
+  await page.getByRole('button', { name: 'Изчисти филтрите', exact: true }).click()
 
   await row(407).waitFor()
   assert.equal(await rows.count(), 7)
@@ -104,10 +123,10 @@ try {
   assert.equal(await page.getByLabel('Предадени до', { exact: true }).inputValue(), '2026-10-15')
   await page.getByLabel('Предадени от', { exact: true }).fill('2026-10-17')
   await page.getByRole('alert').filter({ hasText: 'Началната дата' }).waitFor()
-  await page.getByRole('button', { name: 'Изчисти филтъра', exact: true }).click()
+  await page.getByRole('button', { name: 'Изчисти филтрите', exact: true }).click()
   await page.getByLabel('Предадени до', { exact: true }).fill('2026-10-13')
   await page.getByText('Няма опити за избрания период.', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Изчисти филтъра', exact: true }).click()
+  await page.getByRole('button', { name: 'Изчисти филтрите', exact: true }).click()
   await row(401).getByRole('button', { name: 'Копирай кода', exact: true }).click()
   assert.equal(await page.evaluate(() => window.copiedCode), 'ABCD1234')
   assert.equal(await row(405).getByText('Няма активен код', { exact: true }).count(), 1)
@@ -183,7 +202,7 @@ try {
     await learner.close()
   }
   assert.deepEqual(errors, [])
-  console.log('Passed: latest passed/failed outcome colors, neutral unknown/voided results, pending warning and neutral AI label in both themes, corrected outcomes after refresh, inclusive Sofia date filtering, clear/invalid/empty ranges, refresh retention, code display/copy, student-specific extra attempt and duplicate guard, expired/removed/active/remaining restrictions, email queued/sent/local/error states, password/Google result links and release policy, responsive themes. API fixtures only; no emails sent.')
+  console.log('Passed: latest passed/failed outcome colors, neutral unknown/voided results, pending warning and neutral AI label in both themes, corrected outcomes after refresh, grade and percentage selection filters, inclusive Sofia date filtering, clear/invalid/empty ranges, refresh retention, code display/copy, student-specific extra attempt and duplicate guard, expired/removed/active/remaining restrictions, email queued/sent/local/error states, password/Google result links and release policy, responsive themes. API fixtures only; no emails sent.')
 } catch (error) {
   if (page && !page.isClosed()) await page.screenshot({ path: new URL('grading-actions-failure.png', artifacts).pathname, fullPage: true })
   throw error

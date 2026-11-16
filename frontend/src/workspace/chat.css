@@ -59,7 +59,7 @@
 .chat-composer { display: grid; gap: 9px; padding: 14px 18px 12px; border-top: 1px solid var(--border); background: var(--surface); }
 .chat-composer-row { display: flex; align-items: flex-end; gap: 9px; min-width: 0; padding: 7px; border: 1px solid var(--control-border, var(--border)); border-radius: 15px; background: var(--page); }
 .chat-composer-row textarea { flex: 1; min-width: 0; min-height: 40px; max-height: 140px; padding: 10px 7px; resize: vertical; border: 0; background: transparent; box-shadow: none; font-size: 13px; line-height: 1.6; }
-.chat-composer-row textarea:focus { outline: none; box-shadow: none; }
+:root .chat-composer-row textarea:focus { outline: none; box-shadow: none; }
 .chat-attach-button, .chat-send-button { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 40px; border-radius: 11px; cursor: pointer; }
 .chat-attach-button { position: relative; overflow: hidden; color: var(--muted); }
 .chat-attach-button:hover { color: var(--link); background: var(--hover); }

@@ -8,7 +8,7 @@ const assignment = { id: 301, title: 'Последователни въпрос�
 const definitions = [
   { id: 501, text: 'Първи въпрос', type: 'SINGLE_CHOICE', options: Array.from({ length: 10 }, (_, i) => ({ id: `first-${i}`, text: `Отговор ${i + 1} с достатъчно дълъг текст за проверка на превъртането.` })) },
   { id: 502, text: 'Втори въпрос', type: 'OPEN_ANSWER', options: [] },
-  { id: 503, text: 'Последен въпрос', type: 'SINGLE_CHOICE', options: [{ id: 'last-1', text: 'Да' }, { id: 'last-2', text: 'Не' }] },
+  { id: 503, text: 'Последен въпрос', type: 'MULTIPLE_CHOICE', options: [{ id: 'last-1', text: 'Първи' }, { id: 'last-2', text: 'Втори' }, { id: 'last-3', text: 'Трети' }] },
 ]
 const artifacts = new URL('../../.artifacts/', import.meta.url)
 await mkdir(artifacts, { recursive: true })
@@ -17,6 +17,7 @@ const errors = []
 let page
 try {
   for (const scenario of [{ name: 'automatic', strict: true, width: 1440, gated: true }, { name: 'retry', strict: false, width: 320, failAnswer: true, failOpen: true }, { name: 'fullscreen-loss', strict: true, width: 1440, gated: true, loseFullscreen: true }, { name: 'hidden', strict: false, width: 390, gated: true, hidden: true }]) {
+    const correctOptionCount = scenario.strict ? 2 : 1
     const context = await browser.newContext({ viewport: { width: scenario.width, height: 844 } })
     await context.addInitScript(value => localStorage.setItem('quicktest.auth', JSON.stringify(value)), auth)
     page = await context.newPage()
@@ -28,7 +29,7 @@ try {
     const openGate = new Promise(resolve => { releaseOpen = resolve }), openSeen = new Promise(resolve => { markOpen = resolve })
     const answerCalls = [], accepted = [], openCalls = []
     function state() {
-      return { id: 401, assignment_id: assignment.id, status, server_now: new Date().toISOString(), question_number: current + 1, question_count: definitions.length, question: status === 'in_progress' ? { ...definitions[current], status: questionStatus, maximum_points: 1, time_seconds: 180, open_instance: questionStatus === 'open' ? `instance-${current}` : null, opened_at: questionStatus === 'open' ? new Date(deadline - 180000).toISOString() : null, deadline_at: questionStatus === 'open' ? new Date(deadline).toISOString() : null, draft: null } : null }
+      return { id: 401, assignment_id: assignment.id, status, server_now: new Date().toISOString(), question_number: current + 1, question_count: definitions.length, question: status === 'in_progress' ? { ...definitions[current], ...(definitions[current].type === 'MULTIPLE_CHOICE' && questionStatus === 'open' ? { correct_option_count: correctOptionCount } : {}), status: questionStatus, maximum_points: 1, time_seconds: 180, open_instance: questionStatus === 'open' ? `instance-${current}` : null, opened_at: questionStatus === 'open' ? new Date(deadline - 180000).toISOString() : null, deadline_at: questionStatus === 'open' ? new Date(deadline).toISOString() : null, draft: null } : null }
     }
     await page.route(`${base}/api/**`, async route => {
       const request = route.request(), path = new URL(request.url()).pathname, method = request.method()
@@ -82,12 +83,13 @@ try {
       await page.getByRole('button', { name: 'Моите тестове', exact: true }).click()
       await page.getByRole('button', { name: 'Подготовка', exact: true }).click()
       await page.getByLabel('Код за достъп', { exact: true }).fill('ABCDEFGH')
-      await page.getByRole('button', { name: 'Започни на цял екран', exact: true }).click()
+      await page.getByRole('button', { name: scenario.strict ? 'Започни на цял екран' : 'Започни теста', exact: true }).click()
       await page.getByRole('heading', { name: definitions[0].text, exact: true }).waitFor()
+      assert.equal(await page.locator('.exam-answer-count').count(), 0)
       if (scenario.strict) assert.equal(await page.evaluate(() => !!document.fullscreenElement), true)
       await page.getByRole('radio').first().check()
       const confirm = page.getByRole('button', { name: 'Потвърди отговора', exact: true })
-      const resume = page.getByRole('button', { name: 'Продължи на цял екран', exact: true })
+      const resume = page.getByRole('button', { name: scenario.strict ? 'Продължи на цял екран' : 'Продължи', exact: true })
       await confirm.click()
       if (scenario.failAnswer) {
         await page.getByRole('alert').getByText('Временно прекъсната връзка.', { exact: true }).waitFor()
@@ -123,7 +125,7 @@ try {
       }
       await page.getByRole('heading', { name: definitions[1].text, exact: true }).waitFor()
       assert.equal(await resume.count(), 0)
-      assert.equal(await page.getByLabel('Отговор', { exact: true }).inputValue(), '')
+      assert.equal((await page.getByLabel('Отговор', { exact: true }).innerText()).trim(), '')
       assert.equal(await page.evaluate(() => document.querySelector('.exam-screen').scrollTop === 0 && scrollY === 0), true)
       assert.equal(await page.getByRole('heading', { name: definitions[1].text, exact: true }).evaluate(element => element === document.activeElement), true)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
@@ -131,7 +133,11 @@ try {
       await page.getByLabel('Отговор', { exact: true }).fill('Инстанция на клас.')
       await confirm.click()
       await page.getByRole('heading', { name: definitions[2].text, exact: true }).waitFor()
-      assert.equal(await page.getByRole('radio', { checked: true }).count(), 0)
+      await page.getByRole('note').filter({ hasText: correctOptionCount === 1 ? 'Изберете точно 1 верен отговор.' : 'Изберете точно 2 верни отговора.' }).waitFor()
+      assert.equal(await page.getByRole('checkbox').count(), definitions[2].options.length)
+      assert.equal(await page.getByRole('checkbox', { checked: true }).count(), 0)
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+      await page.screenshot({ path: new URL(`answer-count-${scenario.name}.png`, artifacts).pathname, fullPage: true })
       await confirm.click()
       await page.getByRole('heading', { name: 'Опитът е предаден', exact: true }).waitFor()
       assert.equal(accepted.length, 3)

@@ -35,6 +35,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
   const notify = useNotifications()
   const section = useRef<HTMLElement>(null)
   const assigning = useRef(false)
+  const focusFirstStep = useRef(false)
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const [audienceNotice, setAudienceNotice] = useState('')
   const [activeStep, setActiveStep] = useState(0)
@@ -43,6 +44,12 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
   const periodErrorId = useId()
   const stepsId = useId()
   const assignmentSteps = ['Тест и групи', 'Период и опити', 'Начин на решаване']
+  useEffect(() => {
+    if (!action.busy && focusFirstStep.current) {
+      focusFirstStep.current = false
+      tabRefs.current[0]?.focus()
+    }
+  }, [action.busy])
   useEffect(() => {
     if (action.error || formError) section.current?.querySelector('[role="alert"]')?.scrollIntoView({ block: 'nearest' })
     if (formError?.field) section.current?.querySelector<HTMLInputElement>(assignmentFieldSelectors[formError.field])?.focus()
@@ -169,6 +176,8 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
         }
         setGroupIds([])
         setPickerKey(key => key + 1)
+        focusFirstStep.current = true
+        setActiveStep(0)
         notify('Възлагането е създадено.')
         await assignments.reload()
       })

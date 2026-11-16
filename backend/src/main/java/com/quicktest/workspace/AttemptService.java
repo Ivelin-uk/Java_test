@@ -255,6 +255,10 @@ public class AttemptService {
             for(String key:List.of("id","status","maximum_points","time_seconds","open_instance","opened_at","deadline_at")) safe.put(key,q.get(key));
             if(string(q,"status").equals("open")) {
                 if(question.imageId()!=null) safe.put("imageId",question.imageId());safe.put("type",question.type());safe.put("text",question.text());safe.put("options",options(snapshot).stream().map(o->Map.of("id",string(o,"id"),"text",string(o,"text"))).toList());
+                if(question.type().equals("MULTIPLE_CHOICE")) {
+                    long correctOptionCount=options(snapshot).stream().filter(o->flag(o,"correct")).count();
+                    if(correctOptionCount>0) safe.put("correct_option_count",correctOptionCount);
+                }
                 if(question.type().equals("MATCHING")) {safe.put("matchingLeft",blocks(snapshot,"matchingLeft"));safe.put("matchingRight",blocks(snapshot,"matchingRight"));}
             }
             safe.put("draft",q.get("draft_json")==null?null:json.object(q.get("draft_json")));result.put("question",safe);

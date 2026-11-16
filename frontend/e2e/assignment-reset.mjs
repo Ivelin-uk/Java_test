@@ -119,6 +119,7 @@ try {
   failPost = true
   await assign.click()
   await page.getByRole('alert').getByText('Неуспешно възлагане.', { exact: true }).waitFor()
+  assert.equal(await settingsStep.getAttribute('aria-selected'), 'true')
   assert.equal(mutations[0].body.versionId, 302)
   assert.equal(mutations[0].body.shuffleQuestions, true)
   await clearForm(); await assertDefaults()
@@ -133,7 +134,9 @@ try {
   assert.equal(await form.getByText('Избрани: 1', { exact: true }).count(), 1)
   releasePost()
   await page.getByText('Възлагането е създадено.', { exact: true }).waitFor()
-  await audienceStep.click()
+  assert.equal(await audienceStep.getAttribute('aria-selected'), 'true')
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Тест и групи')
+  assert.equal(await audienceStep.evaluate(element => element === document.activeElement), true)
   await form.getByText('Избрани: 0', { exact: true }).waitFor()
   assert.equal(await testPicker.inputValue(), tests[0].title)
   assert.equal(await groupPicker.inputValue(), '')

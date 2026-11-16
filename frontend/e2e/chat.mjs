@@ -144,6 +144,14 @@ try {
   teacherPage = teacherBrowser.page
   studentPage = studentBrowser.page
   await showThread(teacherPage, group.name)
+  const composer = teacherPage.getByRole('textbox', { name: 'Съобщение', exact: true })
+  await composer.focus()
+  const focusRings = await composer.evaluate(element => ({
+    textarea: getComputedStyle(element).outlineStyle,
+    composer: getComputedStyle(element.closest('.chat-composer-row')).outlineStyle,
+  }))
+  assert.equal(focusRings.textarea, 'none', 'The composer input must not add a second focus outline')
+  assert.equal(focusRings.composer, 'solid', 'The composer row must retain its visible focus outline')
   const first = `Групово съобщение ${stamp}`
   await sendFrom(teacherPage, first)
   await thread(studentPage, group.name).getByText(first, { exact: true }).waitFor()
