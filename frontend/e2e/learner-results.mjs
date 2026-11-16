@@ -252,9 +252,11 @@ try {
       assert.equal(await completedColorsMatch(), true)
       await completedAssignment.hover()
       assert.equal(await completedColorsMatch(), true)
-      assert.equal(await completedAssignment.getByRole('button').isDisabled(), true)
-      await resultsTab.click()
-      await table.getByRole('row').filter({ hasText: liveAssignment.title }).getByText('88.00%', { exact: true }).waitFor()
+      const viewResult = completedAssignment.getByRole('button', { name: 'Виж резултата', exact: true })
+      assert.equal(await viewResult.isDisabled(), false)
+      await viewResult.click()
+      assert.equal(await resultsTab.getAttribute('aria-selected'), 'true')
+      await table.locator('#learner-result-499').getByText('88.00%', { exact: true }).waitFor()
       assert.equal(await page.getByText('Най-висок резултат', { exact: true }).count(), 1)
       assignments.pop();attempts.pop();results.pop();empty = true
     } catch (error) {

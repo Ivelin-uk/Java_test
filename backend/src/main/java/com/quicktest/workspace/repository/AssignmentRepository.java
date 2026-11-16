@@ -97,8 +97,12 @@ public class AssignmentRepository {
         return store.insert("INSERT INTO exam_assignments(organization_id,version_id,teacher_id,starts_at,ends_at,max_attempts,shuffle_questions,shuffle_options,answers_after_deadline,mobile_allowed,auto_ai_grading,auto_ai_grading_user_id,auto_ai_grading_platform_scope,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", organizationId, versionId, userId, startsAt, endsAt, maxAttempts, shuffleQuestions, shuffleOptions, answersAfterDeadline, mobileAllowed, autoAiGrading, autoAiGrading ? userId : null, platform, timestamp);
     }
 
-    public int updateSettings(long organizationId,long id,boolean shuffleQuestions,boolean shuffleOptions,boolean answersAfterDeadline,boolean autoAiGrading,long userId,boolean platform) {
-        return store.update("UPDATE exam_assignments SET shuffle_questions=?,shuffle_options=?,answers_after_deadline=?,auto_ai_grading=?,auto_ai_grading_user_id=?,auto_ai_grading_platform_scope=? WHERE organization_id=? AND id=?",shuffleQuestions,shuffleOptions,answersAfterDeadline,autoAiGrading,autoAiGrading ? userId : null,platform,organizationId,id);
+    public int updateSettings(long organizationId,long id,int maxAttempts,boolean shuffleQuestions,boolean shuffleOptions,boolean answersAfterDeadline,boolean autoAiGrading,long userId,boolean platform) {
+        return store.update("UPDATE exam_assignments SET max_attempts=?,shuffle_questions=?,shuffle_options=?,answers_after_deadline=?,auto_ai_grading=?,auto_ai_grading_user_id=?,auto_ai_grading_platform_scope=? WHERE organization_id=? AND id=?",maxAttempts,shuffleQuestions,shuffleOptions,answersAfterDeadline,autoAiGrading,autoAiGrading ? userId : null,platform,organizationId,id);
+    }
+
+    public int updateDefaultRecipientAttempts(long organizationId,long id,int previousMaxAttempts,int maxAttempts) {
+        return store.update("UPDATE assignment_recipients SET max_attempts=? WHERE organization_id=? AND assignment_id=? AND max_attempts=? AND accommodation_reason IS NULL",maxAttempts,organizationId,id,previousMaxAttempts);
     }
 
     public int insertRecipient(long organizationId, long id, Long getKey, String jsonValue, int maxAttempts) {

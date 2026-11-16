@@ -106,7 +106,7 @@ try {
 
   page = await open(student)
   await page.getByRole('button', { name: 'Моите тестове', exact: true }).click()
-  await page.getByRole('button', { name: 'Подготовка', exact: true }).click()
+  await page.getByRole('button', { name: 'Отвори теста', exact: true }).click()
   await page.locator('.exam-preflight').getByText('6 мин 50 сек', { exact: true }).waitFor()
   for (const width of [1440, 320]) {
     await page.setViewportSize({ width, height: 1000 })

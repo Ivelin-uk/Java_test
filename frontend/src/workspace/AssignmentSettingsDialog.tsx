@@ -2,9 +2,10 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { LoaderCircle, Save, X } from 'lucide-react'
 import type { Assignment } from './types'
 
-export type AssignmentSettings = { shuffleQuestions: boolean; shuffleOptions: boolean; answersAfterDeadline: boolean; autoAiGrading: boolean }
+type AssignmentSettingsFieldsValue = { shuffleQuestions: boolean; shuffleOptions: boolean; answersAfterDeadline: boolean; autoAiGrading: boolean }
+export type AssignmentSettings = AssignmentSettingsFieldsValue & { maxAttempts: number }
 
-export function AssignmentSettingsFields({ value, onChange }: { value: AssignmentSettings; onChange: (value: AssignmentSettings) => void }) {
+export function AssignmentSettingsFields({ value, onChange }: { value: AssignmentSettingsFieldsValue; onChange: (value: AssignmentSettingsFieldsValue) => void }) {
   return <div className="ws-assignment-settings" role="group" aria-label="Настройки на възлагането">
     <label className="ws-check"><input type="checkbox" checked={value.shuffleQuestions} onChange={event => onChange({ ...value, shuffleQuestions: event.target.checked })} />Разбъркай въпросите</label>
     <label className="ws-check"><input type="checkbox" checked={value.shuffleOptions} onChange={event => onChange({ ...value, shuffleOptions: event.target.checked })} />Разбъркай опциите</label>
@@ -18,7 +19,7 @@ export function AssignmentSettingsDialog({ assignment, onClose, onSave }: { assi
   const dialog = useRef<HTMLDialogElement>(null)
   const saving = useRef(false)
   const id = useId()
-  const [value, setValue] = useState<AssignmentSettings>({ shuffleQuestions: !!assignment.shuffle_questions, shuffleOptions: !!assignment.shuffle_options, answersAfterDeadline: assignment.answers_after_deadline !== false, autoAiGrading: !!assignment.auto_ai_grading })
+  const [value, setValue] = useState<AssignmentSettings>({ maxAttempts: assignment.max_attempts, shuffleQuestions: !!assignment.shuffle_questions, shuffleOptions: !!assignment.shuffle_options, answersAfterDeadline: assignment.answers_after_deadline !== false, autoAiGrading: !!assignment.auto_ai_grading })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   useEffect(() => {
@@ -39,7 +40,9 @@ export function AssignmentSettingsDialog({ assignment, onClose, onSave }: { assi
     <p id={`${id}-description`}>{assignment.title}</p>
     <form onSubmit={event => { event.preventDefault(); void save() }}>
       <fieldset className="delete-dialog-fields" disabled={busy}>
-        <AssignmentSettingsFields value={value} onChange={next => { setValue(next); setError('') }} />
+        <label>Опити<input type="number" name="maxAttempts" required min={1} max={20} step={1} value={value.maxAttempts} onChange={event => { setValue(current => ({ ...current, maxAttempts: Number(event.target.value) })); setError('') }} /></label>
+        <p className="ws-muted">Броят опити се променя за участниците без индивидуално изключение. Персоналните изключения се запазват.</p>
+        <AssignmentSettingsFields value={value} onChange={next => { setValue(current => ({ ...current, ...next })); setError('') }} />
         <p className="ws-muted">Разбъркването важи за новите опити. Автоматичната проверка обхваща и предадените тестове, които още чакат проверка. Вече започналите AI проверки ще приключат.</p>
       </fieldset>
       {error && <p className="error" role="alert">{error}</p>}

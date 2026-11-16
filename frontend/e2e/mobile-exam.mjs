@@ -217,7 +217,7 @@ async function learnerScenario({ name, width = 390, theme = 'light', mobile = tr
   try {
     await openPage(context)
     await page.getByRole('navigation', { name: 'Основна навигация', exact: true }).getByRole('button', { name: 'Моите тестове', exact: true }).click()
-    await page.getByRole('button', { name: resume ? 'Продължи' : 'Подготовка', exact: true }).click()
+    await page.getByRole('button', { name: resume ? 'Продължи' : 'Отвори теста', exact: true }).click()
     if (!resume) {
     await page.getByRole('heading', { name: 'Подготовка за изпит', exact: true }).waitFor()
     await page.getByLabel('Код за достъп', { exact: true }).fill('ABCDEFGH')

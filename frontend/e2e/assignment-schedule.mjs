@@ -51,7 +51,7 @@ try {
   await learner.getByRole('button', { name: 'Моите тестове', exact: true }).click()
   const studentRow = id => learner.getByRole('table', { name: 'Възложени тестове', exact: true }).locator('tbody tr').nth(assignments.findIndex(assignment => assignment.id === id))
   await studentRow(67).getByText('Срокът е изтекъл', { exact: true }).waitFor()
-  assert.equal(await studentRow(67).getByRole('button', { name: 'Подготовка', exact: true }).isDisabled(), true)
+  assert.equal(await studentRow(67).getByRole('button', { name: 'Отвори теста', exact: true }).isDisabled(), true)
 
   page = await session(teacher)
   await page.goto(`${frontend}/assignments`)
@@ -118,7 +118,7 @@ try {
   assert.deepEqual(await firstRow.locator('time').evaluateAll(elements => elements.map(element => element.dateTime)), [saves[1].startsAt, saves[1].endsAt])
   await learner.getByRole('button', { name: 'Обнови', exact: true }).click()
   await studentRow(67).getByText('Активен', { exact: true }).waitFor()
-  assert.equal(await studentRow(67).getByRole('button', { name: 'Подготовка', exact: true }).isEnabled(), true)
+  assert.equal(await studentRow(67).getByRole('button', { name: 'Отвори теста', exact: true }).isEnabled(), true)
   await studentRow(68).getByText('Срокът е изтекъл', { exact: true }).waitFor()
   assert.equal(await learner.getByRole('button', { name: /Промени датите/ }).count(), 0)
 

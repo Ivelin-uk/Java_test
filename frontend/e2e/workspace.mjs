@@ -62,7 +62,7 @@ try {
   await tpage.screenshot({ path: new URL('teacher-desktop.png', artifacts).pathname, fullPage: true })
   const { page, context } = await pageWith(student, { width: 1440, height: 1000 })
   await page.getByRole('button', { name: 'Моите тестове', exact: true }).click()
-  await page.getByRole('button', { name: 'Подготовка', exact: true }).click()
+  await page.getByRole('button', { name: 'Отвори теста', exact: true }).click()
   await page.getByLabel('Код за достъп').fill(assignment.code)
   await page.getByRole('button', { name: 'Започни на цял екран', exact: true }).click()
   await page.getByRole('heading', { name: 'Кой тип е логически?' }).waitFor()

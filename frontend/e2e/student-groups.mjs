@@ -103,7 +103,7 @@ try {
       await assigned.getByText(biology[0].title, { exact: true }).waitFor()
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
       await page.screenshot({ path: new URL(`student-group-tests-${viewport.theme}-${viewport.width}.png`, artifacts).pathname, fullPage: true })
-      await assigned.getByRole('row').filter({ hasText: biology[0].title }).getByRole('button', { name: 'Подготовка', exact: true }).click()
+      await assigned.getByRole('row').filter({ hasText: biology[0].title }).getByRole('button', { name: 'Отвори теста', exact: true }).click()
       await page.getByRole('heading', { name: 'Подготовка за изпит', exact: true }).waitFor()
       await page.getByRole('button', { name: 'Към тестовете', exact: true }).click()
       await group.getByRole('heading', { name: groups[0].name, exact: true }).waitFor()

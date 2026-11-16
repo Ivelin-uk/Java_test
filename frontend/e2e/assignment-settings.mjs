@@ -15,7 +15,7 @@ try {
   for (const { width, theme } of [{ width: 1440, theme: 'light' }, { width: 390, theme: 'dark' }, { width: 320, theme: 'light' }]) {
     const context = await browser.newContext({ viewport: { width, height: 1000 } })
     await context.addInitScript(({ auth, theme }) => { localStorage.setItem('quicktest.auth', JSON.stringify(auth)); localStorage.setItem('quicktest.theme', theme) }, { auth, theme })
-    const assignments = [601, 602].map(id => ({ id, assessment_id: 401, teacher_id: 101, title: 'Вече възложен тест', starts_at: id === 601 ? '2098-10-14T07:00:00Z' : '2098-10-16T07:00:00Z', ends_at: id === 601 ? '2098-10-14T08:00:00Z' : '2098-10-16T08:00:00Z', recipients: 1, recipient_groups: [id === 601 ? group : secondGroup], individual_recipients: id === 601 ? [] : [{ id: 402, name: 'Мария Николова' }], access_code: 'ABCD2345', shuffle_questions: true, shuffle_options: false, answers_after_deadline: true, auto_ai_grading: false }))
+    const assignments = [601, 602].map(id => ({ id, assessment_id: 401, teacher_id: 101, title: 'Вече възложен тест', starts_at: id === 601 ? '2098-10-14T07:00:00Z' : '2098-10-16T07:00:00Z', ends_at: id === 601 ? '2098-10-14T08:00:00Z' : '2098-10-16T08:00:00Z', recipients: 1, max_attempts: id === 601 ? 3 : 1, recipient_groups: [id === 601 ? group : secondGroup], individual_recipients: id === 601 ? [] : [{ id: 402, name: 'Мария Николова' }], access_code: 'ABCD2345', shuffle_questions: true, shuffle_options: false, answers_after_deadline: true, auto_ai_grading: false }))
     const errors = [], saves = [], creations = []
     let failNext = false, holdSave = false, releaseSave
     // Every API request is local; no real assignment, AI call or publication occurs.
@@ -34,7 +34,7 @@ try {
         saves.push({ id, ...value })
         if (failNext) { failNext = false; return respond({ detail: 'Настройките временно не могат да се запазят.' }, 503) }
         if (holdSave) { holdSave = false; await new Promise(resolve => { releaseSave = resolve }) }
-        Object.assign(assignments.find(row => row.id === id), { shuffle_questions: value.shuffleQuestions, shuffle_options: value.shuffleOptions, answers_after_deadline: value.answersAfterDeadline, auto_ai_grading: value.autoAiGrading })
+        Object.assign(assignments.find(row => row.id === id), { max_attempts: value.maxAttempts, shuffle_questions: value.shuffleQuestions, shuffle_options: value.shuffleOptions, answers_after_deadline: value.answersAfterDeadline, auto_ai_grading: value.autoAiGrading })
         return route.fulfill({ status: 200, body: '' })
       }
       if (method === 'POST' && path === '/api/v1/assignments') {
@@ -69,11 +69,14 @@ try {
     await page.getByRole('alert').filter({ hasText: 'Началната дата' }).waitFor()
     await filters.getByRole('button', { name: 'Изчисти филтъра', exact: true }).click()
     const edit = first.getByRole('button', { name: 'Настройки: Вече възложен тест', exact: true })
+    await first.getByText('Опити: 3', { exact: true }).waitFor()
+    await second.getByText('Опити: 1', { exact: true }).waitFor()
     const dialog = page.getByRole('dialog', { name: 'Настройки на възлагането', exact: true })
     const ai = dialog.getByRole('checkbox', { name: 'Автоматична проверка с AI', exact: true })
     const save = dialog.getByRole('button', { name: 'Запази настройките', exact: true })
     await edit.click()
     assert.equal(await dialog.getByRole('checkbox').count(), 4)
+    assert.equal(await dialog.getByLabel('Опити', { exact: true }).inputValue(), '3')
     assert.equal(await dialog.getByLabel('Разбъркай въпросите', { exact: true }).isChecked(), true)
     assert.equal(await dialog.getByLabel('Разбъркай опциите', { exact: true }).isChecked(), false)
     assert.equal(await dialog.getByLabel('Верни отговори след срока', { exact: true }).isChecked(), true)
@@ -82,6 +85,7 @@ try {
     assert.equal(saves.length, 0)
     assert.equal(await edit.evaluate(element => element === document.activeElement), true)
     await edit.click(); assert.equal(await ai.isChecked(), false)
+    await dialog.getByLabel('Опити', { exact: true }).fill('5')
     await ai.check(); failNext = true; await save.click()
     await dialog.getByRole('alert').getByText('Настройките временно не могат да се запазят.', { exact: true }).waitFor()
     assert.equal(await ai.isChecked(), true)
@@ -98,8 +102,11 @@ try {
     releaseSave(); await dialog.waitFor({ state: 'hidden' })
     await first.getByText('AI: автоматична проверка', { exact: true }).waitFor()
     await second.getByText('AI: ръчна заявка', { exact: true }).waitFor()
-    assert.deepEqual(saves[1], { id: 601, shuffleQuestions: true, shuffleOptions: false, answersAfterDeadline: true, autoAiGrading: true })
+    await first.getByText('Опити: 5', { exact: true }).waitFor()
+    assert.deepEqual(saves[1], { id: 601, maxAttempts: 5, shuffleQuestions: true, shuffleOptions: false, answersAfterDeadline: true, autoAiGrading: true })
     await page.reload(); await edit.click(); assert.equal(await ai.isChecked(), true)
+    assert.equal(await dialog.getByLabel('Опити', { exact: true }).inputValue(), '5')
+    await dialog.getByLabel('Опити', { exact: true }).fill('6')
     await dialog.getByLabel('Разбъркай въпросите', { exact: true }).uncheck()
     await dialog.getByLabel('Разбъркай опциите', { exact: true }).check()
     await dialog.getByLabel('Верни отговори след срока', { exact: true }).uncheck()
@@ -116,18 +123,21 @@ try {
     await page.getByRole('listbox', { name: 'Тестове за възлагане', exact: true }).getByRole('option').click()
     await form.getByRole('combobox', { name: 'Търси групи', exact: true }).click()
     await page.getByRole('listbox', { name: 'Групи', exact: true }).getByRole('option', { name: group.name, exact: true }).click()
+    await form.getByRole('button', { name: 'Напред', exact: true }).click()
     await form.getByLabel('Начало', { exact: true }).fill('2098-10-14T10:00')
     await form.getByLabel('Краен срок', { exact: true }).fill('2098-10-14T11:00')
+    await form.getByRole('button', { name: 'Напред', exact: true }).click()
     await form.getByLabel('Автоматична проверка с AI', { exact: true }).check()
     await form.getByRole('button', { name: 'Възложи', exact: true }).click()
     await table.getByText(test.title, { exact: true }).waitFor()
     assert.equal(creations.length, 1); assert.equal(creations[0].autoAiGrading, true)
+    await form.getByRole('tab', { name: 'Начин на решаване', exact: true }).click()
     await form.getByRole('button', { name: 'Нулирай формата', exact: true }).click()
     assert.equal(await form.getByLabel('Автоматична проверка с AI', { exact: true }).isChecked(), false)
     assert.deepEqual(errors, [])
     await context.close()
   }
-  console.log('Passed: four assignment settings, persisted per-row editing, cancel/Escape and focus, save failure/retry, duplicate-submit protection, unrelated assignment unchanged, automatic AI opt-in creation and reset, desktop/mobile and both themes. API fixtures only.')
+  console.log('Passed: assignment settings and attempt count, persisted per-row editing, cancel/Escape and focus, save failure/retry, duplicate-submit protection, unrelated assignment unchanged, automatic AI opt-in creation and reset, desktop/mobile and both themes. API fixtures only.')
 } catch (error) {
   if (page && !page.isClosed()) await page.screenshot({ path: new URL('assignment-settings-failure.png', artifacts).pathname, fullPage: true })
   throw error

@@ -62,7 +62,7 @@ try {
     try {
       await page.goto(frontend)
       await page.getByRole('navigation', { name: 'Основна навигация' }).getByRole('button', { name: 'Моите тестове', exact: true }).click()
-      await page.getByRole('button', { name: 'Подготовка', exact: true }).click()
+      await page.getByRole('button', { name: 'Отвори теста', exact: true }).click()
       await page.getByLabel('Код за достъп', { exact: true }).fill('ABCDEFGH')
       await page.getByRole('button', { name: 'Започни теста', exact: true }).click()
       const block = (side, text) => page.getByRole('button', { name: new RegExp(`^${side} блокче: ${text}(?:\\.|$)`) })

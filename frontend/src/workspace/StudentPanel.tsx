@@ -15,6 +15,7 @@ export function LearnerPanel({ api, begin, openResult, groupId, focusAssignment,
   const tabsId = useId()
   const [pollError, setPollError] = useState('')
   const [now, setNow] = useState(Date.now)
+  const [focusResultAttempt, setFocusResultAttempt] = useState<number | null>(null)
   const focusedAssignment = useRef<number | null>(null)
   const reloadAssignments = assignments.reload
   const reloadAttempts = attempts.reload
@@ -58,6 +59,10 @@ export function LearnerPanel({ api, begin, openResult, groupId, focusAssignment,
     focusedAssignment.current = focusAssignment
     document.getElementById(`learner-assignment-${focusAssignment}`)?.scrollIntoView({ block: 'center' })
   }, [assignments.data, assignments.loading, focusAssignment, tab])
+  useEffect(() => {
+    if (tab !== 'results' || focusResultAttempt === null || results.loading) return
+    document.getElementById(`learner-result-${focusResultAttempt}`)?.scrollIntoView({ block: 'center' })
+  }, [focusResultAttempt, results.loading, tab])
   const assignmentIds = new Set(assignments.data.map(assignment => assignment.id))
   const visibleAttempts = groupId === undefined ? attempts.data : attempts.data.filter(attempt => assignmentIds.has(attempt.assignment_id))
   const visibleResults = groupId === undefined ? results.data : results.data.filter(result => assignmentIds.has(result.assignment_id))
@@ -85,7 +90,7 @@ export function LearnerPanel({ api, begin, openResult, groupId, focusAssignment,
       <button type="button" id={`${tabsId}-results-tab`} role="tab" aria-selected={tab === 'results'} aria-controls={`${tabsId}-results-panel`} tabIndex={tab === 'results' ? 0 : -1} className={tab === 'results' ? 'active' : ''} onClick={() => setTab('results')}><FileCheck size={17} aria-hidden="true" />Резултати</button>
     </div>
     {tab === 'tests' && <div id={`${tabsId}-tests-panel`} role="tabpanel" aria-labelledby={`${tabsId}-tests-tab`} className="ws-section" tabIndex={0}>
-    <Panel title="Тестове за решаване" description="Провери срока и избери „Подготовка“. За започнат тест използвай „Продължи“.">
+    <Panel title="Тестове за решаване" description="Провери срока и избери „Отвори теста“. За започнат тест използвай „Продължи“.">
     <TableContainer label="Възложени тестове — таблица"><table className="ws-table" aria-label="Възложени тестове"><thead><tr><th>Тест</th><th>Статус</th><th>Начало</th><th>Краен срок</th><th>Опити</th><th>Оценка</th><th>Действие</th></tr></thead><tbody>{assignments.data.map(a => {
       const assignedAttempts = visibleAttempts.filter(attempt => attempt.assignment_id === a.id)
       const active = assignedAttempts.find(attempt => attempt.status === 'in_progress')
@@ -96,7 +101,9 @@ export function LearnerPanel({ api, begin, openResult, groupId, focusAssignment,
       const status = completed ? 'completed' : availability
       const availabilityLabel = completed ? 'Завършен' : { active: 'Активен', expired: 'Срокът е изтекъл', upcoming: 'Предстоящ', canceled: 'Отменен' }[availability]
       const AvailabilityIcon = completed ? CircleCheck : availability === 'active' ? Play : availability === 'canceled' ? CircleX : Clock3
-      return <tr id={`learner-assignment-${a.id}`} key={a.id} className={`ws-assignment-${status}`}><td><div>{a.title}</div>{a.teacher_name && <small className="ws-assignment-teacher">Възложил: {a.teacher_name}</small>}</td><td><span className="ws-assignment-availability"><AvailabilityIcon size={16} aria-hidden="true" /><span>{availabilityLabel}</span></span></td><td>{date(a.starts_at)}</td><td>{date(a.ends_at)}</td><td>{assignedAttempts.length}/{a.max_attempts}</td><td>{result ? label(result.grade) + ' · опит ' + result.attempt_number : '-'}</td><td><button className="command-button" disabled={attempts.loading || !!attempts.error || !!a.canceled || !active && (exhausted || new Date(a.ends_at).getTime() <= now)} onClick={() => begin(a.id, active?.id)}><Play size={17} /> {active ? 'Продължи' : exhausted ? 'Няма оставащи опити' : 'Подготовка'}</button></td></tr>
+      return <tr id={`learner-assignment-${a.id}`} key={a.id} className={`ws-assignment-${status}`}><td><div>{a.title}</div>{a.teacher_name && <small className="ws-assignment-teacher">Възложил: {a.teacher_name}</small>}</td><td><span className="ws-assignment-availability"><AvailabilityIcon size={16} aria-hidden="true" /><span>{availabilityLabel}</span></span></td><td>{date(a.starts_at)}</td><td>{date(a.ends_at)}</td><td>{assignedAttempts.length}/{a.max_attempts}</td><td>{result ? label(result.grade) + ' · опит ' + result.attempt_number : '-'}</td><td>{completed && result
+        ? <button type="button" className="command-button" onClick={() => { setFocusResultAttempt(result.attempt_id); setTab('results') }}><FileCheck size={17} aria-hidden="true" />Виж резултата</button>
+        : <button className="command-button" disabled={attempts.loading || !!attempts.error || !!a.canceled || !active && (exhausted || new Date(a.ends_at).getTime() <= now)} onClick={() => begin(a.id, active?.id)}><Play size={17} /> {active ? 'Продължи' : exhausted ? 'Няма оставащи опити' : 'Отвори теста'}</button>}</td></tr>
     })}</tbody></table></TableContainer>{!assignments.data.length && !assignments.loading && <Empty>Нямате възложени тестове.</Empty>}
     </Panel>
     </div>}
@@ -109,7 +116,7 @@ export function LearnerPanel({ api, begin, openResult, groupId, focusAssignment,
       const result = published.get(attempt.id)
       const failed = result?.outcome === 'failed'
       const statusClass = attempt.status === 'pending_review' ? 'ws-attempt-pending' : attempt.status === 'finalized' ? failed ? 'ws-attempt-finalized ws-attempt-failed' : 'ws-attempt-finalized' : undefined
-      return <tr key={attempt.id} className={statusClass}><td>{attempt.title}</td><td>{attempt.attempt_number}</td><td><span className="ws-attempt-status">{attempt.status === 'pending_review' && <Clock3 size={16} aria-hidden="true" />}{attempt.status === 'finalized' && (failed ? <CircleX size={16} aria-hidden="true" /> : <CircleCheck size={16} aria-hidden="true" />)}<span>{label(attempt.status)}</span></span>{result && result.revision_number > 1 && <div className="ws-muted">Корекция №{result.revision_number - 1}</div>}</td><td>{date(attempt.submitted_at)}</td><td>{result ? `${result.points}/${result.maximum_points}` : '-'}</td><td>{result ? Number(result.percentage).toFixed(2) + '%' : '-'}</td><td>{result ? label(result.grade) : '-'}</td><td className="ws-attempt-outcome">{result ? label(result.outcome) : '-'}</td><td>{result?.review_available ? <button className="command-button" aria-label="Преглед на резултата" title="Преглед на резултата" disabled={action.busy} onClick={() => openResult(attempt.id)}><FileCheck size={17} /> Преглед</button> : '-'}</td></tr>
+      return <tr id={`learner-result-${attempt.id}`} key={attempt.id} className={statusClass}><td>{attempt.title}</td><td>{attempt.attempt_number}</td><td><span className="ws-attempt-status">{attempt.status === 'pending_review' && <Clock3 size={16} aria-hidden="true" />}{attempt.status === 'finalized' && (failed ? <CircleX size={16} aria-hidden="true" /> : <CircleCheck size={16} aria-hidden="true" />)}<span>{label(attempt.status)}</span></span>{result && result.revision_number > 1 && <div className="ws-muted">Корекция №{result.revision_number - 1}</div>}</td><td>{date(attempt.submitted_at)}</td><td>{result ? `${result.points}/${result.maximum_points}` : '-'}</td><td>{result ? Number(result.percentage).toFixed(2) + '%' : '-'}</td><td>{result ? label(result.grade) : '-'}</td><td className="ws-attempt-outcome">{result ? label(result.outcome) : '-'}</td><td>{result?.review_available ? <button className="command-button" aria-label="Преглед на резултата" title="Преглед на резултата" disabled={action.busy} onClick={() => openResult(attempt.id)}><FileCheck size={17} /> Преглед</button> : '-'}</td></tr>
     })}</tbody></table></TableContainer>{!attempts.loading && !visibleAttempts.length && <Empty>Няма започнати опити.</Empty>}
     </Panel>
     </div>}

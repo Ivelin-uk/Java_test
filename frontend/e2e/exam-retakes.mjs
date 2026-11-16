@@ -87,7 +87,7 @@ try {
       await page.goto(frontend)
       await page.getByRole('button', { name: 'Моите тестове', exact: true }).click()
       for (let number = attempts.length && !scenario.transfer ? 2 : 1; number <= 3; number++) {
-        await page.getByRole('button', { name: scenario.transfer && number === 1 ? 'Продължи' : 'Подготовка', exact: true }).click()
+        await page.getByRole('button', { name: scenario.transfer && number === 1 ? 'Продължи' : 'Отвори теста', exact: true }).click()
         if (scenario.transfer && number === 1) {
           await page.getByLabel('Парола за прехвърляне на сесията', { exact: true }).fill('password123')
           await page.getByRole('button', { name: 'Прехвърли без промяна на сроковете', exact: true }).click()
@@ -133,7 +133,7 @@ try {
           await page.getByRole('tab', { name: 'Тестове за решаване', exact: true }).click()
         }
       }
-      assert.equal(await page.getByRole('button', { name: 'Няма оставащи опити', exact: true }).isDisabled(), true)
+      assert.equal(await page.getByRole('button', { name: 'Виж резултата', exact: true }).isEnabled(), true)
       assert.equal(attempts.length, 3)
       assert.equal(new Set(attempts.map(a => a.session.startKey)).size, 3)
       assert.equal(attempts.filter(a => a.status === 'finalized').length, 1)

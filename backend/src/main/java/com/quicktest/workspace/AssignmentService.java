@@ -124,21 +124,24 @@ public class AssignmentService {
     }
     public String codeHash(long org,long assignment,String code) {return crypto.hash(org+":"+assignment+":"+code.strip().toUpperCase(Locale.ROOT));}
     public record ScheduleRequest(@NotNull Instant startsAt,@NotNull Instant endsAt) {}
-    public record SettingsRequest(@NotNull Boolean shuffleQuestions,@NotNull Boolean shuffleOptions,@NotNull Boolean answersAfterDeadline,@NotNull Boolean autoAiGrading) {}
+    public record SettingsRequest(@NotNull Integer maxAttempts,@NotNull Boolean shuffleQuestions,@NotNull Boolean shuffleOptions,@NotNull Boolean answersAfterDeadline,@NotNull Boolean autoAiGrading) {}
     @Transactional
     public void updateSettings(OrgAccess.Scope scope,long id,SettingsRequest request) {
         if(!scope.roles().contains("TEACHER")) throw WorkspaceError.forbidden();
-        if(request==null || request.shuffleQuestions()==null || request.shuffleOptions()==null || request.answersAfterDeadline()==null || request.autoAiGrading()==null) throw WorkspaceError.validation("Попълнете всички настройки на възлагането.");
+        if(request==null || request.maxAttempts()==null || request.maxAttempts()<1 || request.maxAttempts()>20 || request.shuffleQuestions()==null || request.shuffleOptions()==null || request.answersAfterDeadline()==null || request.autoAiGrading()==null) throw WorkspaceError.validation("Попълнете всички настройки на възлагането с валиден брой опити от 1 до 20.");
         organizations.requireActiveMember(scope,scope.userId(),"TEACHER");
         teacherAccess(scope,id,false);
         if(request.autoAiGrading()) entitlements.requireAutomaticGrading(scope);
         // Match exam-start lock ordering. Existing attempt snapshots stay unchanged.
         repository.lockRecipientIds(scope.organizationId(),id);
         var previous=teacherAccess(scope,id,true);
-        repository.updateSettings(scope.organizationId(),id,request.shuffleQuestions(),request.shuffleOptions(),request.answersAfterDeadline(),request.autoAiGrading(),scope.userId(),scope.platform());
+        int previousMaxAttempts=(int)number(previous,"max_attempts");
+        repository.updateSettings(scope.organizationId(),id,request.maxAttempts(),request.shuffleQuestions(),request.shuffleOptions(),request.answersAfterDeadline(),request.autoAiGrading(),scope.userId(),scope.platform());
+        repository.updateDefaultRecipientAttempts(scope.organizationId(),id,previousMaxAttempts,request.maxAttempts());
         var before=new LinkedHashMap<String,Object>();
         for(String key:List.of("shuffle_questions","shuffle_options","answers_after_deadline","auto_ai_grading")) before.put(key,flag(previous,key));
-        audit.write(scope.organizationId(),scope.userId(),"assignment.settings_updated",id,Map.of("previous",before,"settings",Map.of("shuffleQuestions",request.shuffleQuestions(),"shuffleOptions",request.shuffleOptions(),"answersAfterDeadline",request.answersAfterDeadline(),"autoAiGrading",request.autoAiGrading())));
+        before.put("max_attempts",previousMaxAttempts);
+        audit.write(scope.organizationId(),scope.userId(),"assignment.settings_updated",id,Map.of("previous",before,"settings",Map.of("maxAttempts",request.maxAttempts(),"shuffleQuestions",request.shuffleQuestions(),"shuffleOptions",request.shuffleOptions(),"answersAfterDeadline",request.answersAfterDeadline(),"autoAiGrading",request.autoAiGrading())));
     }
     @Transactional
     public void updateMobileMode(OrgAccess.Scope scope,long id,AssessmentService.MobileModeRequest request) {

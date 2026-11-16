@@ -81,7 +81,7 @@ try {
     try {
       await page.goto(frontend)
       await page.getByRole('button', { name: 'Моите тестове', exact: true }).click()
-      await page.getByRole('button', { name: 'Подготовка', exact: true }).click()
+      await page.getByRole('button', { name: 'Отвори теста', exact: true }).click()
       await page.getByLabel('Код за достъп', { exact: true }).fill('ABCDEFGH')
       await page.getByRole('button', { name: scenario.strict ? 'Започни на цял екран' : 'Започни теста', exact: true }).click()
       await page.getByRole('heading', { name: definitions[0].text, exact: true }).waitFor()

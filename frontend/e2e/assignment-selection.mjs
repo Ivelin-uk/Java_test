@@ -54,7 +54,7 @@ try {
     await row(67).getByText(assignments[0].title, { exact: true }).waitFor()
     await row(68).getByText(assignments[1].title, { exact: true }).waitFor()
     assert.equal(await page.getByText('JKLMNPQR', { exact: true }).count(), 0)
-    await row(67).getByRole('button', { name: 'Подготовка', exact: true }).click()
+    await row(67).getByRole('button', { name: 'Отвори теста', exact: true }).click()
     await page.getByRole('heading', { name: 'Подготовка за изпит', exact: true }).waitFor()
     assert.equal(await page.getByText(/Възлагане\s*№/).count(), 0)
     await page.getByLabel('Код за достъп', { exact: true }).fill('ZZZZZZZZ')

@@ -178,7 +178,7 @@ try {
   await page.getByRole('region', { name: 'Преглед на теста', exact: true }).locator('.katex').waitFor()
   await page.getByRole('button', { name: 'Към моите тестове', exact: true }).click()
   await page.getByRole('tab', { name: 'Тестове за решаване', exact: true }).click()
-  await page.getByRole('button', { name: 'Подготовка', exact: true }).click()
+  await page.getByRole('button', { name: 'Отвори теста', exact: true }).click()
   await page.getByLabel('Код за достъп', { exact: true }).fill('ABCDEFGH')
   await page.getByRole('button', { name: 'Започни теста', exact: true }).click()
   await page.locator('.exam-question .katex').waitFor()

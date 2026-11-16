@@ -1589,9 +1589,11 @@ class WorkspaceTests {
         assertFalse(flag(assignments.teacherAccess(teaching,assignment,false),"auto_ai_grading"));
         var request=startRequest();long id=number(start(request),"id");
         var snapshot=db.rows("SELECT definition_json,position_index FROM attempt_questions WHERE attempt_id=? ORDER BY position_index",id);
-        var settings=new AssignmentService.SettingsRequest(true,true,true,true);
+        var settings=new AssignmentService.SettingsRequest(3,true,true,true,true);
         assignments.updateSettings(teaching,assignment,settings);
         var listed=assignments.list(teaching).stream().filter(row->number(row,"id")==assignment).findFirst().orElseThrow();
+        assertEquals(3,number(listed,"max_attempts"));
+        assertEquals(3,number(db.one("SELECT max_attempts FROM assignment_recipients WHERE organization_id=? AND assignment_id=? AND student_id=?",org,assignment,student),"max_attempts"));
         for(String key:List.of("shuffle_questions","shuffle_options","answers_after_deadline","auto_ai_grading")) assertTrue(flag(listed,key));
         assertFalse(listed.containsKey("auto_ai_grading_user_id"));
         assertEquals(snapshot,db.rows("SELECT definition_json,position_index FROM attempt_questions WHERE attempt_id=? ORDER BY position_index",id));
@@ -1604,10 +1606,12 @@ class WorkspaceTests {
     }
     @Test void assignmentSettingsRequireAuthorizedTeacherAndCompleteInput() throws Exception {
         String path="/api/v1/assignments/"+assignment+"/settings";
-        var settings=new AssignmentService.SettingsRequest(true,false,true,true);
+        var settings=new AssignmentService.SettingsRequest(1,true,false,true,true);
         mvc.perform(put(path).header("Authorization",authorization).header("X-Organization-Id",org).contentType("application/json").content(db.json(settings))).andExpect(status().isForbidden());
         assertThrows(WorkspaceError.class,()->assignments.updateSettings(learning,assignment,settings));
         assertThrows(WorkspaceError.class,()->assignments.updateSettings(new OrgAccess.Scope(other,teacher,Set.of("TEACHER")),assignment,settings));
+        assertThrows(WorkspaceError.class,()->assignments.updateSettings(teaching,assignment,new AssignmentService.SettingsRequest(0,true,false,true,true)));
+        assertThrows(WorkspaceError.class,()->assignments.updateSettings(teaching,assignment,new AssignmentService.SettingsRequest(21,true,false,true,true)));
         String bearer="Bearer "+auth.login(new AuthService.LoginRequest(users.findById(teacher).orElseThrow().getEmail(),"password123")).token();
         mvc.perform(put(path).header("Authorization",bearer).header("X-Organization-Id",org).contentType("application/json").content("{\"autoAiGrading\":true}")).andExpect(status().isBadRequest());
         var colleague=user(Role.TEACHER);db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,colleague.getId(),"[\"TEACHER\"]",now);
@@ -1617,6 +1621,12 @@ class WorkspaceTests {
         assignments.updateSettings(shared,assignment,settings);
         assertEquals(colleague.getId(),number(assignments.teacherAccess(teaching,assignment,false),"auto_ai_grading_user_id"));
         mvc.perform(put(path).header("Authorization",bearer).header("X-Organization-Id",org).contentType("application/json").content(db.json(settings))).andExpect(status().isOk());
+    }
+    @Test void assignmentSettingsPreserveRecipientAttemptExceptions() {
+        assignments.accommodate(teaching,assignment,student,new AssignmentService.Accommodation(false,BigDecimal.ONE,4,"Индивидуално изключение"));
+        assignments.updateSettings(teaching,assignment,new AssignmentService.SettingsRequest(3,false,false,true,false));
+        assertEquals(3,number(assignments.teacherAccess(teaching,assignment,false),"max_attempts"));
+        assertEquals(4,number(db.one("SELECT max_attempts FROM assignment_recipients WHERE organization_id=? AND assignment_id=? AND student_id=?",org,assignment,student),"max_attempts"));
     }
     @Test void automaticAiGradingRunsAfterSubmissionOnceAndLeavesOptOutManual() {
         long manual=submittedWrittenAttempt("Manual only");
@@ -1635,10 +1645,10 @@ class WorkspaceTests {
     }
     @Test void automaticAiGradingCanBeDisabledAndEnabledForPendingSubmissions() {
         long id=submittedWrittenAttempt("Pending explanation",true);
-        assignments.updateSettings(teaching,assignment,new AssignmentService.SettingsRequest(false,false,true,false));
+        assignments.updateSettings(teaching,assignment,new AssignmentService.SettingsRequest(1,false,false,true,false));
         var worker=aiWorker(request->aiScores(request,"1"));worker.process();
         assertEquals(0,db.count("SELECT COUNT(*) FROM workspace_ai_grading_jobs WHERE attempt_id=?",id));
-        assignments.updateSettings(teaching,assignment,new AssignmentService.SettingsRequest(false,false,true,true));
+        assignments.updateSettings(teaching,assignment,new AssignmentService.SettingsRequest(1,false,false,true,true));
         worker.process();
         assertEquals("finalized",string(db.one("SELECT status FROM exam_attempts WHERE id=?",id),"status"));
     }
@@ -1677,7 +1687,7 @@ class WorkspaceTests {
         long id=submittedWrittenAttempt("Private submitted answer",true);
         var colleague=user(Role.TEACHER);db.insert("INSERT INTO memberships(organization_id,user_id,roles_json,created_at) VALUES(?,?,?,?)",org,colleague.getId(),"[\"TEACHER\"]",now);
         assignments.shareTeacher(teaching,assignment,colleague.getId(),true);
-        assignments.updateSettings(new OrgAccess.Scope(org,colleague.getId(),Set.of("TEACHER")),assignment,new AssignmentService.SettingsRequest(false,false,true,true));
+        assignments.updateSettings(new OrgAccess.Scope(org,colleague.getId(),Set.of("TEACHER")),assignment,new AssignmentService.SettingsRequest(1,false,false,true,true));
         assignments.shareTeacher(teaching,assignment,colleague.getId(),false);
         aiWorker(request->{fail("A revoked teacher must not send answers to AI");return null;}).process();
         assertEquals("failed",string(db.one("SELECT status FROM workspace_ai_grading_jobs WHERE attempt_id=?",id),"status"));

@@ -128,7 +128,7 @@ function Dashboard({ api, teacher, navigate, openResults, onCreateTest }: { api:
     { title: 'Възложи на учениците', description: 'Избери тест, група и срок. След предаването отвори „Проверка“.', view: 'assignments', icon: ClipboardList },
   ] : [
     { title: 'Присъедини се към група', description: 'Отвори „Групи“ и въведи кода, който ти е дал учителят.', view: 'groups', icon: Users },
-    { title: 'Отвори възложения тест', description: 'В „Моите тестове“ виж срока и избери „Подготовка“, за да започнеш.', view: 'learner', icon: ClipboardList },
+    { title: 'Отвори възложения тест', description: 'В „Моите тестове“ виж срока и избери „Отвори теста“, за да започнеш.', view: 'learner', icon: ClipboardList },
     { title: 'Виж резултата си', description: 'След проверката виж точките и оценката в таб „Резултати“.', view: 'learner', icon: GraduationCap, results: true },
   ]
   return <section className="ws-section">

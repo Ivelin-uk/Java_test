@@ -172,7 +172,7 @@ try {
     await page.getByRole('navigation').getByRole('button', { name: 'Моите тестове', exact: true }).click()
     await page.getByRole('table', { name: 'Възложени тестове', exact: true }).waitFor()
     await audit('student-tests', theme)
-    await page.getByRole('button', { name: 'Подготовка', exact: true }).click()
+    await page.getByRole('button', { name: 'Отвори теста', exact: true }).click()
     await page.getByRole('heading', { name: 'Подготовка за изпит', exact: true }).waitFor()
     await page.getByLabel('Код за достъп', { exact: true }).fill('ABC12345')
     await audit('exam-preflight', theme)
