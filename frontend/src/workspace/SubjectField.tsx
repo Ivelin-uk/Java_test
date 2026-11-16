@@ -71,38 +71,38 @@ export function SubjectField({ value, onChange, disabled = false, autoFocus = fa
   useEffect(() => { if (!open) setQuery(selected) }, [selected, open])
   const results = options.filter(subject => subject.name.toLocaleLowerCase('bg-BG').includes(query.trim().toLocaleLowerCase('bg-BG')))
   const deleteCandidate = (open ? query.trim() : selected)
-    ? options.find(subject => subjectKey(subject.name) === subjectKey(open ? query : selected))
+    ? catalog.subjects.find(subject => subjectKey(subject.name) === subjectKey(open ? query : selected))
     : undefined
   const deletableSubject = deleteCandidate
-  function choose(name: string) { onChange(name); setQuery(name); setOpen(false) }
+  function choose(name: string) {
+    const normalized = normalizeSubject(name)
+    const next = catalog.subjects.find(subject => subjectKey(subject.name) === subjectKey(normalized))?.name ?? normalized
+    if (next !== selected) onChange(next)
+    setQuery(next); setOpen(false)
+  }
   return <div className="ws-subject-field">
     <label htmlFor={id}>Дисциплина</label>
     <div className="ws-subject-control">
-      <div className="ws-subject-picker" onBlur={event => {
-        const control = event.currentTarget.parentElement
-        if (!(event.relatedTarget instanceof Node) || !control?.contains(event.relatedTarget)) {
-          setOpen(false)
-          setQuery(selected)
-        }
-      }}>
+      <div className="ws-subject-picker">
         <input id={id} role="combobox" autoFocus={autoFocus} autoComplete="off" aria-autocomplete="list" aria-expanded={open} aria-controls={open ? `${id}-results` : undefined}
-          value={open ? query : selected} disabled={disabled || catalog.loading} placeholder="Търси дисциплина"
+          value={open ? query : selected} maxLength={190} disabled={disabled || catalog.loading} placeholder="Търси или въведи дисциплина"
           onFocus={() => { setQuery(selected); setOpen(true) }}
+          onBlur={() => { if (open) choose(query) }}
           onChange={event => { setQuery(event.target.value); setOpen(true); if (!event.target.value) onChange('') }}
           onKeyDown={event => {
             if (event.key === 'Escape') { setQuery(selected); setOpen(false) }
-            else if (event.key === 'Enter' && open) { event.preventDefault(); if (results[0]) choose(results[0].name) }
+            else if (event.key === 'Enter' && open) { event.preventDefault(); choose(results[0]?.name ?? query) }
           }} />
         <div className="ws-subject-picker-tools">
           {selected && <button type="button" className="icon-button" aria-label="Изчисти дисциплината" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={() => { onChange(''); setQuery(''); setOpen(true) }}><X size={15} aria-hidden="true" /></button>}
-          <button type="button" className="icon-button" aria-label="Покажи дисциплините" aria-expanded={open} disabled={disabled || catalog.loading} onMouseDown={event => event.preventDefault()} onClick={() => { setOpen(value => !value); setQuery(selected) }}><ChevronDown size={17} aria-hidden="true" /></button>
+          <button type="button" className="icon-button" aria-label="Покажи дисциплините" aria-expanded={open} disabled={disabled || catalog.loading} onMouseDown={event => event.preventDefault()} onClick={() => { if (open) choose(query); else { setQuery(selected); setOpen(true) } }}><ChevronDown size={17} aria-hidden="true" /></button>
         </div>
         {open && !disabled && <div className="ws-subject-picker-results" id={`${id}-results`} role="listbox" aria-label="Дисциплини">
           {results.map(subject => <div className="ws-subject-picker-option" role="presentation" key={subjectKey(subject.name)}>
             <button type="button" role="option" aria-selected={subjectKey(value) === subjectKey(subject.name)} onMouseDown={event => event.preventDefault()} onClick={() => choose(subject.name)}>{subject.name}</button>
-            {!subject.preset && <button type="button" className="icon-button danger" title={`Изтрий дисциплината ${subject.name}`} aria-label={`Изтрий дисциплината ${subject.name}`} disabled={disabled || catalog.loading} onMouseDown={event => event.preventDefault()} onClick={() => setPendingDelete(subject.name)}><Trash2 size={17} aria-hidden="true" /></button>}
+            {!subject.preset && catalog.subjects.some(saved => subjectKey(saved.name) === subjectKey(subject.name)) && <button type="button" className="icon-button danger" title={`Изтрий дисциплината ${subject.name}`} aria-label={`Изтрий дисциплината ${subject.name}`} disabled={disabled || catalog.loading} onMouseDown={event => event.preventDefault()} onClick={() => setPendingDelete(subject.name)}><Trash2 size={17} aria-hidden="true" /></button>}
           </div>)}
-          {!results.length && <p>Няма намерени дисциплини.</p>}
+          {!results.length && <p>Няма намерени дисциплини. Можеш да въведеш нова.</p>}
         </div>}
       </div>
       <NewSubjectButton compact disabled={disabled || catalog.loading} onCreated={subject => choose(subject.name)} />

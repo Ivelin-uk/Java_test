@@ -54,7 +54,7 @@ export function TopicField({ subject, level, value, onChange, disabled = false, 
           onFocus={() => setOpen(true)} onChange={event => { onChange(event.target.value); setOpen(true) }}
           onKeyDown={event => {
             if (event.key === 'Escape') setOpen(false)
-            else if (event.key === 'Enter' && open && matches[0]) { event.preventDefault(); onChange(matches[0]); setOpen(false) }
+            else if (event.key === 'Enter' && open) { event.preventDefault(); if (matches[0]) onChange(matches[0]); setOpen(false) }
           }} />
         {subject.trim() && <button type="button" className="icon-button ws-topic-list-button" aria-label="Покажи темите" title="Покажи темите" aria-expanded={open} disabled={disabled || (requireSubject && !subject.trim())} onMouseDown={event => event.preventDefault()} onClick={() => setOpen(value => !value)}><ChevronDown size={17} aria-hidden="true" /></button>}
         {open && !disabled && subject.trim() && <div className="ws-subject-picker-results" id={`${id}-results`} role="listbox" aria-label="Теми по дисциплината">
