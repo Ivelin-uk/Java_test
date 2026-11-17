@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { Plus, RotateCw, RotateCcw, Ban, Copy, Mail, KeyRound, Trash2, Users, UserRound, Search, CalendarDays, Smartphone, SlidersHorizontal, X, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, RotateCw, RotateCcw, Ban, Copy, Mail, KeyRound, Trash2, Users, UserRound, Search, CalendarDays, Smartphone, SlidersHorizontal, X, CheckCircle2, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import type { WorkspaceApi } from './api'
 import { ApiError, useAction, useRemote } from './api'
 import type { Assessment, Assignment, Group, Version } from './types'
@@ -14,6 +14,7 @@ import { AssignmentMobileDialog } from './AssignmentMobileDialog'
 import { AssignmentSettingsDialog, AssignmentSettingsFields } from './AssignmentSettingsDialog'
 import { AssignmentAccommodationDialog } from './AssignmentAccommodationDialog'
 import { AssignmentGroupMembersDialog } from './AssignmentGroupMembersDialog'
+import { AssignmentPrintDialog } from './AssignmentPrintDialog'
 import { localTime, minuteBound } from './assignmentDates'
 import { useNotifications } from '../notifications'
 import './assignmentCreation.css'
@@ -86,6 +87,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
   const [afterDeadline, setAfterDeadline] = useState(true)
   const [autoAiGrading, setAutoAiGrading] = useState(false)
   const [editingSettings, setEditingSettings] = useState<Assignment | null>(null)
+  const [printingAssignment, setPrintingAssignment] = useState<Assignment | null>(null)
   const [editingMobile, setEditingMobile] = useState<Assignment | null>(null)
   const [revokingCode, setRevokingCode] = useState<Assignment | null>(null)
   const [deletingAssignment, setDeletingAssignment] = useState<Assignment | null>(null)
@@ -291,7 +293,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
           <button className="icon-button danger" title="Отмени кода" aria-label="Отмени кода" disabled={action.busy} onClick={() => setRevokingCode(a)}><Ban size={17} /></button>
           </div>
         </div></td>
-        <td><div className="ws-actions ws-assignment-actions"><button className="command-button" title="Участници и наблюдение" aria-label="Участници и наблюдение" onClick={() => openParticipants(a.id)}><Users size={17} /> Участници</button>{a.teacher_id === userId && <button className="icon-button danger" title="Изтрий възлагането" aria-label="Изтрий възлагането" disabled={action.busy} onClick={() => setDeletingAssignment(a)}><Trash2 size={17} /></button>}</div></td>
+        <td><div className="ws-actions ws-assignment-actions"><button type="button" className="command-button" title={`Свали PDF с варианти: ${a.title}`} aria-label={`Свали PDF с варианти: ${a.title}`} onClick={() => setPrintingAssignment(a)}><Download size={17} aria-hidden="true" /> PDF</button><button className="command-button" title="Участници и наблюдение" aria-label="Участници и наблюдение" onClick={() => openParticipants(a.id)}><Users size={17} /> Участници</button>{a.teacher_id === userId && <button className="icon-button danger" title="Изтрий възлагането" aria-label="Изтрий възлагането" disabled={action.busy} onClick={() => setDeletingAssignment(a)}><Trash2 size={17} /></button>}</div></td>
       </tr>)}</tbody>
     </table></TableContainer>{!visibleAssignments.length && !assignments.loading && !assignments.error && !invalidRange && <Empty>{testSearch || studentSearch || groupSearch ? 'Няма възлагания за зададеното търсене.' : from || to ? 'Няма възлагания за избрания период.' : 'Няма възлагания.'}</Empty>}
     </Panel>
@@ -301,6 +303,7 @@ export function AssignmentsPanel({ api, userId, openParticipants }: { api: Works
       assignments.setData(items => items.map(item => item.id === id ? { ...item, max_attempts: value.maxAttempts, shuffle_questions: value.shuffleQuestions, shuffle_options: value.shuffleOptions, answers_after_deadline: value.answersAfterDeadline, auto_ai_grading: value.autoAiGrading } : item))
       void action.run(assignments.reload, 'Настройките на възлагането са запазени.')
     }} />}
+    {printingAssignment && <AssignmentPrintDialog api={api} assignment={printingAssignment} onClose={() => setPrintingAssignment(null)} />}
     {editingMobile && <AssignmentMobileDialog assignment={editingMobile} onClose={() => setEditingMobile(null)} onSave={async allowed => {
       const id = editingMobile.id
       await api.put(`/assignments/${id}/mobile-mode`, { mobileAllowed: allowed })

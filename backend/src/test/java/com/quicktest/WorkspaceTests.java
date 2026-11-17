@@ -1127,6 +1127,26 @@ class WorkspaceTests {
         mvc.perform(post("/api/v1/assignments/"+assignment+"/code/rotate").header("Authorization",authorization)).andExpect(status().isForbidden());
         assertFalse(db.json(controls.export(teaching)).contains("access_code"));
     }
+    @Test void printableAssignmentUsesItsPublishedVersionAndRequiresTeacherAccess() throws Exception {
+        long assessmentId=number(db.one("SELECT assessment_id FROM assessment_versions WHERE id=?",version),"assessment_id");
+        var current=definition(false);
+        assessments.save(teaching,assessmentId,new AssessmentService.Definition("Newer draft",current.description(),current.subject(),current.level(),current.instructions(),current.language(),current.gradingScale(),current.passThreshold(),current.questions(),current.additionalInformation()));
+        assessments.publish(teaching,assessmentId);
+        var printable=assignments.printableDefinition(teaching,assignment);
+        assertEquals("Test",printable.title());
+        assertEquals("Correct",printable.questions().getFirst().options().getFirst().text());
+        assertTrue(printable.questions().getFirst().options().getFirst().correct());
+
+        String teacherToken=teacherAuthorization();
+        mvc.perform(get("/api/v1/assignments/"+assignment+"/print").header("Authorization",teacherToken).header("X-Organization-Id",org))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.title").value("Test")).andExpect(jsonPath("$.questions[0].options[0].correct").value(true));
+        mvc.perform(get("/api/v1/assignments/"+assignment+"/print").header("Authorization",authorization).header("X-Organization-Id",org))
+                .andExpect(status().isForbidden());
+        var colleague=user(Role.TEACHER);
+        String colleagueToken="Bearer "+auth.login(new AuthService.LoginRequest(colleague.getEmail(),"password123")).token();
+        mvc.perform(get("/api/v1/assignments/"+assignment+"/print").header("Authorization",colleagueToken).header("X-Organization-Id",org))
+                .andExpect(status().isForbidden());
+    }
     @Test void assignmentAudienceIsOnlyVisibleToAuthorizedTeachers() throws Exception {
         long group=number(organizations.createGroup(teaching,new OrganizationService.GroupRequest("Private audience group","","Java")),"id");
         organizations.addStudent(teaching,group,student);

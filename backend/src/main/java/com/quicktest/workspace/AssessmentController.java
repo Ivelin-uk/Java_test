@@ -36,6 +36,7 @@ public class AssessmentController {
     @DeleteMapping("/assignments/{id}") public void removeAssignment(@PathVariable long id) {assignments.remove(access.teacher(),id);}
     @PostMapping("/assignments/{id}/recipients") public void addRecipient(@PathVariable long id,@RequestBody OrganizationController.UserId request) {assignments.addRecipient(access.teacher(),id,request.userId());}
     @PostMapping("/assignments/{id}/recipients/{user}/extra-attempt") public Object extraAttempt(@PathVariable long id,@PathVariable long user) {return assignments.allowExtraAttempt(access.teacher(),id,user);}
+    @GetMapping("/assignments/{id}/print") public Object printableDefinition(@PathVariable long id) {return assignments.printableDefinition(access.teacher(),id);}
     @GetMapping("/assignments/{id}/members") public Object assignmentMembers(@PathVariable long id) {return assignments.groupMembers(access.teacher(),id);}
     @DeleteMapping("/assignments/{id}/recipients/{user}") public void removeRecipient(@PathVariable long id,@PathVariable long user) {assignments.removeRecipient(access.teacher(),id,user);}
     @GetMapping("/assignments/{id}/preflight") @EndpointPolicy(mode=EndpointPolicy.Mode.TENANT,student=true) public Object preflight(@PathVariable long id) {return assignments.preflight(access.student(),id);}

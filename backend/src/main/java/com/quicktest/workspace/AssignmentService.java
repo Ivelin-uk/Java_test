@@ -239,6 +239,10 @@ public class AssignmentService {
     }
     public Object sharedTeachers(OrgAccess.Scope scope,long id) {teacherAccess(scope,id,false);return repository.findSharedTeachers(scope.organizationId(), id);}
     @Transactional(readOnly=true)
+    public AssessmentService.Definition printableDefinition(OrgAccess.Scope scope,long id) {
+        return json.parse(string(teacherAccess(scope,id,false),"definition_json"),AssessmentService.Definition.class);
+    }
+    @Transactional(readOnly=true)
     public List<Map<String,Object>> groupMembers(OrgAccess.Scope scope,long id) {
         teacherAccess(scope,id,false);
         var recipients=repository.findSourceGroups(scope.organizationId(), id);

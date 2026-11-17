@@ -22,12 +22,12 @@ export function LearnerPanel({ api, begin, openResult, groupId, focusAssignment,
   const reloadResults = results.reload
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer) }, [])
   useEffect(() => {
-    let active = true, inFlight = false, timer: ReturnType<typeof setTimeout> | undefined
+    let active = true, inFlight = false, timer: number | undefined
     function schedule() {
       if (active && !document.hidden && navigator.onLine) timer = window.setTimeout(() => void poll(), 5000)
     }
     async function poll() {
-      clearTimeout(timer)
+      window.clearTimeout(timer)
       if (!active || inFlight || document.hidden || !navigator.onLine) return
       inFlight = true
       try {
@@ -40,14 +40,14 @@ export function LearnerPanel({ api, begin, openResult, groupId, focusAssignment,
         schedule()
       }
     }
-    function resume() { clearTimeout(timer); void poll() }
+    function resume() { window.clearTimeout(timer); void poll() }
     schedule()
     document.addEventListener('visibilitychange', resume)
     window.addEventListener('focus', resume)
     window.addEventListener('online', resume)
     return () => {
       active = false
-      clearTimeout(timer)
+      window.clearTimeout(timer)
       document.removeEventListener('visibilitychange', resume)
       window.removeEventListener('focus', resume)
       window.removeEventListener('online', resume)

@@ -5,6 +5,7 @@ import { chromium } from 'playwright'
 const frontend = process.env.E2E_FRONTEND_URL ?? 'http://localhost:5173'
 const auth = { token: 'assignment-settings-fixture', user: { id: 101, name: 'Teacher', email: 'teacher@example.test', role: 'TEACHER', active: true, passwordChangeRequired: false } }
 const test = { id: 201, title: 'Нов тест за автоматична проверка', status: 'published', owner_id: 101, shared: false }
+const printableDefinition = { title: 'Точна възложена версия', description: '', questions: [{ type: 'SINGLE_CHOICE', text: 'Which answer is correct?', options: [{ text: 'Correct key answer', correct: true }, { text: 'Wrong answer', correct: false }], acceptedAnswers: [], criteria: '', matchingPairs: [] }] }
 const group = { id: 301, name: '12А', subject: 'Java' }
 const secondGroup = { id: 302, name: '12Б', subject: 'Java' }
 const artifacts = new URL('../../.artifacts/', import.meta.url)
@@ -27,6 +28,7 @@ try {
       if (method === 'GET') {
         const data = { '/api/auth/me': auth.user, '/api/v1/tests': [test], '/api/v1/groups': [group], '/api/v1/assignments': assignments, '/api/v1/tests/201/versions': [{ id: 202, version_number: 1 }] }
         if (Object.hasOwn(data, path)) return respond(data[path])
+        if (/^\/api\/v1\/assignments\/(601|602)\/print$/.test(path)) return respond(printableDefinition)
       }
       const settings = path.match(/^\/api\/v1\/assignments\/(601|602)\/settings$/)
       if (method === 'PUT' && settings) {
@@ -71,6 +73,23 @@ try {
     const edit = first.getByRole('button', { name: 'Настройки: Вече възложен тест', exact: true })
     await first.getByText('Опити: 3', { exact: true }).waitFor()
     await second.getByText('Опити: 1', { exact: true }).waitFor()
+    await first.getByRole('button', { name: 'Свали PDF с варианти: Вече възложен тест', exact: true }).click()
+    const printDialog = page.getByRole('dialog', { name: 'Свали PDF за печат', exact: true })
+    await page.waitForFunction(() => document.querySelector('dialog input[type="number"]')?.matches(':disabled') === false)
+    assert.equal(await printDialog.getByLabel('Брой варианти', { exact: true }).inputValue(), '1')
+    assert.equal(await printDialog.getByLabel('Брой варианти', { exact: true }).getAttribute('max'), '1')
+    assert.equal(await printDialog.getByLabel('Отделен ключ с верните отговори', { exact: true }).isChecked(), true)
+    const pdfDownload = page.waitForEvent('download')
+    await printDialog.getByRole('button', { name: 'Свали PDF', exact: true }).click()
+    const downloadedPdf = await pdfDownload
+    assert.match(downloadedPdf.suggestedFilename(), /-variants\.pdf$/)
+    const pdfChunks = []
+    for await (const chunk of await downloadedPdf.createReadStream()) pdfChunks.push(chunk)
+    const pdf = Buffer.concat(pdfChunks)
+    assert.equal(pdf.subarray(0, 5).toString(), '%PDF-')
+    assert.ok(pdf.length > 1000)
+    await page.keyboard.press('Escape')
+    await printDialog.waitFor({ state: 'hidden' })
     const dialog = page.getByRole('dialog', { name: 'Настройки на възлагането', exact: true })
     const ai = dialog.getByRole('checkbox', { name: 'Автоматична проверка с AI', exact: true })
     const save = dialog.getByRole('button', { name: 'Запази настройките', exact: true })
@@ -137,7 +156,7 @@ try {
     assert.deepEqual(errors, [])
     await context.close()
   }
-  console.log('Passed: assignment settings and attempt count, persisted per-row editing, cancel/Escape and focus, save failure/retry, duplicate-submit protection, unrelated assignment unchanged, automatic AI opt-in creation and reset, desktop/mobile and both themes. API fixtures only.')
+  console.log('Passed: assignment settings and attempt count, PDF download with variants and separate answer key from the assigned version, persisted per-row editing, cancel/Escape and focus, save failure/retry, duplicate-submit protection, unrelated assignment unchanged, automatic AI opt-in creation and reset, desktop/mobile and both themes. API fixtures only.')
 } catch (error) {
   if (page && !page.isClosed()) await page.screenshot({ path: new URL('assignment-settings-failure.png', artifacts).pathname, fullPage: true })
   throw error

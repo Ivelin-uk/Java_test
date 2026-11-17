@@ -14,13 +14,13 @@ MySQL: `localhost:8889`, база `test_ai`, локален потребител
 
 Терминал 1:
 ```bash
-cd /Users/ivelin/Desktop/UKTC/Java/backend
+cd /Users/ivelin/Desktop/UKTC/ExamAI/backend
 ./gradlew bootRun
 ```
 
 Терминал 2:
 ```bash
-cd /Users/ivelin/Desktop/UKTC/Java/frontend
+cd /Users/ivelin/Desktop/UKTC/ExamAI/frontend
 npm ci
 npm run dev -- --host 127.0.0.1
 ```
