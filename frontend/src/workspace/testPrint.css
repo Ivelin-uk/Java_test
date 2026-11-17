@@ -1,0 +1,18 @@
+.ws-test-print-dialog { width: min(560px, calc(100% - 28px)); }
+.ws-test-print-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.ws-test-print-heading svg { flex: 0 0 auto; color: var(--link); }
+.ws-test-print-heading h2 { margin: 0; }
+.ws-test-print-title { margin: 0 0 8px; font-weight: 700; }
+.ws-test-print-dialog .ws-muted { font-size: 13px; line-height: 1.6; }
+.ws-test-print-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.ws-test-print-fields label { display: grid; gap: 7px; min-width: 0; }
+.ws-test-print-fields input, .ws-test-print-fields select { width: 100%; min-width: 0; }
+.ws-test-print-dialog .ws-check { align-items: start; line-height: 1.5; }
+.ws-test-print-dialog .ws-check input { flex: 0 0 auto; margin-top: 4px; }
+.ws-test-print-dialog .dialog-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.ws-test-print-dialog .dialog-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+@media (max-width: 480px) {
+  .ws-test-print-dialog { padding: 20px 16px; }
+  .ws-test-print-fields { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .ws-test-print-dialog .dialog-actions button { flex: 1; padding-inline: 10px; }
+}
