@@ -20,12 +20,12 @@ public class AttemptService {
     private final WorkspaceJson json;
     private final ExamAttemptRepository repository;private final Clock clock;private final WorkspaceCrypto crypto;
     private final OrganizationService organizations;private final AssignmentService assignments;
-    private final NotificationService notifications;private final CodeRateLimiter limiter;
+    private final CodeRateLimiter limiter;
     private final TransactionTemplate transactions;private final PasswordEncoder passwords;
     private final WorkspaceAudit audit;private final boolean workers;private final ProfileExamMutex mutex;
     @Value("${app.exam.mobile-validated:false}") private boolean mobileValidated;
-    public AttemptService(ExamAttemptRepository repository,WorkspaceJson json,Clock clock,WorkspaceCrypto crypto,OrganizationService organizations,AssignmentService assignments,NotificationService notifications,CodeRateLimiter limiter,TransactionTemplate transactions,PasswordEncoder passwords,WorkspaceAudit audit,ProfileExamMutex mutex,@Value("${app.workspace.workers:true}") boolean workers) {
-        this.repository=repository;this.json=json;this.clock=clock;this.crypto=crypto;this.organizations=organizations;this.assignments=assignments;this.notifications=notifications;this.limiter=limiter;this.transactions=transactions;this.passwords=passwords;this.audit=audit;this.workers=workers;this.mutex=mutex;
+    public AttemptService(ExamAttemptRepository repository,WorkspaceJson json,Clock clock,WorkspaceCrypto crypto,OrganizationService organizations,AssignmentService assignments,CodeRateLimiter limiter,TransactionTemplate transactions,PasswordEncoder passwords,WorkspaceAudit audit,ProfileExamMutex mutex,@Value("${app.workspace.workers:true}") boolean workers) {
+        this.repository=repository;this.json=json;this.clock=clock;this.crypto=crypto;this.organizations=organizations;this.assignments=assignments;this.limiter=limiter;this.transactions=transactions;this.passwords=passwords;this.audit=audit;this.workers=workers;this.mutex=mutex;
     }
     public Map<String,Object> startForClient(OrgAccess.Scope scope,long assignment,StartRequest request,String authSession,String ip,boolean mobile) {
         return startInternal(scope,assignment,request,authSession,ip,mobile);
@@ -52,7 +52,7 @@ public class AttemptService {
             Session session=new Session(request.sessionToken(),request.browserId(),authSession);
             if(previous.isPresent()) {checkSession(previous.get(),session);sweep(previous.get());return state(previous.get());}
             if(flag(recipient,"canceled")) throw WorkspaceError.forbidden();
-            notifications.verifiedAddress(scope.userId());if(!scope.platform()) organizations.requirePaid(scope.organizationId());
+            if(!scope.platform()) organizations.requirePaid(scope.organizationId());
             var a=repository.lockAssignmentDefinition(scope.organizationId(), assignment);
             if(clock.instant().isBefore(time(a,"starts_at")) || !clock.instant().isBefore(time(a,"ends_at"))) throw WorkspaceError.expired("Тестът е извън разрешения период.");
             boolean mobileMode=request.mobileMode();

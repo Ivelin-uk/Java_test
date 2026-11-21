@@ -148,6 +148,92 @@ class AdminSecurityTests {
     }
 
     @Test
+    void administratorCanConfirmCurrentEmailWithoutSendingMailAndRepeatsAreIdempotent() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session student = session(Role.STUDENT);
+        String path = "/api/admin/users/" + student.user.getId() + "/verify-email";
+        var body = Map.of("email", student.user.getEmail());
+        call(post(path), null, body, 401);
+        call(post(path), student.token, body, 403);
+        Session teacher = session(Role.TEACHER);
+        call(post(path), teacher.token, body, 403);
+        assertNull(student.user.getEmailVerifiedAt());
+
+        JsonNode confirmed = call(post(path), admin.token, body, 200);
+        assertEquals(student.user.getEmail(), confirmed.path("notificationEmail").asText());
+        assertFalse(confirmed.path("notificationEmailVerifiedAt").isNull());
+        assertFalse(confirmed.path("emailVerifiedAt").isNull());
+        assertEquals(0, count("SELECT COUNT(*) FROM notification_outbox WHERE user_id=?", student.user.getId()));
+        JsonNode repeated = call(post(path), admin.token, body, 200);
+        assertEquals(confirmed.path("notificationEmailVerifiedAt"), repeated.path("notificationEmailVerifiedAt"));
+        assertEquals(confirmed.path("emailVerifiedAt"), repeated.path("emailVerifiedAt"));
+        var recorded = audits.findTop200ByOrderByCreatedAtDescIdDesc().stream()
+                .filter(entry -> entry.getAction().equals("EMAIL_VERIFIED_BY_ADMIN") && entry.getTargetUser().getId().equals(student.user.getId())).toList();
+        assertEquals(1, recorded.size());
+        assertEquals(admin.user.getId(), recorded.getFirst().getActor().getId());
+        assertTrue(recorded.getFirst().getDetails().contains(student.user.getEmail()));
+        call(get("/api/auth/me"), student.token, null, 200);
+    }
+
+    @Test
+    void administratorEmailConfirmationRejectsStaleAddressInvalidInputAndInactiveUsers() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session student = session(Role.STUDENT);
+        String current = "notification-" + UUID.randomUUID() + "@example.test";
+        jdbc.update("INSERT INTO notification_addresses(user_id,email,verified_at) VALUES(?,?,NULL)", student.user.getId(), current);
+        String path = "/api/admin/users/" + student.user.getId() + "/verify-email";
+        call(post(path), admin.token, Map.of(), 400);
+        call(post(path), admin.token, Map.of("email", "invalid"), 400);
+        call(post(path), admin.token, Map.of("email", student.user.getEmail()), 409);
+        assertNull(jdbc.queryForObject("SELECT verified_at FROM notification_addresses WHERE user_id=?", java.sql.Timestamp.class, student.user.getId()));
+        assertEquals(0, count("SELECT COUNT(*) FROM admin_audit WHERE action='EMAIL_VERIFIED_BY_ADMIN'"));
+        call(post("/api/admin/users/999999999/verify-email"), admin.token, Map.of("email", current), 404);
+
+        call(put("/api/admin/users/" + student.user.getId()), admin.token, withActive(student.user, false), 200);
+        call(post(path), admin.token, Map.of("email", current), 409);
+        assertNull(jdbc.queryForObject("SELECT verified_at FROM notification_addresses WHERE user_id=?", java.sql.Timestamp.class, student.user.getId()));
+        assertNull(student.user.getEmailVerifiedAt());
+    }
+
+    @Test
+    void administratorConfirmsNotificationAddressOnlyAndInvalidatesPendingLinks() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session student = session(Role.STUDENT);
+        String current = "current-" + UUID.randomUUID() + "@example.test";
+        jdbc.update("INSERT INTO notification_addresses(user_id,email,verified_at) VALUES(?,?,NULL)", student.user.getId(), current);
+        String pending = "pending-" + UUID.randomUUID() + "@example.test";
+        call(post("/api/v1/profile/notification-email"), student.token, Map.of("email", pending, "password", "password123"), 200);
+        String payload = jdbc.queryForObject("SELECT payload_json FROM notification_outbox WHERE user_id=? AND notification_type='notification_email' ORDER BY id DESC LIMIT 1", String.class, student.user.getId());
+        String token = mapper.readTree(payload).path("token").asText();
+        long queuedBefore = count("SELECT COUNT(*) FROM notification_outbox WHERE user_id=?", student.user.getId());
+
+        JsonNode confirmed = call(post("/api/admin/users/" + student.user.getId() + "/verify-email"), admin.token, Map.of("email", current), 200);
+        assertEquals(current, confirmed.path("notificationEmail").asText());
+        assertFalse(confirmed.path("notificationEmailVerifiedAt").isNull());
+        assertTrue(confirmed.path("emailVerifiedAt").isNull());
+        assertEquals(0, count("SELECT COUNT(*) FROM identity_challenges WHERE user_id=? AND purpose='notification_email' AND consumed_at IS NULL", student.user.getId()));
+        assertEquals(queuedBefore, count("SELECT COUNT(*) FROM notification_outbox WHERE user_id=?", student.user.getId()));
+        call(post("/api/v1/profile/notification-email/verify"), student.token, Map.of("token", token), 410);
+        assertEquals(current, jdbc.queryForObject("SELECT email FROM notification_addresses WHERE user_id=?", String.class, student.user.getId()));
+    }
+
+    @Test
+    void administratorCanConfirmMissingNotificationAddressWithOutstandingChallenge() throws Exception {
+        Session admin = session(Role.ADMIN);
+        Session student = session(Role.STUDENT);
+        String path = "/api/admin/users/" + student.user.getId();
+        call(post(path + "/verification-email"), admin.token, null, 200);
+        assertEquals(1, count("SELECT COUNT(*) FROM identity_challenges WHERE user_id=? AND purpose='notification_email' AND consumed_at IS NULL", student.user.getId()));
+        jdbc.update("DELETE FROM notification_addresses WHERE user_id=?", student.user.getId());
+
+        JsonNode confirmed = call(post(path + "/verify-email"), admin.token, Map.of("email", student.user.getEmail()), 200);
+        assertEquals(student.user.getEmail(), confirmed.path("notificationEmail").asText());
+        assertFalse(confirmed.path("notificationEmailVerifiedAt").isNull());
+        assertEquals(0, count("SELECT COUNT(*) FROM identity_challenges WHERE user_id=? AND purpose='notification_email' AND consumed_at IS NULL", student.user.getId()));
+        assertEquals(1, count("SELECT COUNT(*) FROM notification_outbox WHERE user_id=?", student.user.getId()));
+    }
+
+    @Test
     void permissionsAreMethodSpecificAndImmediatelyAffectExistingTokens() throws Exception {
         Session admin = session(Role.ADMIN);
         Session teacher = session(Role.TEACHER);
@@ -169,7 +255,7 @@ class AdminSecurityTests {
     void fixedAndUnknownPermissionsCannotBeDelegatedAndBatchesAreAtomic() throws Exception {
         Session admin = session(Role.ADMIN);
         Session teacher = session(Role.TEACHER);
-        for (String key : List.of("AdminController.users", "AdminController.changeRole", "AdminController.deleteUser", "AuthController.me", "AuthController.login", "Missing.method"))
+        for (String key : List.of("AdminController.users", "AdminController.changeRole", "AdminController.verifyEmail", "AdminController.deleteUser", "AuthController.me", "AuthController.login", "Missing.method"))
             call(put("/api/admin/permissions"), admin.token, permission(key, Role.STUDENT, true, false), 400);
         call(put("/api/admin/permissions"), admin.token, permission("QuizController.list", Role.ADMIN, false, true), 400);
         var change = new AdminService.PermissionChange("QuizController.list", Role.TEACHER, false, false);

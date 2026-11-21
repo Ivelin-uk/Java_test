@@ -53,6 +53,22 @@ public class IdentityWorkflow {
         challenge(user.getId(),"notification_email",email);
         return email;
     }
+    /** Confirms only the displayed current address; the caller holds the target user's lock. */
+    @Transactional
+    public boolean confirmNotificationAddress(AppUser user,String expectedEmail) {
+        // Verification links lock challenges before the address; use the same order here.
+        repository.lockNotificationChallenges(user.getId());
+        initialize(user);
+        var address=repository.lockNotificationAddress(user.getId());
+        String email=string(address,"email");
+        if(!email.equalsIgnoreCase(expectedEmail)) throw WorkspaceError.conflict("Имейлът за известия е променен. Обновете списъка и опитайте отново.");
+        if(address.get("verified_at")!=null) return false;
+        var now=clock.instant();
+        repository.verifyAddress(email,now,user.getId());
+        repository.consumePurposeChallenges(now,user.getId(),"notification_email");
+        if(email.equalsIgnoreCase(user.getEmail()) && user.getEmailVerifiedAt()==null) user.setEmailVerifiedAt(now);
+        return true;
+    }
     public java.util.List<Map<String,Object>> identities(AppUser user) {
         return repository.findExternalIdentities(user.getId());
     }

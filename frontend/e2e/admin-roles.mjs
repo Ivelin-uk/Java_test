@@ -96,7 +96,7 @@ try {
   assert.equal(await page.locator('.users-table tr').filter({ hasText: target.email }).locator('.role-cell').innerText(), 'Учител')
   await page.getByRole('tab', { name: 'Абонаменти', exact: true }).click()
   await page.getByText('Годишен — 50,00 € / година', { exact: true }).waitFor()
-  await page.getByText('Pro', { exact: true }).waitFor()
+  await page.getByRole('table', { name: 'Абонаменти на учителите', exact: true }).getByText('Pro', { exact: true }).waitFor()
   await page.getByRole('tab', { name: /Потребители/ }).click()
 
   for (const next of ['ADMIN', 'STUDENT']) {

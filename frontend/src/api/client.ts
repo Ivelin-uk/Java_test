@@ -81,6 +81,7 @@ export const api = {
   deleteUser: (token: string, id: number, password: string) => request<void>(`/api/admin/users/${id}`, { method: 'DELETE', body: JSON.stringify({ password }) }, token),
   changeUserRole: (token: string, id: number, role: Role) => request<User>(`/api/admin/users/${id}/role`, { method: 'PUT', body: JSON.stringify({ role }) }, token),
   sendVerificationEmail: (token: string, id: number) => request<User>(`/api/admin/users/${id}/verification-email`, { method: 'POST' }, token),
+  confirmUserEmail: (token: string, id: number, email: string) => request<User>(`/api/admin/users/${id}/verify-email`, { method: 'POST', body: JSON.stringify({ email }) }, token),
   resetPassword: (token: string, id: number) => request<PasswordResponse>(`/api/admin/users/${id}/reset-password`, { method: 'POST' }, token),
   permissions: (token: string) => request<PermissionRow[]>('/api/admin/permissions', {}, token),
   updatePermissions: (token: string, changes: PermissionChange[]) => request<PermissionRow[]>('/api/admin/permissions', { method: 'PUT', body: JSON.stringify({ changes }) }, token),

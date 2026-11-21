@@ -1845,6 +1845,69 @@ class WorkspaceTests {
         var r=startRequest();assertThrows(WorkspaceError.class,()->start(new AttemptService.StartRequest(r.code(),r.idempotencyKey(),r.browserId(),r.sessionToken(),false,false,true)));
         assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=?",assignment));db.update("UPDATE organization_subscriptions SET paid_through=? WHERE organization_id=?",now,org);assertThrows(WorkspaceError.class,()->start(r));
     }
+    @Test void unverifiedEmailAllowsStartingCompletingAndPublishingWithoutSendingResultMail() throws Exception {
+        assertExamWithoutVerifiedEmail(false);
+    }
+    @Test void missingNotificationAddressAllowsStartingCompletingAndPublishingWithoutSendingResultMail() throws Exception {
+        assertExamWithoutVerifiedEmail(true);
+    }
+    private void assertExamWithoutVerifiedEmail(boolean missingAddress) throws Exception {
+        var account=users.findById(student).orElseThrow();account.setEmailVerifiedAt(null);users.saveAndFlush(account);
+        db.update("UPDATE notification_addresses SET verified_at=NULL WHERE user_id=?",student);
+        if(missingAddress) db.update("DELETE FROM notification_addresses WHERE user_id=?",student);
+        var request=startRequest();
+        String path="/api/v1/assignments/"+assignment+"/attempts";
+        String response=mvc.perform(post(path).header("Authorization",authorization).contentType("application/json").content(workspaceJson.write(request)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("in_progress")).andReturn().getResponse().getContentAsString();
+        long id=number(workspaceJson.object(response),"id");
+        mvc.perform(post(path).header("Authorization",authorization).contentType("application/json").content(workspaceJson.write(request)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(id));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=? AND student_id=?",assignment,student));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_audit WHERE resource_id=? AND action='attempt.started'",id));
+        attempts.submit(learning,id,session(request));
+        var publication=new GradingService.Finalize("unverified-publish-key","",null,null);
+        long revision=number(grading.finalizeResult(teaching,id,publication,false),"id");
+        assertEquals(revision,number(grading.finalizeResult(teaching,id,publication,false),"id"));
+        mvc.perform(get("/api/v1/results/"+id).header("Authorization",authorization))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(revision));
+        assertEquals(1,db.count("SELECT COUNT(*) FROM workspace_audit WHERE resource_id=? AND action='result.published'",id));
+        assertEquals(0,db.count("SELECT COUNT(*) FROM notification_outbox WHERE revision_id=?",revision));
+        assertThrows(WorkspaceError.class,()->grading.emailResult(teaching,id));
+        assertNull(users.findById(student).orElseThrow().getEmailVerifiedAt());
+        assertTrue(notifications.verifiedAddressIfPresent(student).isEmpty());
+        if(missingAddress) assertEquals(0,db.count("SELECT COUNT(*) FROM notification_addresses WHERE user_id=?",student));
+        else {
+            assertNull(db.one("SELECT verified_at FROM notification_addresses WHERE user_id=?",student).get("verified_at"));
+            db.update("UPDATE notification_addresses SET verified_at=? WHERE user_id=?",now,student);
+            long delivery=number(grading.emailResult(teaching,id),"id");
+            assertEquals(delivery,number(grading.emailResult(teaching,id),"id"));
+            assertEquals(1,db.count("SELECT COUNT(*) FROM notification_outbox WHERE revision_id=?",revision));
+        }
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->start(startRequest())).getStatusCode());
+    }
+    @Test void mobileExamCanStartWithUnverifiedEmailWhenTeacherAllowsMobileMode() throws Exception {
+        db.update("UPDATE notification_addresses SET verified_at=NULL WHERE user_id=?",student);
+        setMobileAllowed(true);
+        var request=mobileStartRequest(true);var state=mobileStart(request);
+        assertEquals("in_progress",string(state,"status"));assertEquals("open",string(question(state),"status"));
+        assertEquals(number(state,"id"),number(mobileStart(request),"id"));
+        assertTrue(notifications.verifiedAddressIfPresent(student).isEmpty());
+        assertEquals(1,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=?",assignment));
+    }
+    @Test void unverifiedEmailDoesNotBypassExamCodeReadinessScheduleOrRecipientChecks() {
+        db.update("UPDATE notification_addresses SET verified_at=NULL WHERE user_id=?",student);
+        var request=startRequest();
+        var wrong=new AttemptService.StartRequest("BADCODE1",request.idempotencyKey(),request.browserId(),request.sessionToken(),true,true,true);
+        assertEquals(HttpStatus.BAD_REQUEST,assertThrows(WorkspaceError.class,()->start(wrong)).getStatusCode());
+        var hidden=new AttemptService.StartRequest(code,request.idempotencyKey(),request.browserId(),request.sessionToken(),true,true,false);
+        assertEquals(HttpStatus.CONFLICT,assertThrows(WorkspaceError.class,()->start(hidden)).getStatusCode());
+        db.update("UPDATE exam_assignments SET starts_at=? WHERE id=?",now.plusSeconds(60),assignment);
+        assertEquals(HttpStatus.GONE,assertThrows(WorkspaceError.class,()->start(request)).getStatusCode());
+        db.update("UPDATE exam_assignments SET starts_at=? WHERE id=?",now.minusSeconds(1),assignment);
+        assignments.removeRecipient(teaching,assignment,student);
+        assertEquals(HttpStatus.NOT_FOUND,assertThrows(WorkspaceError.class,()->start(request)).getStatusCode());
+        assertEquals(0,db.count("SELECT COUNT(*) FROM exam_attempts WHERE assignment_id=?",assignment));
+    }
     @Test void incorrectCodesAreCountedDespiteTransactionRollback() {
         var r=startRequest();var wrong=new AttemptService.StartRequest("BADCODE1",r.idempotencyKey(),r.browserId(),r.sessionToken(),true,true,true);
         for(int i=0;i<5;i++) assertThrows(WorkspaceError.class,()->start(wrong));var error=assertThrows(WorkspaceError.class,()->start(r));assertEquals("rate_limit",error.code());
@@ -2454,7 +2517,7 @@ class WorkspaceTests {
     @Test void deadlineWorkerClosesUnattendedAttemptWithoutClientRequests() {
         var r=startRequest();var state=start(r);long id=number(state,"id"),qid=number(question(state),"id");
         when(clock.instant()).thenReturn(Instant.parse(string(question(state),"deadline_at")));
-        var worker=new AttemptService(attemptRepository,workspaceJson,clock,crypto,organizations,assignments,notifications,codeLimiter,transactions,passwords,audit,mutex,true);worker.expireDue();
+        var worker=new AttemptService(attemptRepository,workspaceJson,clock,crypto,organizations,assignments,codeLimiter,transactions,passwords,audit,mutex,true);worker.expireDue();
         assertEquals("pending_review",string(db.one("SELECT status FROM exam_attempts WHERE id=?",id),"status"));assertEquals("timed_out",string(db.one("SELECT status FROM attempt_questions WHERE id=?",qid),"status"));assertEquals(BigDecimal.ZERO,decimal(db.one("SELECT final_points FROM attempt_questions WHERE id=?",qid),"final_points").stripTrailingZeros());
     }
     @Test void validCodeCannotBeUsedByUnassignedMemberOrReadOthersAttempt() throws Exception {

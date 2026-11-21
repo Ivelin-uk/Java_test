@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { Users, ShieldCheck, History, CreditCard, BookOpen, UserPlus, UserRoundCog, Pencil, KeyRound, UserCheck, UserX, RefreshCw, Save, X, Copy, Check, Search, Trash2, Mail } from 'lucide-react'
-import { api } from '../api/client'
+import { Users, ShieldCheck, History, CreditCard, BookOpen, UserPlus, UserRoundCog, Pencil, KeyRound, UserCheck, UserX, RefreshCw, Save, X, Copy, Check, CheckCircle2, Search, Trash2, Mail } from 'lucide-react'
+import { api, ApiError } from '../api/client'
 import { formatDate, roleLabels, subscriptionLabel } from '../api/access'
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog'
 import { AdminBilling } from './AdminBilling'
@@ -12,7 +12,7 @@ import type { AuditEntry, AuthResponse, PasswordResponse, PermissionChange, Perm
 import type { AdminTeacherPlan } from '../workspace/billingTypes'
 
 const modes = { ADMIN: 'Само администратор', PUBLIC: 'Публичен вход', PROFILE: 'Собствен профил', MANAGED: '' }
-const actions: Record<string, string> = { USER_CREATED: 'Нов потребител', USER_UPDATED: 'Промяна на профил', USER_DELETED: 'Изтриване на потребител', USER_ROLE_CHANGED: 'Смяна на роля', PASSWORD_RESET: 'Нова временна парола', PERMISSION_UPDATED: 'Промяна на права', TEACHER_AI_RESET: 'Нулиране на AI кредити', TEACHER_PLAN_CHANGED: 'Смяна на учителски план', EMAIL_VERIFICATION_SENT: 'Изпратено потвърждение на имейл', SUBJECT_CREATED: 'Добавена дисциплина', SUBJECT_UPDATED: 'Промяна на дисциплина', SUBJECT_DELETED: 'Изтрита дисциплина', TOPIC_CREATED: 'Добавена тема', TOPIC_UPDATED: 'Промяна на тема', TOPIC_DELETED: 'Изтрита тема' }
+const actions: Record<string, string> = { USER_CREATED: 'Нов потребител', USER_UPDATED: 'Промяна на профил', USER_DELETED: 'Изтриване на потребител', USER_ROLE_CHANGED: 'Смяна на роля', PASSWORD_RESET: 'Нова временна парола', PERMISSION_UPDATED: 'Промяна на права', TEACHER_AI_RESET: 'Нулиране на AI кредити', TEACHER_PLAN_CHANGED: 'Смяна на учителски план', EMAIL_VERIFICATION_SENT: 'Изпратено потвърждение на имейл', EMAIL_VERIFIED_BY_ADMIN: 'Имейл, потвърден от администратор', SUBJECT_CREATED: 'Добавена дисциплина', SUBJECT_UPDATED: 'Промяна на дисциплина', SUBJECT_DELETED: 'Изтрита дисциплина', TOPIC_CREATED: 'Добавена тема', TOPIC_UPDATED: 'Промяна на тема', TOPIC_DELETED: 'Изтрита тема' }
 const emptyUser: UserEdit = { name: '', email: '', role: 'STUDENT', active: true, subscriptionPaid: false, subscriptionPaidUntil: null }
 function userEdit(user: User): UserEdit {
   return { name: user.name, email: user.email, role: user.role, active: user.active, subscriptionPaid: user.subscription.paid, subscriptionPaidUntil: user.subscription.paidUntil }
@@ -39,6 +39,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
   const [roleChange, setRoleChange] = useState<{ user: User; role: Role } | null>(null)
   const [confirming, setConfirming] = useState<{ user: User; action: 'reset' | 'toggle' } | null>(null)
   const [verifying, setVerifying] = useState<User | null>(null)
+  const [confirmingEmail, setConfirmingEmail] = useState<User | null>(null)
   const verificationInFlight = useRef(false)
   const [deleting, setDeleting] = useState<User | null>(null)
   const [deletePassword, setDeletePassword] = useState('')
@@ -110,6 +111,33 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Потвърждението не може да се изпрати. Опитайте отново.') }
     finally { verificationInFlight.current = false; setBusy(false) }
   }
+  async function confirmEmail() {
+    const email = confirmingEmail?.notificationEmail
+    if (!confirmingEmail || !email || busy || verificationInFlight.current) return
+    const selected = confirmingEmail
+    verificationInFlight.current = true
+    setBusy(true); setError('')
+    try {
+      const updated = await api.confirmUserEmail(token, selected.id, email)
+      setUsers(current => current.map(user => user.id === updated.id ? updated : user))
+      setConfirmingEmail(null)
+      notify(`Имейлът ${updated.notificationEmail ?? updated.email} е потвърден от администратор.`)
+      try {
+        const [nextUsers, nextAudit] = await Promise.all([api.users(token), api.audit(token)])
+        setUsers(nextUsers); setAudit(nextAudit)
+      } catch { setError('Имейлът е потвърден, но списъкът и журналът не се обновиха. Натиснете „Обнови“.') }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Имейлът не може да бъде потвърден. Опитайте отново.')
+      if (cause instanceof ApiError && cause.status === 409) {
+        try {
+          const nextUsers = await api.users(token)
+          setUsers(nextUsers)
+          const current = nextUsers.find(user => user.id === selected.id)
+          if (!current?.active || current.notificationEmail !== selected.notificationEmail || current.notificationEmailVerifiedAt !== null) setConfirmingEmail(null)
+        } catch { /* Preserve the original failure and let the administrator retry. */ }
+      }
+    } finally { verificationInFlight.current = false; setBusy(false) }
+  }
   async function deleteUser() {
     if (!deleting || busy || !deletePassword.trim()) return
     setBusy(true); setError('')
@@ -148,7 +176,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
       <button className="icon-button" title="Обнови" aria-label="Обнови" disabled={busy || catalogBusy || dirtyCount > 0} onClick={() => tab === 'subjects' ? setCatalogRevision(value => value + 1) : void perform(refresh)}><RefreshCw size={17} /></button>
     </div>
     {loading && <p role="status">Зареждане...</p>}
-    {error && !editing && !confirming && !roleChange && !verifying && <p className="error action-error" role="alert">{error}</p>}
+    {error && !editing && !confirming && !roleChange && !verifying && !confirmingEmail && <p className="error action-error" role="alert">{error}</p>}
 
     {tab === 'users' && <>
       <div className="filter-bar">
@@ -165,6 +193,7 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
           <td><span className={`status-badge ${user.active ? 'good' : 'inactive'}`}>{user.active ? 'Активен' : 'Неактивен'}</span></td>
           <td><span className={user.role === 'STUDENT' || user.subscription.active ? 'good' : ''}>{subscriptionLabel(user)}</span>{user.role !== 'STUDENT' && <small>{formatDate(user.subscription.paidUntil)}</small>}</td>
           <td><div className="row-actions">
+            <button className="icon-button" title={!user.active ? 'Потребителят е неактивен.' : user.notificationEmailVerifiedAt ? 'Имейлът за известия вече е потвърден.' : 'Потвърди имейла за известия като администратор'} aria-label={`Потвърди имейла на ${user.notificationEmail ?? user.email}`} disabled={busy || !user.active || user.notificationEmailVerifiedAt !== null || !user.notificationEmail} onClick={() => { setError(''); setConfirmingEmail(user) }}><CheckCircle2 size={16} /></button>
             <button className="icon-button" title={!user.active ? 'Потребителят е неактивен.' : user.notificationEmailVerifiedAt ? 'Имейлът за известия вече е потвърден.' : 'Изпрати линк за потвърждение на имейла за известия'} aria-label={`Изпрати потвърждение на ${user.notificationEmail ?? user.email}`} disabled={busy || !user.active || user.notificationEmailVerifiedAt !== null || !user.notificationEmail} onClick={() => { setError(''); setVerifying(user) }}><Mail size={16} /></button>
             <button className="icon-button" title="Редактирай профил и имейл" aria-label={`Редактирай ${user.email}`} disabled={busy} onClick={() => { setError(''); setEditing({ id: user.id, value: userEdit(user) }) }}><Pencil size={16} /></button>
             <button className="icon-button" title={user.id === auth.user.id ? 'Смяна на собствена парола от Профил' : 'Нова временна парола'} aria-label={`Нова парола за ${user.email}`} disabled={busy || user.id === auth.user.id} onClick={() => { setError(''); setConfirming({ user, action: 'reset' }) }}><KeyRound size={16} /></button>
@@ -215,6 +244,16 @@ export function AdminPanel({ auth, onProfileRefresh }: { auth: AuthResponse; onP
     {deleting && <DeleteConfirmationDialog title="Изтриване на потребител" description={<>Да изтрием ли <strong>{deleting.email}</strong>? Ще бъдат изтрити профилът, Google връзката, сесиите, опитите и резултатите му, както и собствените тестове и възлагания с опитите и резултатите на всички участници. Това е необратимо. Административният журнал се запазва.</>} confirmLabel="Изтрий потребителя" confirmDisabled={!deletePassword.trim()} onCancel={() => { setDeleting(null); setDeletePassword('') }} onConfirm={deleteUser}>
       <label>Вашата администраторска парола<input type="password" required autoComplete="current-password" value={deletePassword} onChange={event => setDeletePassword(event.target.value)} /></label>
     </DeleteConfirmationDialog>}
+
+    {confirmingEmail && <AdminDialog title="Потвърждаване на имейл от администратор" busy={busy} onClose={() => { setConfirmingEmail(null); setError('') }}>
+      <div className="user-form">
+        <p><strong>{confirmingEmail.name}</strong><br />Профил: {confirmingEmail.email}</p>
+        <p>Да потвърдим ли директно имейла за известия <strong>{confirmingEmail.notificationEmail}</strong>?</p>
+        <p className="muted">Адресът ще може да получава известия за тестове и резултати. Потвърждението се записва в журнала с вашия администраторски профил.</p>
+        {error && <p className="error" role="alert">{error}</p>}
+        <div className="dialog-actions"><button type="button" data-initial-focus disabled={busy} onClick={() => { setConfirmingEmail(null); setError('') }}>Отказ</button><button type="button" className="primary command-button" disabled={busy} onClick={() => void confirmEmail()}><CheckCircle2 size={17} />{busy ? 'Потвърждаване…' : 'Потвърди имейла'}</button></div>
+      </div>
+    </AdminDialog>}
 
     {verifying && <AdminDialog title="Потвърждение на имейл" busy={busy} onClose={() => { setVerifying(null); setError('') }}>
       <div className="user-form">

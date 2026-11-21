@@ -110,6 +110,19 @@ public class AdminService {
     }
 
     @Transactional
+    public AdminUserResponse verifyEmail(AppUser actor, Long id, EmailVerification request) {
+        // Match the administrator -> target lock order used by role/status edits and deletion.
+        AppUser administrator = users.lockAdministrators().stream()
+                .filter(user -> user.getId().equals(actor.getId()) && user.isActive())
+                .findFirst().orElseThrow(() -> new ApiException(FORBIDDEN, "Потвърждението е достъпно само за активен администратор."));
+        AppUser user = users.lockById(id).orElseThrow(() -> new ApiException(NOT_FOUND, "Потребителят не съществува."));
+        if (!user.isActive()) throw new ApiException(CONFLICT, "Потребителят е неактивен.");
+        if (identities.confirmNotificationAddress(user, normalizeEmail(request.email())))
+            audit(administrator, user, "EMAIL_VERIFIED_BY_ADMIN", "Потвърден имейл за известия: " + normalizeEmail(request.email()));
+        return adminResponse(user);
+    }
+
+    @Transactional
     public PasswordResponse resetPassword(AppUser actor, Long id) {
         if (actor.getId().equals(id))
             throw new ApiException(BAD_REQUEST, "Сменете собствената си парола от Моят профил.");
@@ -251,6 +264,7 @@ public class AdminService {
 
     public record UserEdit(@NotBlank @Size(max = 120) String name, @Email @NotBlank @Size(max = 190) String email,
                            @NotNull Role role, boolean active, boolean subscriptionPaid, LocalDate subscriptionPaidUntil) {}
+    public record EmailVerification(@Email @NotBlank @Size(max = 190) String email) {}
     /** The regular user response plus login and notification email verification state, visible only to administrators. */
     public record AdminUserResponse(Long id, String name, String email, String role, boolean active,
                                     boolean passwordChangeRequired, boolean roleSelectionRequired, SubscriptionService.Status subscription,

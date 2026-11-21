@@ -66,6 +66,12 @@ public class AdminController {
         return admin.sendVerificationEmail(auth.requireUser(authorization), id);
     }
 
+    @PostMapping("/users/{id}/verify-email")
+    public AdminService.AdminUserResponse verifyEmail(@RequestHeader("Authorization") String authorization, @PathVariable Long id,
+                                                       @Valid @RequestBody AdminService.EmailVerification request) {
+        return admin.verifyEmail(auth.requireUser(authorization), id, request);
+    }
+
     @PostMapping("/users/{id}/reset-password")
     public AdminService.PasswordResponse resetPassword(@RequestHeader("Authorization") String authorization, @PathVariable Long id) {
         return admin.resetPassword(auth.requireUser(authorization), id);

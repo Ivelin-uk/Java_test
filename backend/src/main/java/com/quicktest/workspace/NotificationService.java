@@ -29,9 +29,7 @@ public class NotificationService {
         return repository.insertNotification(org, revision, user, type, email, json.write(content), clock.instant(), clock.instant());
     }
     public String verifiedAddress(long user) {
-        var address=repository.requireNotificationAddress(user);
-        if(address.get("verified_at")==null) throw WorkspaceError.conflict("Потвърдете имейла за известия преди начало на изпит.");
-        return string(address,"email");
+        return verifiedAddressIfPresent(user).orElseThrow(() -> WorkspaceError.conflict("За изпращане на известия е нужен потвърден имейл на получателя."));
     }
     public Optional<String> verifiedAddressIfPresent(long user) {
         return repository.findVerifiedAddress(user).map(address->string(address,"email"));

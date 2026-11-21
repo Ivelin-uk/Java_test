@@ -38,6 +38,14 @@ public class IdentityRepository {
         return store.optional("SELECT user_id,email,verified_at FROM notification_addresses WHERE user_id=?", userId);
     }
 
+    public void lockNotificationChallenges(long userId) {
+        store.rows("SELECT token_hash FROM identity_challenges WHERE user_id=? AND purpose='notification_email' AND consumed_at IS NULL ORDER BY token_hash FOR UPDATE", userId);
+    }
+
+    public Map<String, Object> lockNotificationAddress(long userId) {
+        return store.one("SELECT email,verified_at FROM notification_addresses WHERE user_id=? FOR UPDATE", userId);
+    }
+
     public Map<String, Object> lockChallenge(String value) {
         return store.one("SELECT * FROM identity_challenges WHERE token_hash=? FOR UPDATE", value);
     }

@@ -108,7 +108,7 @@ public class GradingService {
         repository.markFinalized(scope.organizationId(), id);
         long student=number(attempt,"student_id");
         var saved=repository.requireRevision(scope.organizationId(),revision);
-        notifications.enqueue(scope.organizationId(),revision,student,"final_result",notifications.verifiedAddress(student),resultMessage(scope,attempt,assignment,saved));
+        notifications.verifiedAddressIfPresent(student).ifPresent(email -> notifications.enqueue(scope.organizationId(),revision,student,"final_result",email,resultMessage(scope,attempt,assignment,saved)));
         audit.write(scope.organizationId(),scope.userId(),correction?"result.corrected":"result.published",id,Map.of("revision",next,"reason",Objects.toString(request.reason(),"")));
         return publication(repository.requireRevision(scope.organizationId(), revision));
     }

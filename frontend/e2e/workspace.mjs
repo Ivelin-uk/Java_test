@@ -87,7 +87,7 @@ try {
   await tpage.getByRole('button', { name: 'Запази проверката', exact: true }).nth(1).click()
   await publish.click()
   await tpage.getByRole('dialog').getByRole('button', { name: 'Потвърди', exact: true }).click()
-  await tpage.getByText('Резултатът е публикуван; известието е в опашката.', { exact: true }).waitFor()
+  await tpage.getByText('Резултатът е публикуван.', { exact: true }).waitFor()
   await tpage.getByRole('checkbox', { name: 'Разреши на ученика да вижда теста и отговорите си', exact: true }).check()
   await tpage.getByText('Прегледът е разрешен за ученика.', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Обнови', exact: true }).click()

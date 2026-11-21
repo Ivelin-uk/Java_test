@@ -147,7 +147,7 @@ class MatchingQuestionTests {
         ExamFixture(AssessmentService.Question definition) {
             var transactions=mock(TransactionTemplate.class);
             when(transactions.execute(any())).thenAnswer(call->{TransactionCallback<?> callback=call.getArgument(0);return callback.doInTransaction(mock(TransactionStatus.class));});
-            service=new AttemptService(repository,json,CLOCK,crypto,mock(OrganizationService.class),mock(AssignmentService.class),mock(NotificationService.class),mock(CodeRateLimiter.class),transactions,mock(PasswordEncoder.class),mock(WorkspaceAudit.class),mock(ProfileExamMutex.class),false);
+            service=new AttemptService(repository,json,CLOCK,crypto,mock(OrganizationService.class),mock(AssignmentService.class),mock(CodeRateLimiter.class),transactions,mock(PasswordEncoder.class),mock(WorkspaceAudit.class),mock(ProfileExamMutex.class),false);
             attempt.putAll(Map.of("id",3L,"organization_id",1L,"assignment_id",4L,"student_id",2L,"current_position",0L,"status","in_progress","session_hash",crypto.hash(session.token()),"auth_session_hash",crypto.hash(session.authorization()),"browser_id",session.browserId()));
             question.putAll(Map.of("id",7L,"status","open","maximum_points",definition.points(),"time_seconds",60,"open_instance","open-id","opened_at",NOW,"deadline_at",NOW.plusSeconds(60)));
             when(repository.countStarts(anyLong(),anyLong(),anyLong(),anyString())).thenReturn(1L);
