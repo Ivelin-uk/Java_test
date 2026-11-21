@@ -10,7 +10,7 @@ import { TopicField } from './TopicField'
 import { GradeField } from './GradeField'
 import './aiCreation.css'
 
-export function AiTestFields({ api, value, onChange, disabled, maximum = 20, fixedQuestionCount, showGradingSettings = false }: { api: WorkspaceApi; value: AiSettings; onChange: Dispatch<SetStateAction<AiSettings>>; disabled: boolean; maximum?: number; fixedQuestionCount?: number; showGradingSettings?: boolean }) {
+export function AiTestFields({ api, value, onChange, disabled, maximum = 20, fixedQuestionCount, showGradingSettings = false, basicsAndQuestionTypesOnly = false }: { api: WorkspaceApi; value: AiSettings; onChange: Dispatch<SetStateAction<AiSettings>>; disabled: boolean; maximum?: number; fixedQuestionCount?: number; showGradingSettings?: boolean; basicsAndQuestionTypesOnly?: boolean }) {
   const fileInput = useRef<HTMLInputElement>(null)
   const reader = useRef<FileReader | null>(null)
   const request = useRef(0)
@@ -19,6 +19,7 @@ export function AiTestFields({ api, value, onChange, disabled, maximum = 20, fix
   const [reading, setReading] = useState(false)
   const [dragging, setDragging] = useState(false)
   const descriptionId = useId()
+  const fullFields = showGradingSettings || basicsAndQuestionTypesOnly
   function patch(next: Partial<AiSettings>) { onChange(previous => ({ ...previous, ...next })) }
 
   useEffect(() => {
@@ -85,12 +86,12 @@ export function AiTestFields({ api, value, onChange, disabled, maximum = 20, fix
     }
   }
 
-  return <fieldset className={`ws-editor ws-ai-fields ${showGradingSettings ? 'ws-ai-fields-full' : 'ws-ai-fields-compact'}`} disabled={disabled}>
+  return <fieldset className={`ws-editor ws-ai-fields ${fullFields ? 'ws-ai-fields-full' : 'ws-ai-fields-compact'}`} disabled={disabled}>
     <section className="ws-ai-card">
       <header className="ws-ai-card-head"><span className="ws-ai-card-step" aria-hidden="true">01</span><div><h3>Основи на теста</h3><p>Избери какво ще проверяваш и за кого е тестът.</p></div><BookOpen size={20} aria-hidden="true" /></header>
       <div className="ws-form-grid ws-context-fields">
-        <SubjectField value={value.subject} autoFocus={showGradingSettings} disabled={disabled} onChange={subject => patch({ subject, ...(subject !== value.subject && showGradingSettings ? { topic: '' } : {}) })} />
-        <TopicField subject={value.subject} level={value.level} value={value.topic} disabled={disabled} requireSubject={showGradingSettings} onChange={topic => patch({ topic })} />
+        <SubjectField value={value.subject} autoFocus={fullFields} disabled={disabled} onChange={subject => patch({ subject, ...(subject !== value.subject && fullFields ? { topic: '' } : {}) })} />
+        <TopicField subject={value.subject} level={value.level} value={value.topic} disabled={disabled} requireSubject={fullFields} onChange={topic => patch({ topic })} />
         <GradeField value={value.level} disabled={disabled || !value.subject} onChange={level => patch({ level })} />
         <label>Въпроси<input type="number" min={1} max={maximum} step={1} readOnly={fixedQuestionCount !== undefined} value={fixedQuestionCount ?? value.questionCount} onChange={e => patch({ questionCount: Number(e.target.value) })} /></label>
         <label>Трудност<select aria-label="Трудност" value={value.difficulty} onChange={e => patch({ difficulty: e.target.value })}>{Object.entries(difficulties).map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>
@@ -107,7 +108,7 @@ export function AiTestFields({ api, value, onChange, disabled, maximum = 20, fix
       })}</div></fieldset>
       <div className="ws-ai-image-settings"><label className="ws-check"><input type="checkbox" checked={value.includeImages} onChange={e => patch({ includeImages: e.target.checked })} /><Image size={18} aria-hidden="true" />С изображения</label>{value.includeImages ? <label>Въпроси с изображение<input type="number" min={1} max={value.questionCount} step={1} value={requestedImages(value)} onChange={e => patch({ imageCount: Number(e.target.value) })} /></label> : <p className="ws-ai-field-hint">Добави генерирани илюстрации към избрани въпроси.</p>}</div>
     </section>
-    <section className="ws-ai-card">
+    {!basicsAndQuestionTypesOnly && <section className="ws-ai-card">
       <header className="ws-ai-card-head"><span className="ws-ai-card-step" aria-hidden="true">03</span><div><h3>Материали и насоки</h3><p>По желание дай на AI повече контекст за урока.</p></div><FileText size={20} aria-hidden="true" /></header>
       <fieldset className="ws-ai-source" aria-describedby={descriptionId}>
         <legend>Лекция или презентация</legend>
@@ -127,7 +128,7 @@ export function AiTestFields({ api, value, onChange, disabled, maximum = 20, fix
         {value.useSourceMaterial && <p className="ws-muted">Въпросите ще се основават на съдържанието на качения материал.</p>}
       </fieldset>
       <label className="ws-ai-additional">Допълнителна информация за теста<textarea aria-label="Допълнителна информация за теста" rows={4} placeholder="Например: повече практически задачи, акцент върху основните понятия…" value={value.additionalInformation} maxLength={20000} onChange={e => patch({ additionalInformation: e.target.value })} /><span className="ws-ai-field-hint" aria-hidden="true">{value.additionalInformation.length.toLocaleString('bg-BG')} / 20 000 символа</span></label>
-    </section>
-    {showGradingSettings && <section className="ws-ai-card ws-ai-grading-card"><header className="ws-ai-card-head"><span className="ws-ai-card-step" aria-hidden="true">04</span><div><h3>Оценяване</h3><p>Настрой скалата и прага за успешен резултат.</p></div><Sparkles size={20} aria-hidden="true" /></header><TestGradingFields value={value} onChange={patch} /></section>}
+    </section>}
+    {showGradingSettings && !basicsAndQuestionTypesOnly && <section className="ws-ai-card ws-ai-grading-card"><header className="ws-ai-card-head"><span className="ws-ai-card-step" aria-hidden="true">04</span><div><h3>Оценяване</h3><p>Настрой скалата и прага за успешен резултат.</p></div><Sparkles size={20} aria-hidden="true" /></header><TestGradingFields value={value} onChange={patch} /></section>}
   </fieldset>
 }

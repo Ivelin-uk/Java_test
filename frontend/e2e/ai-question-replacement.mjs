@@ -119,7 +119,7 @@ try {
     assert.equal(await questions.count(), definition.questions.length)
     assert.equal(await settings.getByLabel('Тема', { exact: true }).inputValue(), definition.title)
     assert.equal(await settings.getByLabel('Дисциплина', { exact: true }).inputValue(), definition.subject)
-    assert.equal(await settings.getByLabel('Допълнителна информация за теста', { exact: true }).inputValue(), definition.additionalInformation)
+    assert.equal(await settings.getByLabel('Допълнителна информация за теста', { exact: true }).count(), 0)
     for (let index = 0; index < definition.questions.length; index++) {
       const article = questions.nth(index), expected = definition.questions[index]
       assert.equal(await article.getByLabel('Текст', { exact: true }).innerText(), expected.text)

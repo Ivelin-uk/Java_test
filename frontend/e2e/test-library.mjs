@@ -118,7 +118,7 @@ try {
   await page.screenshot({ path: new URL('test-library-mobile.png', artifacts).pathname, fullPage: true })
   await page.getByRole('region', { name: 'Избран тест' }).getByRole('button', { name: 'Редактирай теста', exact: true }).click()
   assert.equal(await page.getByLabel('Тема', { exact: true }).inputValue(), second.title)
-  await page.getByLabel('Допълнителна информация за теста', { exact: true }).fill('Edited from preview')
+  assert.equal(await page.getByLabel('Допълнителна информация за теста', { exact: true }).count(), 0)
   await page.getByRole('button', { name: 'Запази теста', exact: true }).click()
   await library.waitFor()
   await page.getByText('Тестът е запазен.', { exact: true }).waitFor()

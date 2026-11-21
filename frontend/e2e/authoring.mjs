@@ -43,7 +43,7 @@ try {
   await page.getByRole('button', { name: title, exact: true }).waitFor()
   await page.getByRole('button', { name: title, exact: true }).click()
   await page.getByRole('region', { name: 'Избран тест' }).getByRole('button', { name: 'Редактирай теста', exact: true }).click()
-  await page.getByLabel('Допълнителна информация за теста', { exact: true }).fill('Edited teacher context')
+  assert.equal(await page.getByLabel('Допълнителна информация за теста', { exact: true }).count(), 0)
   await page.getByRole('button', { name: 'Запази теста', exact: true }).click()
   await page.getByRole('heading', { name: 'Библиотека с тестове', exact: true }).waitFor()
   const tests = await fetch(`${base}/api/v1/tests`, { headers: { Authorization: `Bearer ${auth.token}` } }).then(r => r.json())
@@ -83,6 +83,13 @@ try {
   await additions.getByLabel('Брой нови въпроси', { exact: true }).fill('2')
   await additions.getByRole('button', { name: 'Ръчно', exact: true }).click()
   assert.equal(await page.locator('.ws-question').count(), 7)
+  const questionNavigation = page.getByRole('navigation', { name: 'Навигация по въпросите', exact: true })
+  assert.equal(await questionNavigation.evaluate(element => Math.round(element.getBoundingClientRect().height)), await page.evaluate(() => innerHeight))
+  await questionNavigation.getByRole('button').first().click()
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  await questionNavigation.getByRole('button', { name: 'Към въпрос 7', exact: true }).click()
+  assert.equal(await page.locator('.ws-question[data-question-index="6"]').evaluate(element => element === document.activeElement), true)
+  assert.match(await questionNavigation.locator('.ws-question-navigator-current').innerText(), /7\s*от 7/)
   assert.equal(await page.locator('.ws-question').nth(5).getByLabel('Текст', { exact: true }).innerText(), '')
   await page.locator('.ws-question').last().getByRole('button', { name: 'Изтрий въпрос', exact: true }).click()
   const deletion = page.getByRole('dialog', { name: 'Изтриване на въпрос', exact: true })
@@ -100,7 +107,7 @@ try {
   assert.ok(ordering.add >= ordering.last)
   await page.screenshot({ path: new URL('question-additions-mobile.png', artifacts).pathname })
   await additions.getByRole('button', { name: 'С AI', exact: true }).click()
-  await additions.getByRole('form', { name: 'Добавяне на въпроси с AI', exact: true }).getByRole('button', { name: 'Генерирай', exact: true }).click()
+  assert.equal(await additions.getByRole('form', { name: 'Добавяне на въпроси с AI', exact: true }).count(), 0)
   await Promise.race([
     page.waitForFunction(() => document.querySelectorAll('.ws-question').length === 7, null, { timeout: 240000 }),
     additions.getByRole('alert').waitFor({ timeout: 240000 }).then(async () => { throw new Error(await additions.getByRole('alert').innerText()) }),
